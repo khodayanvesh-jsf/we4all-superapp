@@ -594,7 +594,7 @@ INITIAL_APP_UPDATE_INFO.latestAvailableVersion = "2.9.7";
 INITIAL_APP_UPDATE_INFO.updateAvailable = true;
 INITIAL_APP_UPDATE_INFO.releaseNotes = "WE4ALL v2.9.7: Complete Tier-2/3 Town Demand Suite (Daily Mandi Rate Ticker, Parcha Slip Photo & Voice Ordering, Cash on Delivery + Monthly Shop Khata, Barcode Stock Scanner, 1-Tap Town Landmarks & Mandal Bus Parcel, Zero Nested APK Bloat).";
 
-export const INITIAL_MANDI_RATES = [
+const INITIAL_MANDI_RATES_LEGACY = [
   { id: "m1", item: "Broiler Chicken (Skinless)", unit: "1 kg", price: 220, trend: "down", categoryId: "meat_daily" },
   { id: "m2", item: "Fresh Local Mutton", unit: "1 kg", price: 780, trend: "stable", categoryId: "meat_daily" },
   { id: "m3", item: "NECC Farm Eggs", unit: "Tray (30)", price: 165, trend: "down", categoryId: "daily_needs" },
@@ -602,7 +602,7 @@ export const INITIAL_MANDI_RATES = [
   { id: "m5", item: "UltraTech / Local Cement", unit: "50 kg Bag", price: 380, trend: "stable", categoryId: "construction" }
 ];
 
-export const TOWN_LANDMARK_PRESETS = [
+const TOWN_LANDMARK_PRESETS_LEGACY = [
   { id: "lm_bus", label: "RTC Bus Stand", pickup: "RTC Bus Stand, Adilabad", drop: "Subhash Nagar, Adilabad", km: 2.1 },
   { id: "lm_rail", label: "Railway Station", pickup: "Railway Station Gate, Adilabad", drop: "Collectorate Chowk, Adilabad", km: 2.9 },
   { id: "lm_rims", label: "RIMS Hospital", pickup: "RIMS Hospital Main Gate", drop: "Vidya Nagar, Adilabad", km: 2.4 },

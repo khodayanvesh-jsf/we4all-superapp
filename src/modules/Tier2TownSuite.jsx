@@ -1,5 +1,19 @@
 import React, { useState } from "react";
-import { INITIAL_MANDI_RATES, TOWN_LANDMARK_PRESETS } from "../data";
+
+export const DEFAULT_MANDI_RATES = [
+  { id: "m1", item: "Broiler Chicken (Skinless)", unit: "1 kg", price: 220, categoryId: "meat_daily" },
+  { id: "m2", item: "Fresh Local Mutton", unit: "1 kg", price: 780, categoryId: "meat_daily" },
+  { id: "m3", item: "NECC Farm Eggs", unit: "Tray (30)", price: 165, categoryId: "daily_needs" },
+  { id: "m4", item: "Mandi Red Onions", unit: "5 kg", price: 175, categoryId: "vegetables" },
+  { id: "m5", item: "UltraTech / Local Cement", unit: "50 kg Bag", price: 380, categoryId: "construction" }
+];
+
+export const DEFAULT_LANDMARK_PRESETS = [
+  { id: "lm_bus", label: "RTC Bus Stand", pickup: "RTC Bus Stand, Adilabad", drop: "Subhash Nagar, Adilabad", km: 2.1 },
+  { id: "lm_rail", label: "Railway Station", pickup: "Railway Station Gate, Adilabad", drop: "Collectorate Chowk, Adilabad", km: 2.9 },
+  { id: "lm_rims", label: "RIMS Hospital", pickup: "RIMS Hospital Main Gate", drop: "Vidya Nagar, Adilabad", km: 2.4 },
+  { id: "lm_mandal", label: "Mandal Bus Parcel", pickup: "Main Bazar Wholesale Shop", drop: "RTC Cargo / Village Auto Stand", km: 3.5 }
+];
 
 export function TownMandiTicker({ onSelectCategory, onTriggerToast }) {
   return (
@@ -13,7 +27,7 @@ export function TownMandiTicker({ onSelectCategory, onTriggerToast }) {
         </span>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {INITIAL_MANDI_RATES.map((m) => (
+        {DEFAULT_MANDI_RATES.map((m) => (
           <button
             key={m.id}
             type="button"
@@ -82,7 +96,7 @@ export function ParchaAndVoiceOrderBox({
       parchaImageName: parchaImageName || "Handwritten_Parcha_Slip.jpg",
       voiceNoteLabel: voiceRecordedLabel || "",
       parchaText: parchaNotes.trim() || "Handwritten Kirana / Medical Slip Attached",
-      dateStr: "2026-10-31",
+      dateStr: "2026-11-01",
       createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       periodTag: "TODAY",
       customerName: currentUser?.fullName || "Town Customer",
@@ -129,7 +143,7 @@ export function ParchaAndVoiceOrderBox({
             \uD83D\uDCDD Quick Parcha (Handwritten Slip) & Voice-Note Order
           </h4>
           <p className="text-[10px] text-slate-300">
-            No time to search 20 items? Snap your paper list, medical prescription, or send a voice note!
+            Snap your paper kirana list, medical prescription, or record a voice note!
           </p>
         </div>
         <button
@@ -222,7 +236,7 @@ export function TownLandmarkPresetBar({ onApplyLandmark }) {
         1-Tap Town Landmarks & Village Bus-Parcel Presets:
       </p>
       <div className="grid grid-cols-2 gap-1.5">
-        {TOWN_LANDMARK_PRESETS.map((lm) => (
+        {DEFAULT_LANDMARK_PRESETS.map((lm) => (
           <button
             key={lm.id}
             type="button"

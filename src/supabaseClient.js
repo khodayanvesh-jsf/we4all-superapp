@@ -1,5 +1,3 @@
-import { createClient } from "@supabase/supabase-js";
-
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
 const CURRENT_SCHEMA_VERSION = "2.9.8";
 const STORAGE_KEY = "we4all_master_cloud_state_v4";
@@ -8,7 +6,7 @@ const INSTALLED_VER_KEY = "we4all_device_installed_version_v4";
 const SCHEMA_MIGRATED_KEY = "we4all_schema_migrated_v298";
 const ZONE_MASTER_ID = "adilabad_master";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
 export const isLiveSupabaseConfigured = Boolean(
@@ -18,12 +16,6 @@ export const isLiveSupabaseConfigured = Boolean(
     SUPABASE_URL.startsWith("https://")
 );
 
-export const supabase = isLiveSupabaseConfigured
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      realtime: { params: { eventsPerSecond: 10 } }
-    })
-  : null;
-
 const syncChannel =
   typeof window !== "undefined" && "BroadcastChannel" in window
     ? new BroadcastChannel("we4all_realtime_bus_v4")
@@ -32,50 +24,57 @@ const syncChannel =
 let cloudSyncDebounceTimer = null;
 let lastAppliedCloudTimestamp = "";
 
-export function getDeviceInstalledVersion(fallback = "2.9.7") {
+export function getDeviceInstalledVersion(fallback = "2.9.8") {
   if (typeof window === "undefined") return fallback;
   return localStorage.getItem(INSTALLED_VER_KEY) || fallback;
 }
 
-// Upload Camera Photo / PDF / Signature to Supabase Storage Bucket ("we4all-media")
-export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploads") {
-  if (!supabase) return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
+// Push state to Supabase PostgreSQL via native REST API (Zero npm build failures on Vercel Node 26)
+async function pushStateToSupabaseRest(mergedState, nowIso) {
+  if (!isLiveSupabaseConfigured) return;
   try {
-    let blobToUpload = fileOrDataUrl;
-    let ext = "png";
-
-    if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("data:")) {
-      const match = fileOrDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (!match) return fileOrDataUrl;
-      const mime = match[1];
-      ext = mime.split("/")[1] || "png";
-      const byteCharacters = atob(match[2]);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      blobToUpload = new Blob([new Uint8Array(byteNumbers)], { type: mime });
-    } else if (fileOrDataUrl instanceof File) {
-      ext = fileOrDataUrl.name.split(".").pop() || "jpg";
-    } else {
-      return String(fileOrDataUrl || "");
-    }
-
-    const filePath = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const { error } = await supabase.storage
-      .from("we4all-media")
-      .upload(filePath, blobToUpload, { upsert: true });
-
-    if (error) return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
-
-    const { data } = supabase.storage.from("we4all-media").getPublicUrl(filePath);
-    return data?.publicUrl || "";
-  } catch (e) {
-    return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
-  }
+    await fetch(`${SUPABASE_URL}/rest/v1/we4all_town_state?on_conflict=zone_id`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Prefer: "resolution=merge-duplicates"
+      },
+      body: JSON.stringify({
+        zone_id: ZONE_MASTER_ID,
+        state_payload: mergedState,
+        app_version: mergedState?.appUpdateInfo?.latestAvailableVersion || CURRENT_SCHEMA_VERSION,
+        updated_at: nowIso
+      })
+    });
+  } catch (e) {}
 }
 
-// Save State Locally AND Push to Live Supabase PostgreSQL
+// Pull latest town state from Supabase PostgreSQL via native REST API
+async function fetchStateFromSupabaseRest() {
+  if (!isLiveSupabaseConfigured) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/we4all_town_state?zone_id=eq.${ZONE_MASTER_ID}&select=state_payload,updated_at`,
+      {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows[0]?.state_payload) {
+      return rows[0].state_payload;
+    }
+  } catch (e) {}
+  return null;
+}
+
 export function saveCloudAndLocalState(stateSlice) {
   if (typeof window === "undefined") return;
   try {
@@ -97,21 +96,10 @@ export function saveCloudAndLocalState(stateSlice) {
       syncChannel.postMessage({ type: "STATE_UPDATED", payload: merged });
     }
 
-    // Debounced push to live Supabase PostgreSQL so all phones in town receive the update
-    if (supabase) {
+    if (isLiveSupabaseConfigured) {
       if (cloudSyncDebounceTimer) clearTimeout(cloudSyncDebounceTimer);
-      cloudSyncDebounceTimer = setTimeout(async () => {
-        try {
-          await supabase.from("we4all_town_state").upsert(
-            {
-              zone_id: ZONE_MASTER_ID,
-              state_payload: merged,
-              app_version: merged?.appUpdateInfo?.latestAvailableVersion || CURRENT_SCHEMA_VERSION,
-              updated_at: nowIso
-            },
-            { onConflict: "zone_id" }
-          );
-        } catch (dbErr) {}
+      cloudSyncDebounceTimer = setTimeout(() => {
+        pushStateToSupabaseRest(merged, nowIso);
       }, 350);
     }
   } catch (e) {}
@@ -143,7 +131,7 @@ export async function checkLiveCloudOtaManifest(callback) {
     });
     if (!res.ok) return null;
     const remoteOta = await res.json();
-    const installedVer = getDeviceInstalledVersion("2.9.7");
+    const installedVer = getDeviceInstalledVersion("2.9.8");
     if (remoteOta?.latestAvailableVersion) {
       const hasNewer = remoteOta.latestAvailableVersion !== installedVer;
       const updatedInfo = {
@@ -161,11 +149,10 @@ export async function checkLiveCloudOtaManifest(callback) {
   return null;
 }
 
-// Subscribe to Live Supabase PostgreSQL Realtime + Same-Device BroadcastChannel
 export function subscribeToRealtimeUpdates(callback) {
   if (typeof window === "undefined") return () => {};
 
-  const applyIncomingPayload = (remotePayload) => {
+  const applyRemoteState = (remotePayload) => {
     if (!remotePayload || typeof remotePayload !== "object") return;
     if (
       remotePayload.lastSyncedAt &&
@@ -182,45 +169,13 @@ export function subscribeToRealtimeUpdates(callback) {
     callback(remotePayload);
   };
 
-  // 1. Initial pull from Supabase PostgreSQL on app startup
-  if (supabase) {
-    supabase
-      .from("we4all_town_state")
-      .select("state_payload, updated_at")
-      .eq("zone_id", ZONE_MASTER_ID)
-      .single()
-      .then(({ data }) => {
-        if (data?.state_payload && Object.keys(data.state_payload).length > 0) {
-          applyIncomingPayload(data.state_payload);
-        }
-      })
-      .catch(() => {});
+  // Initial pull & continuous 2.5s cloud sync from Supabase PostgreSQL
+  if (isLiveSupabaseConfigured) {
+    fetchStateFromSupabaseRest().then((remote) => {
+      if (remote && Object.keys(remote).length > 0) applyRemoteState(remote);
+    });
   }
 
-  // 2. Real-time WebSocket subscription to Supabase PostgreSQL changes across all phones
-  let supabaseRealtimeSub = null;
-  if (supabase) {
-    supabaseRealtimeSub = supabase
-      .channel("we4all_adilabad_live_sync")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "we4all_town_state",
-          filter: `zone_id=eq.${ZONE_MASTER_ID}`
-        },
-        (payload) => {
-          const nextState = payload?.new?.state_payload;
-          if (nextState) {
-            applyIncomingPayload(nextState);
-          }
-        }
-      )
-      .subscribe();
-  }
-
-  // 3. Local Tab / Split-Screen Fallback
   const handler = (event) => {
     if (event.data && event.data.type === "STATE_UPDATED") {
       callback(event.data.payload);
@@ -239,12 +194,14 @@ export function subscribeToRealtimeUpdates(callback) {
   checkLiveCloudOtaManifest(callback);
   const pollTimer = setInterval(() => {
     checkLiveCloudOtaManifest(callback);
-  }, 8000);
+    if (isLiveSupabaseConfigured) {
+      fetchStateFromSupabaseRest().then((remote) => {
+        if (remote && Object.keys(remote).length > 0) applyRemoteState(remote);
+      });
+    }
+  }, 3000);
 
   return () => {
-    if (supabaseRealtimeSub && supabase) {
-      supabase.removeChannel(supabaseRealtimeSub);
-    }
     if (syncChannel) syncChannel.removeEventListener("message", handler);
     window.removeEventListener("storage", storageHandler);
     clearInterval(pollTimer);
