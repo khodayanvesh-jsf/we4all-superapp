@@ -74,11 +74,7 @@ function FounderLogoBadge({ logoUrl }) {
   );
 }
 
-// ============================================================================
-// ULTRA-CLEAN AMAZON-STYLE HEADER SHELL:
-// Zero notification bells, zero update buttons, and zero language dropdowns!
-// Language & Geo-Slang selection are managed exclusively inside Account tab.
-// ============================================================================
+// Clean Amazon-Style Mobile & Web Shell (Zero Header Clutter)
 function MobilePhoneShell({
   title,
   badge,
@@ -103,7 +99,6 @@ function MobilePhoneShell({
         brightTheme ? "bg-white text-slate-900" : "bg-[#071118] text-white"
       }`}
     >
-      {/* Pure Amazon-Style Top Header Bar */}
       <div
         className={`px-3.5 py-2.5 flex justify-between items-center gap-2 text-xs border-b shrink-0 ${
           brightTheme
@@ -206,7 +201,7 @@ function AppContent() {
   const [adminPinInput, setAdminPinInput] = useState("");
   const [adminLoginError, setAdminLoginError] = useState("");
 
-  // DEFAULT ENGLISH ("EN") ON INSTALLATION; PERSISTED WHEN CHANGED IN ACCOUNT SECTION
+  // Default English ("EN") on fresh install
   const [lang, setLangState] = useState(() => {
     return localStorage.getItem("we4all_app_lang_v4") || "EN";
   });
@@ -215,7 +210,7 @@ function AppContent() {
     setLangState(nextLang);
   };
 
-  // GEO-LOCATION REGIONAL SLANG STATE (TELANGANA, MAHARASHTRA, KARNATAKA, TAMIL_NADU, NORTH_HINDI)
+  // Geo-Location Regional Slang
   const [geoRegion, setGeoRegionState] = useState(() => {
     return localStorage.getItem("we4all_geo_region_v4") || "TELANGANA";
   });
@@ -261,41 +256,85 @@ function AppContent() {
     });
   };
 
-  const [deviceBoundUser] = useState(() => {
-    const raw = localStorage.getItem("we4all_device_bound_user_v4");
-    return raw ? JSON.parse(raw) : null;
+  // ==========================================================================
+  // REQ 2, 6, 7 & 8: DEFAULT CONSUMER CONSOLE ON INSTALL + CHECKOUT AUTH GATE
+  // ==========================================================================
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem("we4all_persistent_session_v4") !== "logged_out";
   });
-
-  const [onboardingStep, setOnboardingStep] = useState(() => {
-    return localStorage.getItem("we4all_persistent_session_v4") === "logged_out"
-      ? "auth"
-      : "app";
-  });
-  const [selectedRole, setSelectedRole] = useState(
-    deviceBoundUser?.role || savedCloud?.activePortal || "customer"
-  );
-  const [activePortal, setActivePortal] = useState(
-    deviceBoundUser?.role || savedCloud?.activePortal || "customer"
-  );
+  // Always open directly into the Consumer Console ("customer") on install/startup!
+  const [activePortal, setActivePortal] = useState("customer");
   const [personalShoppingFromPartner, setPersonalShoppingFromPartner] =
     useState(null);
   const [footerTab, setFooterTab] = useState("home");
 
-  // AUTOMATIC STARTUP OTA UPDATE CHECKER (SKIPS IF ALREADY ON LATEST VERSION)
+  // Checkout / Account Login & Sign-Up Modal State
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState("login"); // "login" | "signup"
+  const [pendingCheckoutCallback, setPendingCheckoutCallback] = useState(null);
+  const [regStep, setRegStep] = useState(1);
+  const [selectedRole, setSelectedRole] = useState("customer");
+  const [loginInput, setLoginInput] = useState({ phoneOrName: "", pin: "1990" });
+  const [regForm, setRegForm] = useState({
+    role: "customer",
+    vehicleCode: "2W",
+    vehicleModel: "Hero Splendor / Activa",
+    rcPlate: "",
+    phone: "",
+    generatedOtp: "",
+    fullName: "",
+    upiId: "",
+    tcAccepted: false,
+    digitalSignatureText: ""
+  });
+
+  const sigCanvasRef = useRef(null);
+  const [isDrawingSig, setIsDrawingSig] = useState(false);
+  const startSigDraw = (e) => {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const ctx = canvas.getContext("2d");
+    ctx.strokeStyle = "#10b981";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+    setIsDrawingSig(true);
+  };
+  const moveSigDraw = (e) => {
+    if (!isDrawingSig) return;
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const ctx = canvas.getContext("2d");
+    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    ctx.stroke();
+  };
+  const endSigDraw = () => setIsDrawingSig(false);
+
+  // ==========================================================================
+  // REQ 9: SILENT AUTOMATIC OTA UPDATE ON APP OPEN (ZERO APPROVAL NEEDED!)
+  // If cloud version !== installed version -> automatically updates & reloads!
+  // If cloud version === installed version -> skips and opens Consumer Console!
+  // ==========================================================================
   const [appUpdateInfo, setAppUpdateInfo] = useState(() => {
-    const installedVer = getDeviceInstalledVersion("3.0.2");
+    const installedVer = getDeviceInstalledVersion("3.0.3");
     return (
       savedCloud?.appUpdateInfo || {
         ...(INITIAL_APP_UPDATE_INFO || {}),
         currentVersion: installedVer,
-        latestAvailableVersion: "3.0.3",
-        updateAvailable: installedVer !== "3.0.3",
+        latestAvailableVersion: "3.0.4",
+        updateAvailable: installedVer !== "3.0.4",
         releaseNotes:
-          "WE4ALL v3.0.3: Geo-Location Regional Slang Titles (Telangana, Maharashtra, Karnataka, Tamil Nadu & Hindi), Default English Install, Account-Only Language Switcher & Labour Adda Hub."
+          "WE4ALL v3.0.4: Default Consumer Console on Install, Visual Category Icon Grid with Labour Cart Ordering, Checkout Login/Sign-Up Gate & Silent Auto-Update on App Open."
       }
     );
   });
-  const [startupUpdatePrompt, setStartupUpdatePrompt] = useState(null);
   const [otaProgress, setOtaProgress] = useState(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
@@ -303,76 +342,11 @@ function AppContent() {
     sendMobileOsTrayNotification("WE4ALL Super-App", msg, `we4all-${Date.now()}`);
   };
 
-  useEffect(() => {
-    linkMobileHardwareServicesSilently();
-    const runStartupUpdateCheck = async () => {
-      const installedVer =
-        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.2";
-      const remoteOta = await checkLiveCloudOtaManifest((payload) => {
-        if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
-      });
-      const latestVer =
-        remoteOta?.latestAvailableVersion ||
-        appUpdateInfo?.latestAvailableVersion ||
-        "3.0.3";
-      const notes =
-        remoteOta?.releaseNotes ||
-        appUpdateInfo?.releaseNotes ||
-        "New geo-regional slang and market features available.";
-
-      if (latestVer && latestVer !== installedVer) {
-        setStartupUpdatePrompt({
-          currentVersion: installedVer,
-          latestAvailableVersion: latestVer,
-          releaseNotes: notes
-        });
-      }
-    };
-    runStartupUpdateCheck();
-  }, []);
-
-  const handleManualCheckForUpdate = async () => {
-    setCheckingUpdate(true);
-    triggerToast("Checking WE4ALL Cloud Server for updates...");
-    const latest = await checkLiveCloudOtaManifest((payload) => {
-      if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
-    });
-    setTimeout(() => {
-      setCheckingUpdate(false);
-      const installedVer =
-        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.3";
-      const targetVer =
-        latest?.latestAvailableVersion ||
-        appUpdateInfo?.latestAvailableVersion ||
-        "3.0.3";
-      const isNewer = targetVer !== installedVer;
-      setAppUpdateInfo((prev) => ({
-        ...prev,
-        ...(latest || {}),
-        currentVersion: installedVer,
-        latestAvailableVersion: targetVer,
-        updateAvailable: isNewer
-      }));
-      if (isNewer) {
-        setStartupUpdatePrompt({
-          currentVersion: installedVer,
-          latestAvailableVersion: targetVer,
-          releaseNotes:
-            latest?.releaseNotes || appUpdateInfo?.releaseNotes || ""
-        });
-      } else {
-        triggerToast(`You are already on the latest version (v${installedVer})!`);
-      }
-    }, 450);
-  };
-
   const handleRunOtaUpdate = (targetVerOverride = null) => {
     const targetVer =
       targetVerOverride ||
-      startupUpdatePrompt?.latestAvailableVersion ||
       appUpdateInfo?.latestAvailableVersion ||
-      "3.0.3";
-    setStartupUpdatePrompt(null);
+      "3.0.4";
     localStorage.setItem("we4all_installed_ota_ver_v4", targetVer);
     performZeroLossOtaUpdate(
       targetVer,
@@ -386,12 +360,55 @@ function AppContent() {
           updateAvailable: false
         });
         setOtaProgress(null);
-        triggerToast(`Updated to WE4ALL v${targetVer}!`);
       }
     );
   };
 
-  const [labourPortalEnabled] = useState(true);
+  useEffect(() => {
+    linkMobileHardwareServicesSilently();
+    // Automatic Zero-Click Startup OTA Check
+    const runAutoStartupOta = async () => {
+      const installedVer =
+        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.3";
+      const remoteOta = await checkLiveCloudOtaManifest((payload) => {
+        if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+      });
+      const latestVer =
+        remoteOta?.latestAvailableVersion ||
+        appUpdateInfo?.latestAvailableVersion ||
+        "3.0.4";
+
+      // If a newer version exists, automatically update immediately without asking for approval!
+      // If installedVer === latestVer, skip completely and stay in Consumer Console.
+      if (latestVer && latestVer !== installedVer) {
+        handleRunOtaUpdate(latestVer);
+      }
+    };
+    runAutoStartupOta();
+  }, []);
+
+  const handleManualCheckForUpdate = async () => {
+    setCheckingUpdate(true);
+    const latest = await checkLiveCloudOtaManifest((payload) => {
+      if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+    });
+    setTimeout(() => {
+      setCheckingUpdate(false);
+      const installedVer =
+        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.4";
+      const targetVer =
+        latest?.latestAvailableVersion ||
+        appUpdateInfo?.latestAvailableVersion ||
+        "3.0.4";
+      if (targetVer !== installedVer) {
+        handleRunOtaUpdate(targetVer);
+      } else {
+        triggerToast(`Already on latest version (v${installedVer})!`);
+      }
+    }, 400);
+  };
+
+  // Labour & Work-Site Portal States (Integrated into Consumer Console & Cart!)
   const [labourWorkers, setLabourWorkers] = useState(
     savedCloud?.labourWorkers && savedCloud.labourWorkers.length > 0
       ? savedCloud.labourWorkers
@@ -401,13 +418,8 @@ function AppContent() {
     savedCloud?.labourBookings || []
   );
   const [labourFilterSkill, setLabourFilterSkill] = useState("ALL");
-  const [labourBookingForm, setLabourBookingForm] = useState({
-    shiftType: "Full-Day Shift (09:00 AM - 05:30 PM)",
-    workersRequired: 2,
-    sitePin: "Subhash Nagar Site, Adilabad",
-    needOwnTools: true,
-    pickupFromAdda: false
-  });
+  const [labourShiftMap, setLabourShiftMap] = useState({});
+  const [labourCountMap, setLabourCountMap] = useState({});
 
   const [customPortals, setCustomPortals] = useState(
     savedCloud?.customPortals || [
@@ -450,25 +462,24 @@ function AppContent() {
   );
 
   const [currentUser, setCurrentUser] = useState(
-    deviceBoundUser ||
-      savedCloud?.currentUser || {
-        id: 1,
-        fullName: "Khoday Anvesh",
-        username: "anvesh_k",
-        phone: "9848011223",
-        role: "customer",
-        vehicleCode: "2W",
-        vehicleClass: "2W Bike Captain (Up to 45 kg)",
-        vehicleModel: "Hero Splendor Plus 125cc",
-        dlNumber: "TS-01-2022009812",
-        rcPlate: "TS-01-EF-4599",
-        decoratorSubRole: "flower_decorator",
-        bankName: "State Bank of India",
-        accountNumber: "30984451209",
-        ifscCode: "SBIN0000801",
-        upiId: "khodayanvesh@ybl",
-        fastPin: "1990"
-      }
+    savedCloud?.currentUser || {
+      id: 1,
+      fullName: "Khoday Anvesh",
+      username: "anvesh_k",
+      phone: "9848011223",
+      role: "customer",
+      vehicleCode: "2W",
+      vehicleClass: "2W Bike Captain (Up to 45 kg)",
+      vehicleModel: "Hero Splendor Plus 125cc",
+      dlNumber: "TS-01-2022009812",
+      rcPlate: "TS-01-EF-4599",
+      decoratorSubRole: "flower_decorator",
+      bankName: "State Bank of India",
+      accountNumber: "30984451209",
+      ifscCode: "SBIN0000801",
+      upiId: "khodayanvesh@ybl",
+      fastPin: "1990"
+    }
   );
 
   const [pendingUpiPayment, setPendingUpiPayment] = useState(null);
@@ -588,14 +599,17 @@ function AppContent() {
   ]);
   const activeAddressObj = addressBook[0];
 
-  const [selectedCategory, setSelectedCategory] = useState("ALL_MARKET");
+  // REQ 5: Category-Wise Icon Selection State (Defaults to "daily_needs" or any chosen Category Icon)
+  const [selectedCategory, setSelectedCategory] = useState("daily_needs");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVariantMap, setSelectedVariantMap] = useState({});
   const [selectedMerchantByProduct, setSelectedMerchantByProduct] = useState({});
   const [expandedCompareProdId, setExpandedCompareProdId] = useState(null);
 
-  const [serviceFilterDate] = useState("2026-11-02");
-  const [serviceFilterSlot] = useState("10:00 AM - 11:00 AM");
+  const [serviceFilterDate, setServiceFilterDate] = useState("2026-11-02");
+  const [serviceFilterSlot, setServiceFilterSlot] = useState(
+    "10:00 AM - 11:00 AM"
+  );
 
   const [customerBookingForm, setCustomerBookingForm] = useState({
     forWhom: "For Myself",
@@ -606,12 +620,14 @@ function AppContent() {
     distanceKm: 2.8
   });
 
+  // Unified Carts: Store Cart + Labour Cart + Service Cart + Decor Cart
   const [merchantCart, setMerchantCart] = useState(
     savedCloud?.merchantCart || []
   );
+  const [labourCart, setLabourCart] = useState(savedCloud?.labourCart || []);
   const [serviceCart, setServiceCart] = useState(savedCloud?.serviceCart || []);
   const [decorCart, setDecorCart] = useState(savedCloud?.decorCart || []);
-  const [cartChosenVehicleCode] = useState("2W");
+  const [cartChosenVehicleCode, setCartChosenVehicleCode] = useState("2W");
 
   const [orders, setOrders] = useState(savedCloud?.orders || []);
   const [activeOrderId, setActiveOrderId] = useState(null);
@@ -647,6 +663,7 @@ function AppContent() {
       customPortals,
       monetizationConfig,
       merchantCart,
+      labourCart,
       serviceCart,
       decorCart,
       orders,
@@ -678,6 +695,7 @@ function AppContent() {
     customPortals,
     monetizationConfig,
     merchantCart,
+    labourCart,
     serviceCart,
     decorCart,
     orders,
@@ -704,14 +722,27 @@ function AppContent() {
 
   const totalCartCount =
     merchantCart.reduce((s, i) => s + (i.qty || 1), 0) +
+    labourCart.reduce((s, l) => s + (l.workersCount || 1), 0) +
     serviceCart.length +
     decorCart.length;
+
   const activeOrder =
     orders.find(
       (o) => o.id === activeOrderId && !o.status?.includes("CANCELLED")
     ) ||
     orders[0] ||
     null;
+
+  // Gate Helper: Requires Login / Sign-Up only at Order Checkout!
+  const requireAuthAtCheckout = (actionCallback) => {
+    if (isAuthenticated) {
+      actionCallback();
+    } else {
+      setPendingCheckoutCallback(() => actionCallback);
+      setAuthModalMode("login");
+      setAuthModalOpen(true);
+    }
+  };
 
   const getProductBestOffer = (product) => {
     const offers =
@@ -777,7 +808,43 @@ function AppContent() {
     triggerToast(`Added ${cleanName} to Cart!`);
   };
 
-  const handlePlaceOrderForMerchantApproval = (
+  // Add Labour / Mistri to Consumer Cart!
+  const handleAddLabourToCart = (lw, localRoleTitle) => {
+    const chosenShift =
+      labourShiftMap[lw.id] || "Full-Day Shift (09:00 AM - 05:30 PM)";
+    const chosenWorkers =
+      labourCountMap[lw.id] ||
+      (lw.workerType === "MISTRI_TOLI" ? lw.toliCount || 4 : 1);
+    const isHalf = chosenShift.includes("Half-Day");
+    const unitRate = isHalf ? lw.halfDayWage : lw.fullDayWage;
+    const totalWage =
+      chosenWorkers === 1
+        ? unitRate
+        : unitRate +
+          Math.max(0, chosenWorkers - 1) *
+            (isHalf
+              ? Math.round((lw.helperDailyWage || 500) * 0.55)
+              : lw.helperDailyWage || 500);
+
+    const newLabourCartItem = {
+      cartItemId: `lab_cart_${Date.now()}`,
+      workerId: lw.id,
+      workerName: lw.workerName,
+      skillLabel: localRoleTitle,
+      shiftType: chosenShift,
+      workersCount: chosenWorkers,
+      toolsList: lw.toolsList,
+      addaLocation: lw.addaLocation,
+      totalDailyWage: totalWage,
+      siteAddress: activeAddressObj.fullAddress
+    };
+    setLabourCart([...labourCart, newLabourCartItem]);
+    triggerToast(
+      `Added ${lw.workerName} (${chosenWorkers} Workers - Rs.${totalWage}) to Cart!`
+    );
+  };
+
+  const executeMerchantOrderCheckout = (
     enforcedVehCode,
     deliveryFee,
     totalWeightKg
@@ -844,7 +911,37 @@ function AppContent() {
     setMerchantCart([]);
     setFooterTab("orders");
     triggerToast(
-      `Order #${newOrder.id} sent to Merchant Queue & ${vRule.shortLabel} Captain Radar!`
+      `Order #${newOrder.id} placed! Sent to Merchant Queue & ${vRule.shortLabel} Captain Radar.`
+    );
+  };
+
+  const executeLabourOrderCheckout = () => {
+    if (labourCart.length === 0) return;
+    const createdCalls = labourCart.map((lc, idx) => ({
+      id: `WRK-${Math.floor(1000 + Math.random() * 9000) + idx}`,
+      customerName: currentUser.fullName,
+      siteAddress: lc.siteAddress || activeAddressObj.fullAddress,
+      skillNeeded: `${lc.workerName} (${lc.skillLabel})`,
+      shiftType: lc.shiftType,
+      hiringMode: `${lc.workersCount} Worker(s)`,
+      workersCount: lc.workersCount,
+      toolsRequirement: `Bring Tools (${lc.toolsList})`,
+      transportNote: `From ${lc.addaLocation}`,
+      teaBhattaNote: `${geoSlang.bhattaSlang} & Muster OTP Active`,
+      totalDailyWage: lc.totalDailyWage,
+      startWorkOtp: String(Math.floor(1000 + Math.random() * 9000)),
+      wageReleaseOtp: String(Math.floor(1000 + Math.random() * 9000)),
+      status: "OPEN_SITE_CALL",
+      createdAt: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    }));
+    setLabourBookings([...createdCalls, ...labourBookings]);
+    setLabourCart([]);
+    setFooterTab("orders");
+    triggerToast(
+      `Booked ${createdCalls.length} Labour Work-Site Call(s)! Dispatched to ${geoSlang.standSlang}.`
     );
   };
 
@@ -892,107 +989,83 @@ function AppContent() {
     setViewMode("founder_web");
   };
 
-  const renderAuthVault = () => (
-    <MobilePhoneShell
-      title="Security & KYC Vault"
-      badge="v3.0.3"
-      activePortal={activePortal}
-      footerTab={footerTab}
-      setFooterTab={setFooterTab}
-      totalCartCount={totalCartCount}
-      totalOrdersCount={orders.length}
-      brightTheme={brightTheme}
-      lang={lang}
-      showFooter={false}
-    >
-      <div className="space-y-3 text-xs">
-        <div className="bg-slate-900 text-white border border-emerald-500/40 rounded-2xl p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FounderLogoBadge logoUrl={founderLogoUrl} />
-              <div>
-                <h2 className="font-black text-amber-400 text-xs">
-                  WE4ALL MEGA SUPER JOINT MARKET VAULT
-                </h2>
-                <p className="text-[10px] text-slate-300">
-                  {t.biometricProtected}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={openAdminGate}
-              className="bg-slate-800 border border-amber-400/40 text-amber-300 px-2.5 py-1 rounded-lg text-[9px] font-black cursor-pointer"
-            >
-              Founder Admin
-            </button>
-          </div>
-          <select
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value)}
-            className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl p-2 text-white font-bold text-xs"
-          >
-            <option value="customer">1. Mega Super Joint Market (Customer App)</option>
-            <option value="merchant">2. Product Merchant Portal (Kirana / Supermart)</option>
-            <option value="service_provider">3. 1-Hr Home Service Provider Portal</option>
-            <option value="decorator">4. Flower Decorator &amp; Function Halls Portal</option>
-            <option value="rider">5. Delivery Captain Portal (2W / 3W / 4W)</option>
-            <option value="labour_portal">
-              6. {geoSlang.standSlang} Portal (Mistri / Kooli / Hamali)
-            </option>
-          </select>
-          <button
-            type="button"
-            onClick={async () => {
-              await verifyPhoneHardwareBiometric(
-                currentUser?.fullName || "WE4ALL User"
-              );
-              localStorage.setItem("we4all_persistent_session_v4", "active");
-              setActivePortal(selectedRole);
-              setFooterTab("home");
-              setOnboardingStep("app");
-            }}
-            className="w-full py-2.5 rounded-xl font-black text-[11px] bg-emerald-400 text-slate-950 cursor-pointer shadow"
-          >
-            1-Tap Biometric Login
-          </button>
-        </div>
-      </div>
-    </MobilePhoneShell>
-  );
-
   // ==========================================================================
-  // PORTAL 1: UNIFIED MEGA SUPER JOINT LOCAL MARKET (GEO-SLANG ADAPTIVE!)
+  // PORTAL 1: CONSUMER SUPER-APP (CATEGORY ICON GRID + LABOUR + CHECKOUT GATE)
   // ==========================================================================
   const renderCustomerPortal = () => {
     const q = searchQuery.trim().toLowerCase();
 
-    // Helper: Get Geo-Slang Category Name (e.g. "Kirana & Inti Sarukulu" in TS, "Maligai Kadai" in TN)
-    const getGeoCategoryLabel = (cat) => {
-      return geoSlang?.categories?.[cat.id] || cleanLabel(cat.name);
+    const getGeoCategoryLabel = (catId, fallback) => {
+      return geoSlang?.categories?.[catId] || cleanLabel(fallback);
     };
 
     const getGeoLabourRoleLabel = (skillId, fallback) => {
       return geoSlang?.labourRoles?.[skillId] || cleanLabel(fallback);
     };
 
+    // Visual Category-Wise Icons Grid (Tap any icon to open that specific section!)
+    const categoryIconGrid = [
+      {
+        id: "daily_needs",
+        icon: "\uD83D\uDED2",
+        label: getGeoCategoryLabel("daily_needs", "Kirana & Daily")
+      },
+      {
+        id: "veg_fruits",
+        icon: "\uD83E\uDD66",
+        label: getGeoCategoryLabel("veg_fruits", "Fresh Veg")
+      },
+      {
+        id: "meat_fish",
+        icon: "\uD83C\uDF57",
+        label: getGeoCategoryLabel("meat_fish", "Meat & Fish")
+      },
+      {
+        id: "construction",
+        icon: "\uD83E\uDDF1",
+        label: getGeoCategoryLabel("construction", "Cement & Steel")
+      },
+      {
+        id: "medicines",
+        icon: "\uD83D\uDC8A",
+        label: getGeoCategoryLabel("medicines", "Medicines")
+      },
+      {
+        id: "CAT_LABOUR",
+        icon: "\uD83D\uDC77",
+        label: geoSlang.standSlang.split("(")[0].trim()
+      },
+      {
+        id: "CAT_SERVICES",
+        icon: "\uD83D\uDEE0\uFE0F",
+        label: t.services || "1-Hr Services"
+      },
+      {
+        id: "CAT_DECOR",
+        icon: "\uD83C\uDF38",
+        label: t.decor || "Decor & Halls"
+      },
+      {
+        id: "CAT_TAXI",
+        icon: "\uD83D\uDEF5",
+        label: t.taxi || "2W/3W/4W Rides"
+      },
+      {
+        id: "CAT_MANDI",
+        icon: "\uD83C\uDF3E",
+        label: "Kisan Mandi"
+      }
+    ];
+
+    const isStoreCategory = categories.some((c) => c.id === selectedCategory);
+
     const matchingProducts = products.filter(
       (p) =>
-        (selectedCategory === "ALL_MARKET" ||
-          p.categoryId === selectedCategory) &&
+        (searchQuery.trim() !== "" || p.categoryId === selectedCategory) &&
         p.isPublished !== false &&
         p.inStock !== false &&
         (p.stockQty ?? 10) > 0 &&
         cleanLabel(p.subCategoryBrand).toLowerCase().includes(q)
-    );
-
-    const matchingServices = serviceProviders.filter(
-      (sp) =>
-        sp.isPublished !== false &&
-        sp.isPublishedToPublic !== false &&
-        (cleanLabel(sp.serviceCategory).toLowerCase().includes(q) ||
-          cleanLabel(sp.specialization).toLowerCase().includes(q) ||
-          cleanLabel(sp.maskedId).toLowerCase().includes(q))
     );
 
     const matchingLabour = labourWorkers.filter((lw) => {
@@ -1006,15 +1079,19 @@ function AppContent() {
       );
     });
 
+    const matchingServices = serviceProviders.filter(
+      (sp) =>
+        sp.isPublished !== false &&
+        sp.isPublishedToPublic !== false &&
+        (cleanLabel(sp.serviceCategory).toLowerCase().includes(q) ||
+          cleanLabel(sp.specialization).toLowerCase().includes(q) ||
+          cleanLabel(sp.maskedId).toLowerCase().includes(q))
+    );
+
     const matchingDecor = decorPortfolio.filter(
       (dp) =>
         cleanLabel(dp.title).toLowerCase().includes(q) ||
         cleanLabel(dp.merchantName).toLowerCase().includes(q)
-    );
-
-    const { topProducts } = getPersonalizedRecommendations(
-      products,
-      matchingServices
     );
 
     const cartTotalWeightGrams = merchantCart.reduce(
@@ -1058,48 +1135,17 @@ function AppContent() {
         customerBookingForm.distanceKm * chosenRule.perKmRate
     );
 
-    // Geo-Slang Sector Strip
-    const megaMarketSectors = [
-      { id: "ALL_MARKET", label: "All Local Market", badge: "MEGA HUB" },
-      ...categories.map((c) => ({
-        id: c.id,
-        label: getGeoCategoryLabel(c),
-        badge: "SHOP"
-      })),
-      {
-        id: "SECTOR_LABOUR",
-        label: geoSlang.standSlang,
-        badge: geoSlang.groupSlang
-      },
-      { id: "SECTOR_SERVICES", label: t.services || "1-Hr Services", badge: "PRO" },
-      { id: "SECTOR_DECOR", label: t.decor || "Decor & Halls", badge: "EVENTS" },
-      { id: "SECTOR_TAXI", label: t.taxi || "2W/3W/4W Rides", badge: "TAXI" }
-    ];
-
-    const showStoresSection =
-      selectedCategory === "ALL_MARKET" ||
-      categories.some((c) => c.id === selectedCategory);
-    const showLabourSection =
-      labourPortalEnabled &&
-      (selectedCategory === "ALL_MARKET" ||
-        selectedCategory === "SECTOR_LABOUR");
-    const showServicesSection =
-      selectedCategory === "ALL_MARKET" ||
-      selectedCategory === "SECTOR_SERVICES";
-    const showDecorSection =
-      selectedCategory === "ALL_MARKET" || selectedCategory === "SECTOR_DECOR";
-    const showTaxiSection =
-      selectedCategory === "ALL_MARKET" || selectedCategory === "SECTOR_TAXI";
-
     return (
       <MobilePhoneShell
-        title="Mega Super Joint Market"
-        badge="Prime"
+        title="Customer Super-App"
+        badge={isAuthenticated ? "Prime" : "Guest"}
         activePortal="customer"
         footerTab={footerTab}
         setFooterTab={setFooterTab}
         totalCartCount={totalCartCount}
-        totalOrdersCount={orders.length + serviceBookings.length}
+        totalOrdersCount={
+          orders.length + serviceBookings.length + labourBookings.length
+        }
         floatingLiveOrder={activeOrder}
         onOpenLiveOrderModal={() => setLiveOrderDrawerOpen(true)}
         brightTheme={brightTheme}
@@ -1111,59 +1157,28 @@ function AppContent() {
           setFooterTab("home");
         }}
       >
-        {/* Sub-Header: Deliver To Address + Quick Geo-Location Slang Switcher + Portal Switcher */}
-        <div className="bg-[#232f3e] text-white px-3 py-2 rounded-xl flex flex-wrap justify-between items-center gap-2 text-[10px]">
+        {/* Clean Amazon-Style Delivery Location Bar */}
+        <div className="bg-[#232f3e] text-white px-3 py-2 rounded-xl flex justify-between items-center gap-2 text-[10px]">
           <div className="flex items-center gap-2 truncate">
             <FounderLogoBadge logoUrl={founderLogoUrl} />
             <div>
               <span className="text-slate-300 block text-[8px]">
-                {t.deliverTo} {cleanLabel(currentUser.fullName)} ({geoSlang.stateName.split(" ")[0]} Slang)
+                {t.deliverTo}{" "}
+                {isAuthenticated ? cleanLabel(currentUser.fullName) : "Guest"} (
+                {geoSlang.stateName.split(" ")[0]})
               </span>
               <span className="text-amber-300 font-black text-[10px]">
                 {activeAddressObj.label}: {activeAddressObj.fullAddress}
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <select
-              value={geoRegion}
-              onChange={(e) => {
-                setGeoRegion(e.target.value);
-                const found = getGeoSlangConfig(e.target.value);
-                triggerToast(`Local Slang updated to ${found.stateName}!`);
-              }}
-              className="bg-slate-900 text-amber-300 border border-amber-400/50 rounded-lg px-2 py-1 text-[9px] font-black cursor-pointer"
-              title="Geo-Location Local Slang Region"
-            >
-              {GEO_SLANG_REGIONS.map((gr) => (
-                <option key={gr.id} value={gr.id}>
-                  Geo: {gr.id}
-                </option>
-              ))}
-            </select>
-            <select
-              value={activePortal}
-              onChange={(e) => {
-                if (e.target.value === "founder_admin") {
-                  openAdminGate();
-                  return;
-                }
-                setActivePortal(e.target.value);
-                setFooterTab("home");
-              }}
-              className="bg-slate-900 text-emerald-300 border border-slate-700 rounded-lg px-2 py-1 text-[10px] font-black cursor-pointer"
-            >
-              <option value="customer">1. Mega Super Joint Market</option>
-              <option value="merchant">2. Product Merchant Portal</option>
-              <option value="service_provider">3. 1-Hr Service Provider Portal</option>
-              <option value="decorator">4. Flower Decorator &amp; Halls Portal</option>
-              <option value="rider">5. Delivery Captain Portal (2W/3W/4W)</option>
-              <option value="labour_portal">
-                6. {geoSlang.standSlang} Portal
-              </option>
-              <option value="founder_admin">7. Founder Admin Console</option>
-            </select>
-          </div>
+          <button
+            type="button"
+            onClick={() => setFooterTab("carts")}
+            className="bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0 shadow"
+          >
+            Cart ({totalCartCount})
+          </button>
         </div>
 
         {footerTab === "home" && (
@@ -1175,51 +1190,63 @@ function AppContent() {
               brightTheme={brightTheme}
             />
 
-            {/* Universal Mega Market Search & Geo-Slang Sector Strip */}
-            <div className="bg-slate-900 p-2.5 rounded-2xl border border-emerald-500/40 space-y-2">
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    recordUserActivityTelemetry("SEARCH", {
-                      query: e.target.value
-                    });
-                  }}
-                  placeholder={t.searchPlaceholder}
-                  className="flex-1 bg-white border-2 border-amber-400 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold shadow-sm"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery("")}
-                    className="bg-slate-800 text-white px-3 rounded-xl text-[10px] font-black cursor-pointer"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
+            {/* Universal Search Bar */}
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  recordUserActivityTelemetry("SEARCH", {
+                    query: e.target.value
+                  });
+                }}
+                placeholder={t.searchPlaceholder}
+                className="flex-1 bg-white border-2 border-amber-400 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold shadow-sm"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="bg-slate-800 text-white px-3 rounded-xl text-[10px] font-black cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
 
-              <div className="flex gap-1.5 overflow-x-auto pb-1">
-                {megaMarketSectors.map((sec) => {
-                  const active = selectedCategory === sec.id;
+            {/* ============================================================== */}
+            {/* REQ 1 & 5: VISUAL CATEGORY-WISE ICONS GRID (INCLUDING LABOUR!) */}
+            {/* ============================================================== */}
+            <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm space-y-1.5">
+              <div className="flex justify-between items-center px-1">
+                <span className="text-[10px] font-black text-slate-700 uppercase">
+                  Shop &amp; Book by Category (Tap Any Icon):
+                </span>
+                <span className="text-[9px] font-bold text-emerald-700">
+                  {geoSlang.stateName.split("(")[0]} Slang Active
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {categoryIconGrid.map((cat) => {
+                  const active = selectedCategory === cat.id;
                   return (
                     <button
-                      key={sec.id}
+                      key={cat.id}
                       type="button"
-                      onClick={() => setSelectedCategory(sec.id)}
-                      className={`px-3 py-1.5 rounded-xl border text-left shrink-0 cursor-pointer transition ${
+                      onClick={() => {
+                        setSelectedCategory(cat.id);
+                        setSearchQuery("");
+                      }}
+                      className={`p-2 rounded-xl border text-center cursor-pointer transition flex flex-col items-center justify-center ${
                         active
-                          ? "bg-emerald-500 text-slate-950 border-white font-black shadow"
-                          : "bg-slate-950 text-slate-200 border-slate-800 hover:border-slate-600"
+                          ? "border-emerald-600 bg-emerald-600 text-white font-black shadow-md scale-[1.02]"
+                          : "border-slate-200 bg-slate-50 text-slate-800 hover:border-emerald-400"
                       }`}
                     >
-                      <span className="text-[7px] font-black uppercase block opacity-80">
-                        {sec.badge}
-                      </span>
-                      <span className="text-[10px] font-bold block">
-                        {sec.label}
+                      <span className="text-lg leading-none">{cat.icon}</span>
+                      <span className="text-[9px] font-bold mt-1 leading-tight line-clamp-2">
+                        {cat.label}
                       </span>
                     </button>
                   );
@@ -1227,35 +1254,15 @@ function AppContent() {
               </div>
             </div>
 
-            {topProducts.length > 0 && (
-              <div className="bg-emerald-950 text-white p-2.5 rounded-2xl border border-emerald-500/40 space-y-1.5">
-                <p className="text-[10px] font-black text-amber-300">
-                  {t.recommendedForYou}
-                </p>
-                <div className="flex gap-2 overflow-x-auto pb-0.5">
-                  {topProducts.map((tp) => (
-                    <button
-                      key={tp.id}
-                      type="button"
-                      onClick={() => handleAddToUnifiedMerchantCart(tp)}
-                      className="bg-slate-900 border border-slate-700 px-2.5 py-1.5 rounded-xl text-[10px] font-bold shrink-0 cursor-pointer hover:border-emerald-400"
-                    >
-                      + {cleanLabel(tp.subCategoryBrand)} (Rs.
-                      {tp.variants?.[0]?.price})
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* ============================================================== */}
-            {/* SECTION A: LOCAL SUPERMARTS & SHOPS (WITH GEO-SLANG TITLES)    */}
+            {/* VIEW 1: STORE CATEGORY PRODUCTS (KIRANA, VEG, MEAT, CEMENT...) */}
             {/* ============================================================== */}
-            {showStoresSection && (
+            {(isStoreCategory || searchQuery.trim() !== "") && (
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-1">
-                  <h3 className="font-black text-emerald-700 text-xs uppercase tracking-wide">
-                    1. {geoSlang.categories.daily_needs}, {geoSlang.categories.veg_fruits} &amp; {geoSlang.categories.construction} ({matchingProducts.length})
+                  <h3 className="font-black text-emerald-800 text-xs uppercase">
+                    {getGeoCategoryLabel(selectedCategory, "Store Products")} (
+                    {matchingProducts.length} Items)
                   </h3>
                   <span className="text-[10px] font-bold text-slate-500">
                     {t.compareShops}
@@ -1415,104 +1422,79 @@ function AppContent() {
             )}
 
             {/* ============================================================== */}
-            {/* SECTION B: GEO-SLANG LABOUR ADDA / MAJOOR NAKA / KOTHANAR HUB  */}
+            {/* REQ 1: CONSUMER LABOUR ORDERING SECTION (SUB-CATEGORIES + CART)*/}
             {/* ============================================================== */}
-            {showLabourSection && (
-              <div className="bg-slate-900 text-white p-3.5 rounded-2xl border-2 border-amber-400/70 space-y-3 text-xs">
+            {(selectedCategory === "CAT_LABOUR" || searchQuery.trim() !== "") && (
+              <div className="bg-slate-900 text-white p-3.5 rounded-2xl border-2 border-amber-400 space-y-3 text-xs">
                 <div className="flex flex-wrap justify-between items-center gap-2">
                   <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[8px]">
-                        {geoSlang.stateName.toUpperCase()} SLANG
-                      </span>
-                      <h3 className="font-black text-amber-300 text-xs uppercase">
-                        2. {geoSlang.standSlang} &amp; {geoSlang.groupSlang} Hiring
-                      </h3>
-                    </div>
-                    <p className="text-[10px] text-slate-300 mt-0.5">
-                      Hire local {geoSlang.labourRoles.mason_mistri}, {geoSlang.labourRoles.daily_helper}, or {geoSlang.labourRoles.hamali_loading}
+                    <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px]">
+                      ORDER LABOURERS TO CART &amp; CHECKOUT
+                    </span>
+                    <h3 className="font-black text-amber-300 text-xs mt-1 uppercase">
+                      {geoSlang.standSlang} &amp; {geoSlang.groupSlang} Booking
+                    </h3>
+                    <p className="text-[10px] text-slate-300">
+                      Choose work type sub-category below, select shift &amp; worker count, and tap <strong>+ Add Labour to Cart</strong>
                     </p>
                   </div>
+                </div>
+
+                {/* Sub-Category Pills for Labour Roles */}
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
                   <button
                     type="button"
-                    onClick={() => {
-                      setActivePortal("labour_portal");
-                      setFooterTab("home");
-                    }}
-                    className="bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
+                    onClick={() => setLabourFilterSkill("ALL")}
+                    className={`px-3 py-1.5 rounded-xl font-black text-[10px] shrink-0 cursor-pointer ${
+                      labourFilterSkill === "ALL"
+                        ? "bg-amber-400 text-slate-950"
+                        : "bg-slate-950 text-slate-300 border border-slate-800"
+                    }`}
                   >
-                    Open {geoSlang.standSlang} Portal
+                    All Labour ({labourWorkers.length})
                   </button>
+                  {LABOUR_SKILL_CATEGORIES.map((sc) => {
+                    const localRole = getGeoLabourRoleLabel(sc.id, sc.name);
+                    return (
+                      <button
+                        key={sc.id}
+                        type="button"
+                        onClick={() => setLabourFilterSkill(sc.id)}
+                        className={`px-3 py-1.5 rounded-xl font-black text-[10px] shrink-0 cursor-pointer ${
+                          labourFilterSkill === sc.id
+                            ? "bg-emerald-400 text-slate-950"
+                            : "bg-slate-950 text-slate-300 border border-slate-800"
+                        }`}
+                      >
+                        {localRole.split("(")[0].trim()}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                  <select
-                    value={labourFilterSkill}
-                    onChange={(e) => setLabourFilterSkill(e.target.value)}
-                    className="bg-slate-900 border border-amber-400/50 rounded-lg p-1.5 text-amber-300 font-bold text-[10px]"
-                  >
-                    <option value="ALL">
-                      All Local Roles ({labourWorkers.length})
-                    </option>
-                    {LABOUR_SKILL_CATEGORIES.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {getGeoLabourRoleLabel(sc.id, sc.name)}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={labourBookingForm.shiftType}
-                    onChange={(e) =>
-                      setLabourBookingForm({
-                        ...labourBookingForm,
-                        shiftType: e.target.value
-                      })
-                    }
-                    className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white font-bold text-[10px]"
-                  >
-                    <option value="Full-Day Shift (09:00 AM - 05:30 PM)">
-                      Full-Day Shift (9:00 AM - 5:30 PM)
-                    </option>
-                    <option value="Half-Day Shift (4 Hours)">
-                      Half-Day Shift (4 Hours)
-                    </option>
-                    <option value="Piece-Rate / Sq.Ft / Bag Contract">
-                      Contract (Per Sq.Ft / Bag / Acre)
-                    </option>
-                  </select>
-
-                  <input
-                    type="text"
-                    value={labourBookingForm.sitePin}
-                    onChange={(e) =>
-                      setLabourBookingForm({
-                        ...labourBookingForm,
-                        sitePin: e.target.value
-                      })
-                    }
-                    placeholder="Work-Site Address / Colony..."
-                    className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white text-[10px]"
-                  />
-                </div>
-
+                {/* Labour Worker / Toli Cards with + Add to Cart */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {matchingLabour.map((lw) => {
                     const localRoleTitle = getGeoLabourRoleLabel(
                       lw.skillId,
                       lw.skillLabel
                     );
-                    const isHalf =
-                      labourBookingForm.shiftType.includes("Half-Day");
-                    const baseRate = isHalf ? lw.halfDayWage : lw.fullDayWage;
+                    const chosenShift =
+                      labourShiftMap[lw.id] ||
+                      "Full-Day Shift (09:00 AM - 05:30 PM)";
+                    const chosenWorkers =
+                      labourCountMap[lw.id] ??
+                      (lw.workerType === "MISTRI_TOLI" ? lw.toliCount || 4 : 1);
+                    const isHalf = chosenShift.includes("Half-Day");
+                    const unitRate = isHalf ? lw.halfDayWage : lw.fullDayWage;
                     const estTotalWage =
-                      lw.workerType === "MISTRI_TOLI"
-                        ? baseRate +
-                          Math.max(0, (lw.toliCount || 1) - 1) *
+                      chosenWorkers === 1
+                        ? unitRate
+                        : unitRate +
+                          Math.max(0, chosenWorkers - 1) *
                             (isHalf
                               ? Math.round((lw.helperDailyWage || 500) * 0.55)
-                              : lw.helperDailyWage || 500)
-                        : baseRate;
+                              : lw.helperDailyWage || 500);
 
                     return (
                       <div
@@ -1523,8 +1505,8 @@ function AppContent() {
                           <div>
                             <span className="bg-emerald-500/20 text-emerald-300 text-[8px] font-black px-2 py-0.5 rounded">
                               {lw.workerType === "MISTRI_TOLI"
-                                ? `${geoSlang.groupSlang} (${lw.toliCount} WORKERS)`
-                                : `SINGLE (${lw.toliCount} WORKER)`}{" "}
+                                ? `${geoSlang.groupSlang}`
+                                : "SINGLE WORKER"}{" "}
                               | {lw.experienceYrs} YRS EXP
                             </span>
                             <h4 className="font-black text-white text-xs mt-1">
@@ -1544,58 +1526,71 @@ function AppContent() {
                           </div>
                         </div>
 
-                        <div className="text-[9px] text-slate-300 space-y-0.5 bg-slate-900 p-2 rounded-lg border border-slate-800">
-                          <p>
-                            <strong>Stand:</strong> {geoSlang.standSlang} ({lw.addaLocation})
-                          </p>
-                          <p>
-                            <strong>Tools:</strong> {lw.toolsList} |{" "}
-                            <strong>Perks:</strong> {geoSlang.bhattaSlang}
-                          </p>
+                        <p className="text-[9px] text-slate-400">
+                          Stand: {lw.addaLocation} | Tools: {lw.toolsList}
+                        </p>
+
+                        <div className="grid grid-cols-3 gap-1.5 items-center pt-1">
+                          <select
+                            value={chosenShift}
+                            onChange={(e) =>
+                              setLabourShiftMap({
+                                ...labourShiftMap,
+                                [lw.id]: e.target.value
+                              })
+                            }
+                            className="col-span-2 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-[10px] text-white font-bold"
+                          >
+                            <option value="Full-Day Shift (09:00 AM - 05:30 PM)">
+                              Full-Day (9AM - 5:30PM)
+                            </option>
+                            <option value="Half-Day Shift (4 Hours)">
+                              Half-Day (4 Hours)
+                            </option>
+                            <option value="Contract / Piece-Rate">
+                              Contract / Sq.Ft
+                            </option>
+                          </select>
+                          <div className="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-lg px-2 py-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLabourCountMap({
+                                  ...labourCountMap,
+                                  [lw.id]: Math.max(1, chosenWorkers - 1)
+                                })
+                              }
+                              className="text-amber-300 font-black cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="text-[10px] font-bold">
+                              {chosenWorkers}P
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLabourCountMap({
+                                  ...labourCountMap,
+                                  [lw.id]: chosenWorkers + 1
+                                })
+                              }
+                              className="text-emerald-300 font-black cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
 
                         <button
                           type="button"
-                          onClick={() => {
-                            const sOtp = String(
-                              Math.floor(1000 + Math.random() * 9000)
-                            );
-                            const rOtp = String(
-                              Math.floor(1000 + Math.random() * 9000)
-                            );
-                            const newCall = {
-                              id: `WRK-${Math.floor(
-                                1000 + Math.random() * 9000
-                              )}`,
-                              customerName: currentUser.fullName,
-                              siteAddress: labourBookingForm.sitePin,
-                              skillNeeded: `${lw.workerName} (${localRoleTitle})`,
-                              shiftType: labourBookingForm.shiftType,
-                              hiringMode:
-                                lw.workerType === "MISTRI_TOLI"
-                                  ? `${geoSlang.groupSlang} (${lw.toliCount} Workers)`
-                                  : "Single Worker",
-                              workersCount: lw.toliCount || 1,
-                              toolsRequirement: `Bring Tools (${lw.toolsList})`,
-                              transportNote: "Direct Site Reach / Adda Auto",
-                              teaBhattaNote: `${geoSlang.bhattaSlang} & Muster OTP Active`,
-                              totalDailyWage: estTotalWage,
-                              startWorkOtp: sOtp,
-                              wageReleaseOtp: rOtp,
-                              status: "OPEN_SITE_CALL",
-                              createdAt: new Date().toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit"
-                              })
-                            };
-                            setLabourBookings([newCall, ...labourBookings]);
-                            triggerToast(
-                              `Hired ${lw.workerName} (${localRoleTitle})! Sent to ${geoSlang.standSlang} Portal.`
-                            );
-                          }}
+                          onClick={() =>
+                            handleAddLabourToCart(lw, localRoleTitle)
+                          }
                           className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-2 rounded-xl text-[10px] cursor-pointer shadow"
                         >
-                          Hire {localRoleTitle.split("(")[0]} (Rs.{estTotalWage})
+                          + Add Labour to Cart ({chosenWorkers} Worker
+                          {chosenWorkers > 1 ? "s" : ""} | Rs.{estTotalWage})
                         </button>
                       </div>
                     );
@@ -1604,11 +1599,11 @@ function AppContent() {
               </div>
             )}
 
-            {/* SECTION C: 1-HR HOME SERVICES */}
-            {showServicesSection && (
+            {/* VIEW 3: 1-HR HOME SERVICES */}
+            {selectedCategory === "CAT_SERVICES" && (
               <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-indigo-500/40 space-y-2.5 text-xs">
                 <h3 className="font-black text-indigo-300 text-xs uppercase">
-                  3. {t.services || "1-Hr Home Services"} (Plumber, Electrician, AC, Carpenter)
+                  1-Hr Home Services (Plumber, Electrician, AC, Carpenter)
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {matchingServices.map((sp) => (
@@ -1644,11 +1639,13 @@ function AppContent() {
                               address: activeAddressObj.fullAddress
                             }
                           ]);
-                          setFooterTab("carts");
+                          triggerToast(
+                            `Added ${cleanLabel(sp.maskedId)} to Cart!`
+                          );
                         }}
                         className="bg-indigo-500 text-white font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
                       >
-                        + Book 1-Hr
+                        + Add to Cart
                       </button>
                     </div>
                   ))}
@@ -1656,11 +1653,11 @@ function AppContent() {
               </div>
             )}
 
-            {/* SECTION D: FUNCTION HALLS & FLOWER DECOR */}
-            {showDecorSection && (
+            {/* VIEW 4: DECOR & FUNCTION HALLS */}
+            {selectedCategory === "CAT_DECOR" && (
               <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-amber-500/40 space-y-2.5 text-xs">
                 <h3 className="font-black text-amber-400 text-xs uppercase">
-                  4. {t.decor || "Function Halls & Flower Decor"}
+                  Function Halls &amp; Flower Decoration
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {matchingDecor.map((item) => (
@@ -1686,11 +1683,13 @@ function AppContent() {
                         type="button"
                         onClick={() => {
                           setDecorCart([...decorCart, item]);
-                          setFooterTab("carts");
+                          triggerToast(
+                            `Added "${cleanLabel(item.title)}" to Cart!`
+                          );
                         }}
                         className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[9px] cursor-pointer shrink-0"
                       >
-                        + Decor Cart
+                        + Add to Cart
                       </button>
                     </div>
                   ))}
@@ -1698,11 +1697,11 @@ function AppContent() {
               </div>
             )}
 
-            {/* SECTION E: 2W / 3W / 4W RIDES */}
-            {showTaxiSection && (
+            {/* VIEW 5: 2W / 3W / 4W RIDES & PARCELS */}
+            {selectedCategory === "CAT_TAXI" && (
               <div className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40 space-y-2.5 text-xs text-white">
                 <h3 className="font-black text-teal-300 uppercase">
-                  5. {t.taxi || "2W Bike, 3W Auto & 4W Mini-Truck Booking"}
+                  2W Bike, 3W Auto &amp; 4W Mini-Truck Booking
                 </h3>
                 <div className="grid grid-cols-3 gap-1.5">
                   {[
@@ -1741,35 +1740,108 @@ function AppContent() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    const newJob = {
-                      id: `RDR-${activeVehCode}-${Math.floor(
-                        100 + Math.random() * 900
-                      )}`,
-                      requiredVehicleCode: activeVehCode,
-                      vehicleLabel: chosenRule.label,
-                      weightKg: wKg,
-                      badge: `${chosenRule.shortLabel} (${wKg} kg | ${customerBookingForm.forWhom})`,
-                      bookedBy: `Customer: ${currentUser.fullName} (Chose ${chosenRule.shortLabel})`,
-                      pickupPin: customerBookingForm.pickupPin,
-                      dropPin: customerBookingForm.dropPin,
-                      distFromCaptainKm: 0.6,
-                      distanceKm: customerBookingForm.distanceKm,
-                      captainPayout: calculatedFare,
-                      secretOtp: String(
-                        Math.floor(1000 + Math.random() * 9000)
-                      ),
-                      status: "OPEN_ON_RADAR",
-                      paymentReqStatus: "PENDING_TRIP_COMPLETION"
-                    };
-                    setCaptainRadarJobs([newJob, ...captainRadarJobs]);
-                    triggerToast(
-                      `Allocated Ride/Parcel #${newJob.id} strictly to ${chosenRule.shortLabel} Captains!`
-                    );
-                  }}
+                  onClick={() =>
+                    requireAuthAtCheckout(() => {
+                      const newJob = {
+                        id: `RDR-${activeVehCode}-${Math.floor(
+                          100 + Math.random() * 900
+                        )}`,
+                        requiredVehicleCode: activeVehCode,
+                        vehicleLabel: chosenRule.label,
+                        weightKg: wKg,
+                        badge: `${chosenRule.shortLabel} (${wKg} kg)`,
+                        bookedBy: `Customer: ${currentUser.fullName}`,
+                        pickupPin: customerBookingForm.pickupPin,
+                        dropPin: customerBookingForm.dropPin,
+                        distFromCaptainKm: 0.6,
+                        distanceKm: customerBookingForm.distanceKm,
+                        captainPayout: calculatedFare,
+                        secretOtp: String(
+                          Math.floor(1000 + Math.random() * 9000)
+                        ),
+                        status: "OPEN_ON_RADAR",
+                        paymentReqStatus: "PENDING_TRIP_COMPLETION"
+                      };
+                      setCaptainRadarJobs([newJob, ...captainRadarJobs]);
+                      triggerToast(
+                        `Booked ${chosenRule.shortLabel} #${newJob.id}!`
+                      );
+                    })
+                  }
                   className="w-full bg-teal-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
                 >
-                  Book {chosenRule.shortLabel} Captain Now (Rs.{calculatedFare})
+                  Book {chosenRule.shortLabel} Now (Rs.{calculatedFare})
+                </button>
+              </div>
+            )}
+
+            {/* VIEW 6: KISAN MANDI */}
+            {selectedCategory === "CAT_MANDI" && (
+              <div className="bg-slate-900 p-3.5 rounded-2xl border border-purple-500/40 space-y-2.5 text-xs text-white">
+                <h3 className="font-black text-purple-300 uppercase">
+                  Direct Kisan Mandi &amp; Farm Produce
+                </h3>
+                {customPortals.map((cp) =>
+                  (cp.items || []).map((it) => (
+                    <div
+                      key={it.id}
+                      className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
+                    >
+                      <div>
+                        <p className="font-bold text-white text-xs">
+                          {cleanLabel(it.title)}
+                        </p>
+                        <p className="text-[10px] text-amber-300">
+                          Rs.{it.price} ({it.unit})
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMerchantCart([
+                            ...merchantCart,
+                            {
+                              productId: it.id,
+                              variantId: "v1",
+                              name: cleanLabel(it.title),
+                              merchantId: cp.id,
+                              merchantName: cleanLabel(cp.title),
+                              price: Number(it.price) || 199,
+                              weightGrams: 1000,
+                              qty: 1
+                            }
+                          ]);
+                          triggerToast(`Added ${cleanLabel(it.title)} to Cart!`);
+                        }}
+                        className="bg-emerald-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
+                      >
+                        + Add to Cart
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Sticky Bottom Checkout Pill whenever Cart has items or labourers */}
+            {totalCartCount > 0 && (
+              <div className="sticky bottom-2 z-30 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setFooterTab("carts")}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-2xl shadow-2xl border-2 border-amber-400 flex justify-between items-center cursor-pointer"
+                >
+                  <div className="text-left">
+                    <span className="text-xs font-black block">
+                      {totalCartCount} Item(s) / Worker(s) in Cart
+                    </span>
+                    <span className="text-[9px] text-amber-200 font-bold block">
+                      Tap to Review Cart &amp; Proceed to Checkout
+                    </span>
+                  </div>
+                  <span className="bg-amber-400 text-slate-950 font-black px-3 py-1 rounded-xl text-[10px]">
+                    Go to Checkout &rarr;
+                  </span>
                 </button>
               </div>
             )}
@@ -1815,36 +1887,39 @@ function AppContent() {
                   }}
                   className="w-full bg-indigo-500 text-white font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
                 >
-                  + Book 1-Hr Slot ({serviceFilterSlot}) | Rs.{sp.visitingFee} Escrow
+                  + Add 1-Hr Slot to Cart (Rs.{sp.visitingFee})
                 </button>
               </div>
             ))}
           </div>
         )}
 
+        {/* ================================================================ */}
+        {/* UNIFIED CARTS TAB (STORE ITEMS + LABOUR + SERVICES + DECOR)      */}
+        {/* Triggers Login / Sign-Up Gate at Checkout if Not Signed In!      */}
+        {/* ================================================================ */}
         {footerTab === "carts" && (
           <div className="space-y-3 text-xs text-white">
-            {merchantCart.length === 0 &&
-              serviceCart.length === 0 &&
-              decorCart.length === 0 && (
-                <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center space-y-2">
-                  <p className="font-bold text-slate-300">
-                    Your Mega Market Cart is currently empty.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setFooterTab("home")}
-                    className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl text-[10px] cursor-pointer"
-                  >
-                    Explore Mega Market
-                  </button>
-                </div>
-              )}
+            {totalCartCount === 0 && (
+              <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center space-y-2">
+                <p className="font-bold text-slate-300">
+                  Your Cart is currently empty.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setFooterTab("home")}
+                  className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl text-[10px] cursor-pointer"
+                >
+                  Browse Categories &amp; Add Items
+                </button>
+              </div>
+            )}
 
+            {/* 1. Store Products Cart */}
             {merchantCart.length > 0 && (
               <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/40 space-y-2.5">
                 <h4 className="font-black text-emerald-400">
-                  1. Unified Store Shopping Cart ({cartWeightKg} kg Total Load)
+                  1. Store Shopping Cart ({cartWeightKg} kg Total Load)
                 </h4>
                 {merchantCart.map((it, idx) => (
                   <div
@@ -1867,15 +1942,104 @@ function AppContent() {
                 <button
                   type="button"
                   onClick={() =>
-                    handlePlaceOrderForMerchantApproval(
-                      effectiveCartVehCode,
-                      cartDeliveryFee,
-                      cartWeightKg
+                    requireAuthAtCheckout(() =>
+                      executeMerchantOrderCheckout(
+                        effectiveCartVehCode,
+                        cartDeliveryFee,
+                        cartWeightKg
+                      )
                     )
                   }
                   className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
                 >
-                  Submit Order to Merchant &amp; {cartVehRule.shortLabel} Captain (Delivery Rs.{cartDeliveryFee})
+                  Proceed to Checkout &amp; Place Store Order (Delivery Rs.{cartDeliveryFee}) &rarr;
+                </button>
+              </div>
+            )}
+
+            {/* 2. Labour & Mistri Cart */}
+            {labourCart.length > 0 && (
+              <div className="bg-slate-900 p-3.5 rounded-2xl border-2 border-amber-400 space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-black text-amber-300">
+                    2. {geoSlang.standSlang} Booking Cart ({labourCart.length})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setLabourCart([])}
+                    className="text-[9px] text-rose-300 underline cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+                {labourCart.map((lc) => (
+                  <div
+                    key={lc.cartItemId}
+                    className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
+                  >
+                    <div>
+                      <p className="font-bold text-white">
+                        {lc.workerName} ({lc.workersCount} Worker
+                        {lc.workersCount > 1 ? "s" : ""})
+                      </p>
+                      <p className="text-[10px] text-amber-300">
+                        {lc.skillLabel} | {lc.shiftType}
+                      </p>
+                    </div>
+                    <span className="font-black text-emerald-400">
+                      Rs.{lc.totalDailyWage}
+                    </span>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    requireAuthAtCheckout(() => executeLabourOrderCheckout())
+                  }
+                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
+                >
+                  Proceed to Checkout &amp; Confirm Labour Booking (Rs.
+                  {labourCart.reduce((s, l) => s + l.totalDailyWage, 0)}) &rarr;
+                </button>
+              </div>
+            )}
+
+            {/* 3. 1-Hr Home Service Cart */}
+            {serviceCart.length > 0 && (
+              <div className="bg-slate-900 p-3 rounded-2xl border border-indigo-500/40 space-y-2">
+                <h4 className="font-black text-indigo-300">
+                  3. 1-Hr Service Escrow Cart
+                </h4>
+                {serviceCart.map((c) => (
+                  <div
+                    key={c.cartItemId}
+                    className="bg-slate-950 p-2 rounded-xl flex justify-between"
+                  >
+                    <span>
+                      {cleanLabel(c.maskedId)} ({c.bookedSlot})
+                    </span>
+                    <span className="text-amber-300 font-bold">
+                      Rs.{c.visitingFee}
+                    </span>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    requireAuthAtCheckout(() =>
+                      setPendingUpiPayment({
+                        type: "SERVICE_ESCROW",
+                        title: "Visiting Fee Escrow",
+                        amount: serviceCart.reduce(
+                          (s, i) => s + i.visitingFee,
+                          0
+                        )
+                      })
+                    )
+                  }
+                  className="w-full bg-indigo-500 text-white font-black py-2.5 rounded-xl cursor-pointer"
+                >
+                  Checkout &amp; Pay Visiting Fee via UPI &rarr;
                 </button>
               </div>
             )}
@@ -1884,6 +2048,31 @@ function AppContent() {
 
         {footerTab === "orders" && (
           <div className="space-y-3">
+            {labourBookings.length > 0 && (
+              <div className="bg-slate-900 p-3 rounded-2xl border border-amber-400/50 space-y-2 text-xs text-white">
+                <h4 className="font-black text-amber-300">
+                  Active Labour &amp; Work-Site Bookings ({labourBookings.length})
+                </h4>
+                {labourBookings.map((lb) => (
+                  <div
+                    key={lb.id}
+                    className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
+                  >
+                    <div>
+                      <p className="font-bold text-white">
+                        #{lb.id} | {lb.skillNeeded}
+                      </p>
+                      <p className="text-[10px] text-slate-400">
+                        Start OTP: <strong className="text-emerald-400">{lb.startWorkOtp}</strong> | Release OTP: <strong className="text-amber-300">{lb.wageReleaseOtp}</strong>
+                      </p>
+                    </div>
+                    <span className="font-black text-emerald-400">
+                      Rs.{lb.totalDailyWage}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             <OrdersHistoryAndInvoice
               orders={orders}
               serviceBookings={serviceBookings}
@@ -1918,7 +2107,7 @@ function AppContent() {
   const switchPartnerToConsumerShopping = (partnerRoleName) => {
     setPersonalShoppingFromPartner(partnerRoleName);
     setActivePortal("customer");
-    setSelectedCategory("ALL_MARKET");
+    setSelectedCategory("daily_needs");
     setFooterTab("home");
   };
 
@@ -1926,6 +2115,11 @@ function AppContent() {
     <OwnerAccountProfile
       currentUser={currentUser}
       setCurrentUser={setCurrentUser}
+      isAuthenticated={isAuthenticated}
+      onOpenAuthModal={(mode) => {
+        setAuthModalMode(mode || "login");
+        setAuthModalOpen(true);
+      }}
       activePortal={activePortal}
       setActivePortal={(nextPortal) => {
         if (nextPortal === "customer")
@@ -1940,7 +2134,10 @@ function AppContent() {
       setAccountSecurity={setAccountSecurity}
       onLockApp={() => {
         localStorage.setItem("we4all_persistent_session_v4", "logged_out");
-        setOnboardingStep("auth");
+        setIsAuthenticated(false);
+        setActivePortal("customer");
+        setFooterTab("home");
+        triggerToast("Signed out. Returned to Consumer Shopping Mode.");
       }}
       brightTheme={brightTheme}
       setBrightTheme={setBrightTheme}
@@ -2075,7 +2272,7 @@ function AppContent() {
   const renderRiderPortal = () => (
     <MobilePhoneShell
       title="5. Delivery Captain"
-      badge={`v3.0.3 (${currentUser?.vehicleCode || "2W"})`}
+      badge={`v3.0.4 (${currentUser?.vehicleCode || "2W"})`}
       activePortal="rider"
       footerTab={footerTab}
       setFooterTab={setFooterTab}
@@ -2305,27 +2502,14 @@ function AppContent() {
             setAppUpdateInfo={setAppUpdateInfo}
             onBroadcastOtaPushNotification={(nextInfo) => {
               saveCloudAndLocalState({ appUpdateInfo: nextInfo });
-              setStartupUpdatePrompt({
-                currentVersion: appUpdateInfo?.currentVersion || "3.0.2",
-                latestAvailableVersion: nextInfo.latestAvailableVersion,
-                releaseNotes: nextInfo.releaseNotes
-              });
-              triggerToast(
-                `OTA v${nextInfo.latestAvailableVersion} broadcasted!`
-              );
+              handleRunOtaUpdate(nextInfo.latestAvailableVersion);
             }}
             onLaunchMultiPhoneView={() => {
-              setOnboardingStep("app");
               setActivePortal("split");
               setViewMode("mobile_app");
             }}
             onTeleportToScreen={(flowId) => {
               setViewMode("mobile_app");
-              if (flowId === "auth_vault") {
-                setOnboardingStep("auth");
-                return;
-              }
-              setOnboardingStep("app");
               setFooterTab("home");
               if (flowId === "portal_rider") setActivePortal("rider");
               else if (flowId === "portal_decorator")
@@ -2336,7 +2520,7 @@ function AppContent() {
                 setActivePortal("merchant");
               else if (flowId === "portal_customer") {
                 setActivePortal("customer");
-                setSelectedCategory("ALL_MARKET");
+                setSelectedCategory("daily_needs");
               } else {
                 setActivePortal(flowId);
               }
@@ -2347,29 +2531,14 @@ function AppContent() {
         )
       ) : (
         <main className="flex-1 flex flex-col justify-center items-center w-full">
-          {onboardingStep === "auth" && renderAuthVault()}
-          {onboardingStep === "app" &&
-            activePortal === "customer" &&
-            renderCustomerPortal()}
-          {onboardingStep === "app" &&
-            activePortal === "merchant" &&
-            renderMerchantPortal()}
-          {onboardingStep === "app" &&
-            activePortal === "service_provider" &&
-            renderServiceProviderPortal()}
-          {onboardingStep === "app" &&
-            activePortal === "decorator" &&
-            renderDecoratorPortal()}
-          {onboardingStep === "app" &&
-            activePortal === "rider" &&
-            renderRiderPortal()}
-          {onboardingStep === "app" &&
-            activePortal === "labour_portal" &&
-            renderLabourPortal()}
-          {onboardingStep === "app" &&
-            activeDynamicPortal &&
-            renderDynamicCustomPortal(activeDynamicPortal)}
-          {onboardingStep === "app" && activePortal === "split" && (
+          {activePortal === "customer" && renderCustomerPortal()}
+          {activePortal === "merchant" && renderMerchantPortal()}
+          {activePortal === "service_provider" && renderServiceProviderPortal()}
+          {activePortal === "decorator" && renderDecoratorPortal()}
+          {activePortal === "rider" && renderRiderPortal()}
+          {activePortal === "labour_portal" && renderLabourPortal()}
+          {activeDynamicPortal && renderDynamicCustomPortal(activeDynamicPortal)}
+          {activePortal === "split" && (
             <div className="w-full flex overflow-x-auto gap-4 p-4 snap-x snap-mandatory">
               {splitScreens.map((p, i) => (
                 <div
@@ -2393,49 +2562,317 @@ function AppContent() {
         </main>
       )}
 
-      {/* AUTOMATIC STARTUP OTA UPDATE PROMPT (SKIPPED AUTOMATICALLY IF ALREADY ON LATEST) */}
-      {startupUpdatePrompt && !otaProgress && (
-        <div className="fixed inset-0 bg-black/85 z-[95] flex items-center justify-center p-4">
-          <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-sm w-full p-5 space-y-3 text-xs text-white shadow-2xl">
+      {/* ==================================================================== */}
+      {/* REQ 6, 7 & 8: CHECKOUT & ACCOUNT LOGIN / SIGN-UP MODAL               */}
+      {/* Existing User/Partner -> Login | New User/Partner -> Sign-Up Form    */}
+      {/* ==================================================================== */}
+      {authModalOpen && (
+        <div className="fixed inset-0 bg-black/90 z-[95] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-md w-full p-5 space-y-3 text-xs text-white shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <span className="bg-emerald-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px] uppercase">
-                AUTOMATIC STARTUP UPDATE CHECK
-              </span>
-              <span className="text-[10px] font-mono text-amber-300 font-bold">
-                v{startupUpdatePrompt.currentVersion} &rarr; v
-                {startupUpdatePrompt.latestAvailableVersion}
-              </span>
-            </div>
-            <h3 className="font-black text-emerald-400 text-sm">
-              New WE4ALL Update v{startupUpdatePrompt.latestAvailableVersion} Available!
-            </h3>
-            <p className="text-[11px] text-slate-300 leading-relaxed">
-              {startupUpdatePrompt.releaseNotes}
-            </p>
-            <div className="flex gap-2 pt-1">
+              <h3 className="font-black text-amber-400 text-sm">
+                WE4ALL LOGIN &amp; PARTNER REGISTRATION GATE
+              </h3>
               <button
                 type="button"
-                onClick={() =>
-                  handleRunOtaUpdate(startupUpdatePrompt.latestAvailableVersion)
-                }
-                className="flex-1 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow-lg"
+                onClick={() => {
+                  setAuthModalOpen(false);
+                  setPendingCheckoutCallback(null);
+                }}
+                className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-xl font-black cursor-pointer"
               >
-                Accept &amp; Update Now
+                X
+              </button>
+            </div>
+
+            {/* 2 Mode Switcher: Existing Login vs New Sign Up */}
+            <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-2xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setAuthModalMode("login")}
+                className={`py-2 rounded-xl font-black cursor-pointer ${
+                  authModalMode === "login"
+                    ? "bg-emerald-400 text-slate-950"
+                    : "text-slate-300"
+                }`}
+              >
+                1. Existing User (Login)
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  localStorage.setItem(
-                    "we4all_installed_ota_ver_v4",
-                    startupUpdatePrompt.latestAvailableVersion
-                  );
-                  setStartupUpdatePrompt(null);
+                  setAuthModalMode("signup");
+                  setRegStep(1);
                 }}
-                className="bg-slate-800 text-slate-300 font-bold px-3.5 py-2.5 rounded-xl cursor-pointer"
+                className={`py-2 rounded-xl font-black cursor-pointer ${
+                  authModalMode === "signup"
+                    ? "bg-amber-400 text-slate-950"
+                    : "text-slate-300"
+                }`}
               >
-                Skip
+                2. New User (Sign Up)
               </button>
             </div>
+
+            {/* Role Selector (Consumer, Merchant, Service Pro, Decorator, Captain, Labour) */}
+            <div className="space-y-1">
+              <label className="block text-[10px] text-slate-300 font-bold">
+                Select Account / Portal Type:
+              </label>
+              <select
+                value={selectedRole}
+                onChange={(e) => {
+                  setSelectedRole(e.target.value);
+                  setRegForm({ ...regForm, role: e.target.value });
+                }}
+                className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl p-2 text-white font-bold"
+              >
+                <option value="customer">1. Consumer (Shopping &amp; Checkout)</option>
+                <option value="merchant">2. Product Merchant (Supermart / Kirana)</option>
+                <option value="service_provider">3. 1-Hr Home Service Provider</option>
+                <option value="decorator">4. Flower Decorator &amp; Function Halls</option>
+                <option value="rider">5. Delivery Captain (2W / 3W / 4W)</option>
+                <option value="labour_portal">
+                  6. {geoSlang.standSlang} Worker / Mistri
+                </option>
+              </select>
+            </div>
+
+            {authModalMode === "login" ? (
+              <div className="space-y-2.5">
+                <input
+                  type="text"
+                  value={loginInput.phoneOrName}
+                  onChange={(e) =>
+                    setLoginInput({ ...loginInput, phoneOrName: e.target.value })
+                  }
+                  placeholder="Registered Mobile Number or Name"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
+                />
+                <input
+                  type="password"
+                  maxLength={4}
+                  value={loginInput.pin}
+                  onChange={(e) =>
+                    setLoginInput({ ...loginInput, pin: e.target.value })
+                  }
+                  placeholder="4-Digit Security PIN (Default: 1990)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await verifyPhoneHardwareBiometric(
+                      loginInput.phoneOrName || currentUser.fullName
+                    );
+                    localStorage.setItem("we4all_persistent_session_v4", "active");
+                    setIsAuthenticated(true);
+                    if (loginInput.phoneOrName.trim()) {
+                      setCurrentUser({
+                        ...currentUser,
+                        fullName: loginInput.phoneOrName.trim(),
+                        role: selectedRole
+                      });
+                    }
+                    setAuthModalOpen(false);
+                    if (pendingCheckoutCallback) {
+                      const cb = pendingCheckoutCallback;
+                      setPendingCheckoutCallback(null);
+                      cb();
+                    } else {
+                      setActivePortal(selectedRole);
+                      setFooterTab("home");
+                    }
+                    triggerToast(`Logged in as ${selectedRole.toUpperCase()}!`);
+                  }}
+                  className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
+                >
+                  Verify Biometric / PIN &amp; Login Now &rarr;
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="flex justify-between items-center text-[10px] text-amber-300 font-bold">
+                  <span>3-Step Registration Form ({selectedRole.toUpperCase()})</span>
+                  <span>Step {regStep} of 3</span>
+                </div>
+
+                {regStep === 1 && (
+                  <div className="space-y-2">
+                    <div className="flex gap-1.5">
+                      <input
+                        type="tel"
+                        maxLength={10}
+                        value={regForm.phone}
+                        onChange={(e) =>
+                          setRegForm({ ...regForm, phone: e.target.value })
+                        }
+                        placeholder="Enter 10-Digit Mobile Number"
+                        className="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const otp = String(
+                            Math.floor(1000 + Math.random() * 9000)
+                          );
+                          setRegForm({ ...regForm, generatedOtp: otp });
+                          triggerToast(`Registration OTP Sent: ${otp}`);
+                        }}
+                        className="bg-amber-400 text-slate-950 font-black px-3 rounded-xl cursor-pointer"
+                      >
+                        Send OTP
+                      </button>
+                    </div>
+                    {regForm.generatedOtp && (
+                      <button
+                        type="button"
+                        onClick={() => setRegStep(2)}
+                        className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
+                      >
+                        Verify OTP ({regForm.generatedOtp}) &amp; Continue &rarr;
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {regStep === 2 && (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={regForm.fullName}
+                      onChange={(e) =>
+                        setRegForm({ ...regForm, fullName: e.target.value })
+                      }
+                      placeholder="Full Legal / Shop / Partner Name"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
+                    />
+                    <input
+                      type="text"
+                      value={regForm.upiId}
+                      onChange={(e) =>
+                        setRegForm({ ...regForm, upiId: e.target.value })
+                      }
+                      placeholder="UPI ID (e.g. name@ybl)"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setRegStep(3)}
+                      className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
+                    >
+                      Continue to Step 3 (Digital Signature &amp; T&amp;C) &rarr;
+                    </button>
+                  </div>
+                )}
+
+                {regStep === 3 && (
+                  <div className="space-y-2">
+                    <canvas
+                      ref={sigCanvasRef}
+                      width={310}
+                      height={65}
+                      onMouseDown={startSigDraw}
+                      onMouseMove={moveSigDraw}
+                      onMouseUp={endSigDraw}
+                      onTouchStart={startSigDraw}
+                      onTouchMove={moveSigDraw}
+                      onTouchEnd={endSigDraw}
+                      className="w-full h-[65px] bg-white rounded-xl border-2 border-emerald-400 cursor-crosshair touch-none"
+                    />
+                    <input
+                      type="text"
+                      value={regForm.digitalSignatureText}
+                      onChange={(e) =>
+                        setRegForm({
+                          ...regForm,
+                          digitalSignatureText: e.target.value
+                        })
+                      }
+                      placeholder="Or type Full Legal Name as Digital Signature"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-white text-[11px] font-serif italic"
+                    />
+                    <label className="flex items-start gap-2 bg-emerald-950/40 p-2 rounded-xl border border-emerald-500/40 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={regForm.tcAccepted}
+                        onChange={(e) =>
+                          setRegForm({ ...regForm, tcAccepted: e.target.checked })
+                        }
+                        className="mt-0.5"
+                      />
+                      <span className="text-[10px] text-emerald-200 font-bold">
+                        I accept the WE4ALL Platform Terms &amp; Conditions.
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newUser = {
+                          id: Date.now(),
+                          fullName:
+                            regForm.fullName.trim() || "Verified Member",
+                          businessName:
+                            regForm.fullName.trim() || "Verified Shop",
+                          providerName:
+                            regForm.fullName.trim() || "Verified Pro",
+                          captainName:
+                            regForm.fullName.trim() || "Verified Captain",
+                          phone: regForm.phone.trim() || "9848055112",
+                          role: selectedRole,
+                          vehicleCode: regForm.vehicleCode || "2W",
+                          upiId: regForm.upiId || "member@ybl",
+                          digitalSignatureText:
+                            regForm.digitalSignatureText ||
+                            regForm.fullName ||
+                            "Signed",
+                          tcAccepted: true,
+                          acceptedAt: new Date().toLocaleString(),
+                          status: "Pending_Admin_Approval"
+                        };
+                        if (selectedRole === "merchant") {
+                          setPendingMerchants([newUser, ...pendingMerchants]);
+                        } else if (selectedRole === "service_provider") {
+                          setPendingServiceProviders([
+                            newUser,
+                            ...pendingServiceProviders
+                          ]);
+                        } else if (selectedRole === "decorator") {
+                          setPendingDecorators([newUser, ...pendingDecorators]);
+                        } else if (selectedRole === "rider") {
+                          setPendingRiders([newUser, ...pendingRiders]);
+                        }
+                        localStorage.setItem(
+                          "we4all_persistent_session_v4",
+                          "active"
+                        );
+                        localStorage.setItem(
+                          "we4all_device_bound_user_v4",
+                          JSON.stringify(newUser)
+                        );
+                        setCurrentUser(newUser);
+                        setIsAuthenticated(true);
+                        setAuthModalOpen(false);
+                        if (pendingCheckoutCallback) {
+                          const cb = pendingCheckoutCallback;
+                          setPendingCheckoutCallback(null);
+                          cb();
+                        } else {
+                          setActivePortal(selectedRole);
+                          setFooterTab("home");
+                        }
+                        triggerToast(
+                          `Signed up & logged in as ${newUser.fullName}!`
+                        );
+                      }}
+                      className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
+                    >
+                      Complete Sign-Up &amp; Continue &rarr;
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2462,9 +2899,6 @@ function AppContent() {
               </button>
             </div>
             <div className="bg-slate-950 p-3 rounded-2xl border border-rose-500/40 space-y-1">
-              <p className="text-[10px] font-bold text-rose-200">
-                What Happened:
-              </p>
               <p className="text-[11px] font-mono text-white">
                 {diagnosticErrorModal.details}
               </p>
@@ -2488,7 +2922,7 @@ function AppContent() {
                 onClick={() => setDiagnosticErrorModal(null)}
                 className="flex-1 bg-slate-800 text-white font-bold py-2.5 rounded-xl cursor-pointer"
               >
-                Dismiss Popup
+                Dismiss
               </button>
             </div>
           </div>
@@ -2499,7 +2933,7 @@ function AppContent() {
         <div className="fixed inset-0 bg-black/90 z-[110] flex items-center justify-center p-6">
           <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-sm w-full p-5 text-center space-y-3 text-xs text-white">
             <h3 className="font-black text-emerald-400 text-sm">
-              Installing In-App Update ({otaProgress.pct}%)
+              Auto-Updating WE4ALL ({otaProgress.pct}%)
             </h3>
             <p className="text-slate-300">{otaProgress.msg}</p>
           </div>

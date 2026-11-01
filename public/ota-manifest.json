@@ -1,9 +1,9 @@
 {
-  "currentVersion": "3.0.2",
-  "latestAvailableVersion": "3.0.3",
+  "currentVersion": "3.0.3",
+  "latestAvailableVersion": "3.0.4",
   "updateAvailable": true,
-  "publishedAt": "2026-11-01T09:00:00Z",
+  "publishedAt": "2026-11-01T09:10:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.3",
-  "releaseNotes": "WE4ALL v3.0.3: Geo-Location Regional Slang Titles (Telangana, Maharashtra, Karnataka, Tamil Nadu & Hindi), Default English Install, Account-Only Language Switcher & Labour Adda Hub."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.4",
+  "releaseNotes": "WE4ALL v3.0.4: Default Consumer Console on Install, Visual Category Icon Grid with Labour Cart Ordering, Checkout Login/Sign-Up Gate & Silent Auto-Update on App Open."
 }

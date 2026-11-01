@@ -9,6 +9,8 @@ import {
 export default function OwnerAccountProfile({
   currentUser,
   setCurrentUser,
+  isAuthenticated = true,
+  onOpenAuthModal = () => {},
   activePortal,
   setActivePortal,
   activeAddressObj,
@@ -48,63 +50,84 @@ export default function OwnerAccountProfile({
 
   return (
     <div className="space-y-3 text-xs text-white">
-      {/* 1. PROFILE IDENTITY & PORTAL ROLE SWITCHER */}
-      <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/40 space-y-2.5">
+      {/* 1. DIRECT LOGIN / REGISTRATION HUB FOR MERCHANTS, PARTNERS & CONSUMERS */}
+      <div className="bg-slate-900 p-3.5 rounded-2xl border-2 border-emerald-400 space-y-2.5 shadow-xl">
         <div className="flex justify-between items-start gap-2">
           <div>
-            <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-[9px] font-black px-2 py-0.5 rounded uppercase">
-              VERIFIED ACCOUNT | {activePortal.replace("_", " ")}
+            <span className="bg-emerald-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded uppercase">
+              {isAuthenticated
+                ? `SIGNED IN (${activePortal.replace("_", " ").toUpperCase()})`
+                : "GUEST SHOPPING MODE"}
             </span>
             <h3 className="font-black text-white text-sm mt-1">
-              {currentUser?.fullName || "Khoday Anvesh"}
+              {isAuthenticated
+                ? currentUser?.fullName || "Khoday Anvesh"
+                : "Welcome to WE4ALL Super-App"}
             </h3>
-            <p className="text-[10px] text-slate-400">
-              Mobile: +91 {currentUser?.phone || "9848011223"} | UPI:{" "}
-              <strong className="text-amber-300">
-                {currentUser?.upiId || "khodayanvesh@ybl"}
-              </strong>
+            <p className="text-[10px] text-slate-300">
+              {isAuthenticated
+                ? `Mobile: +91 ${currentUser?.phone || "9848011223"} | UPI: ${
+                    currentUser?.upiId || "khodayanvesh@ybl"
+                  }`
+                : "Sign in as an existing Customer/Merchant/Partner or Sign Up for a new portal account."}
             </p>
           </div>
           <button
             type="button"
             onClick={() => setBrightTheme(!brightTheme)}
-            className="bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
+            className="bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1.5 rounded-xl text-[10px] font-black cursor-pointer shrink-0"
           >
             {brightTheme ? "Dark Mode" : "Bright Mode"}
           </button>
         </div>
 
+        {/* Direct Login OR New Sign-Up Buttons for Any Portal */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => onOpenAuthModal("login")}
+            className="bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black py-2.5 px-3 rounded-xl text-[10px] cursor-pointer shadow"
+          >
+            Existing User / Partner &rarr; Login
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenAuthModal("signup")}
+            className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-2.5 px-3 rounded-xl text-[10px] cursor-pointer shadow"
+          >
+            New User / Partner &rarr; Sign Up
+          </button>
+        </div>
+
+        {/* Quick Portal Switcher for Logged-In Partners */}
         <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
           <label className="block text-[10px] text-emerald-300 font-black">
-            Switch Active Portal / Business Console:
+            Open Partner Portal / Switch Active Console:
           </label>
           <select
             value={activePortal}
             onChange={(e) => setActivePortal(e.target.value)}
             className="w-full bg-slate-900 border border-emerald-500/50 rounded-xl p-2 text-white font-bold text-xs cursor-pointer"
           >
-            <option value="customer">1. Mega Super Joint Market (Customer)</option>
+            <option value="customer">1. Consumer Super-App (Default Shopping)</option>
             <option value="merchant">2. Product Merchant Portal (Kirana / Supermart)</option>
             <option value="service_provider">3. 1-Hr Home Service Provider Portal</option>
             <option value="decorator">4. Flower Decorator &amp; Function Halls</option>
             <option value="rider">5. Delivery Captain Portal (2W / 3W / 4W)</option>
-            <option value="labour_portal">6. Local Labour &amp; Work-Site Portal (Mistri / Adda)</option>
+            <option value="labour_portal">6. Local Labour &amp; Mistri Adda Portal</option>
           </select>
         </div>
       </div>
 
-      {/* 2. LANGUAGE & GEO-LOCATION LOCAL SLANG CONTROLLER (IN ACCOUNT SECTION ONLY!) */}
+      {/* 2. LANGUAGE & GEO-LOCATION LOCAL SLANG CONTROLLER */}
       <div className="bg-slate-900 p-3.5 rounded-2xl border-2 border-amber-400/70 space-y-2.5">
         <div>
           <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px]">
             LOCAL LANGUAGE &amp; GEO-SLANG ENGINE
           </span>
           <h4 className="font-black text-amber-300 text-xs mt-1">
-            App Language &amp; State-Wise Local Market Terminology
+            App Language &amp; Regional Local Slang Titles
           </h4>
-          <p className="text-[10px] text-slate-300">
-            Default installation language is <strong>English</strong>. Changing language or geo-region automatically updates category names, sub-categories, and worker roles to local slang (e.g. Gavandi, Bigari, Gare Mestri, Kothanar, Rajmistri).
-          </p>
         </div>
 
         <div className="space-y-1">
@@ -143,7 +166,7 @@ export default function OwnerAccountProfile({
 
         <div className="space-y-1 pt-1">
           <label className="block text-[10px] text-emerald-300 font-bold">
-            2. Active Geo-Location Local Slang Dialect (Categories &amp; Roles):
+            2. Active Geo-Location Regional Slang (Categories &amp; Roles):
           </label>
           <select
             value={geoRegion}
@@ -166,14 +189,9 @@ export default function OwnerAccountProfile({
           </select>
         </div>
 
-        {/* Live Preview of Local Slang Terms Active in Current Region */}
         <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1 text-[10px]">
           <p className="font-black text-amber-300">
             Active Local Slang in {activeGeoSlang.stateName}:
-          </p>
-          <p className="text-slate-300">
-            <strong>Stand:</strong> {activeGeoSlang.standSlang} |{" "}
-            <strong>Group:</strong> {activeGeoSlang.groupSlang}
           </p>
           <p className="text-emerald-300">
             <strong>Mason:</strong> {activeGeoSlang.labourRoles.mason_mistri}
@@ -192,12 +210,12 @@ export default function OwnerAccountProfile({
         <div className="flex justify-between items-center">
           <div>
             <h4 className="font-black text-teal-300 text-xs">
-              In-App Software Updater (OTA)
+              In-App Software Updater (Auto-Syncs on Startup)
             </h4>
             <p className="text-[10px] text-slate-400">
-              Installed: <strong>v{appUpdateInfo?.currentVersion || "3.0.3"}</strong> | Latest Cloud:{" "}
+              Installed: <strong>v{appUpdateInfo?.currentVersion || "3.0.4"}</strong> | Latest Cloud:{" "}
               <strong className="text-emerald-400">
-                v{appUpdateInfo?.latestAvailableVersion || "3.0.3"}
+                v{appUpdateInfo?.latestAvailableVersion || "3.0.4"}
               </strong>
             </p>
           </div>
@@ -216,7 +234,7 @@ export default function OwnerAccountProfile({
             onClick={onRunOtaUpdate}
             className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer shadow"
           >
-            Download &amp; Install v{appUpdateInfo?.latestAvailableVersion} Now
+            Install Update v{appUpdateInfo?.latestAvailableVersion} Now
           </button>
         )}
       </div>
@@ -275,14 +293,15 @@ export default function OwnerAccountProfile({
         )}
       </div>
 
-      {/* 5. EXPLICIT LOGOUT BUTTON (PERSISTENT SESSION UNTIL CLICKED) */}
-      <button
-        type="button"
-        onClick={onLockApp}
-        className="w-full bg-rose-600 hover:bg-rose-500 text-white font-black py-2.5 rounded-2xl cursor-pointer shadow"
-      >
-        {t.logoutBtn || "Sign Out / Logout"}
-      </button>
+      {isAuthenticated && (
+        <button
+          type="button"
+          onClick={onLockApp}
+          className="w-full bg-rose-600 hover:bg-rose-500 text-white font-black py-2.5 rounded-2xl cursor-pointer shadow"
+        >
+          {t.logoutBtn || "Sign Out / Logout"}
+        </button>
+      )}
     </div>
   );
 }
