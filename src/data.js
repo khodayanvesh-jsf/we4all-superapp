@@ -72,7 +72,7 @@ export const INITIAL_CATEGORIES = [
   {
     id: "daily_needs",
     name: "Daily Home Needs",
-    icon: "\uD83D\uDED2",
+    icon: "",
     partnerType: "merchant",
     badge: "10-20m Express • 0% Markup",
     flow: "instant_goods",
@@ -83,7 +83,7 @@ export const INITIAL_CATEGORIES = [
   {
     id: "veg_fruits",
     name: "Fresh Veg & Fruits",
-    icon: "\uD83E\uDD6C",
+    icon: "",
     partnerType: "merchant",
     badge: "5 AM Rytu Mandi Rate",
     flow: "instant_goods",
@@ -94,7 +94,7 @@ export const INITIAL_CATEGORIES = [
   {
     id: "non_veg",
     name: "Non-Veg: Meat & Fish",
-    icon: "\uD83C\uDF57",
+    icon: "",
     partnerType: "merchant",
     badge: "Live Cut • 100% Halal",
     flow: "instant_goods",
@@ -105,7 +105,7 @@ export const INITIAL_CATEGORIES = [
   {
     id: "construction",
     name: "Construction & Steel",
-    icon: "\uD83C\uDFD7\uFE0F",
+    icon: "",
     partnerType: "merchant",
     badge: "3W Auto / Heavy Dispatch",
     flow: "heavy_goods",
@@ -116,7 +116,7 @@ export const INITIAL_CATEGORIES = [
   {
     id: "medicines",
     name: "Medicines & Rx",
-    icon: "\uD83D\uDC8A",
+    icon: "",
     partnerType: "merchant",
     badge: "10-Min Priority Pharmacy",
     flow: "instant_goods",
@@ -130,7 +130,7 @@ export const SERVICE_CATEGORIES = [
   {
     id: "srv_plumbing",
     name: "Plumbers & Water Tank Fix",
-    icon: "\uD83D\uDEB0",
+    icon: "",
     startingVisitFee: 89,
     badge: "40-Min Arrival",
     image: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=300&auto=format&fit=crop&q=80"
@@ -138,7 +138,7 @@ export const SERVICE_CATEGORIES = [
   {
     id: "srv_electrical",
     name: "Electricians & DB Setup",
-    icon: "\u26A1",
+    icon: "",
     startingVisitFee: 99,
     badge: "Single-Phase / MCB Expert",
     image: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=300&auto=format&fit=crop&q=80"
@@ -146,7 +146,7 @@ export const SERVICE_CATEGORIES = [
   {
     id: "srv_carpentry",
     name: "Carpenters & Wood Works",
-    icon: "\uD83E\uDE9A",
+    icon: "",
     startingVisitFee: 99,
     badge: "Own Power Tools",
     image: "https://images.unsplash.com/photo-1504148455328-c376907d081c?w=300&auto=format&fit=crop&q=80"
@@ -154,7 +154,7 @@ export const SERVICE_CATEGORIES = [
   {
     id: "srv_ac_repair",
     name: "AC, Fridge & Motor Repair",
-    icon: "\u2744\uFE0F",
+    icon: "",
     startingVisitFee: 149,
     badge: "Gas Refill & Winding",
     image: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?w=300&auto=format&fit=crop&q=80"
@@ -162,7 +162,7 @@ export const SERVICE_CATEGORIES = [
   {
     id: "srv_loans_realestate",
     name: "Loans & Real Estate Desk",
-    icon: "\uD83C\uDFE0",
+    icon: "",
     startingVisitFee: 0,
     badge: "Rs.0 Brokerage • Free Visit",
     image: "https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=300&auto=format&fit=crop&q=80"
@@ -553,19 +553,19 @@ export const DELIVERY_REVIEW_QUESTIONS = [
   {
     id: "q1",
     question: "Did the partner arrive on time?",
-    subText: "\u0938\u092E\u092F \u092A\u0930 \u0921\u093F\u0932\u0940\u0935\u0930\u0940 \u0939\u0941\u0908? | \u0C38\u0C2E\u0C2F\u0C3E\u0C28\u0C3F\u0C15\u0C3F \u0C35\u0C1A\u0C4D\u0C1A\u0C3E\u0C30\u0C3E?",
+    subText: "   ? |  ?",
     voiceText: "Question 1. Did the delivery partner arrive on time? Please tap Yes or No."
   },
   {
     id: "q2",
     question: "Were all items or services delivered safely without damage?",
-    subText: "\u0938\u093E\u092E\u093E\u0928 \u0938\u0941\u0930\u0915\u094D\u0937\u093F\u0924 \u092E\u093F\u0932\u093E? | \u0C35\u0C38\u0C4D\u0C24\u0C41\u0C35\u0C41\u0C32\u0C41 \u0C38\u0C41\u0C30\u0C15\u0C4D\u0C37\u0C3F\u0C24\u0C02\u0C17\u0C3E \u0C09\u0C28\u0C4D\u0C28\u0C3E\u0C2F\u0C3E?",
+    subText: "  ? |   ?",
     voiceText: "Question 2. Were all items delivered safely without damage? Please tap Yes or No."
   },
   {
     id: "q3",
     question: "Was the partner polite and charged zero extra money outside the app?",
-    subText: "\u0915\u094B\u0908 \u0905\u0924\u093F\u0930\u093F\u0915\u094D\u0924 \u092A\u0948\u0938\u093E \u0928\u0939\u0940\u0902 \u092E\u093E\u0902\u0917\u093E? | \u0C05\u0C26\u0C28\u0C2A\u0C41 \u0C21\u0C2C\u0C4D\u0C2C\u0C41 \u0C05\u0C21\u0C17\u0C15\u0C41\u0C02\u0C21\u0C3E \u0C2E\u0C30\u0C4D\u0C2F\u0C3E\u0C26\u0C17\u0C3E \u0C09\u0C28\u0C4D\u0C28\u0C3E\u0C30\u0C3E?",
+    subText: "    ? |     ?",
     voiceText: "Question 3. Was the partner polite and charged zero extra money? Please tap Yes or No."
   }
 ];

@@ -360,8 +360,8 @@ export default function ServiceProviderPortal({
                 }`}
               >
                 {providerInsideGeoFence
-                  ? "\uD83D\uDCCD INSIDE GEO-FENCE (READY)"
-                  : "\u26D4 OUTSIDE GEO-FENCE"}
+                  ? " INSIDE GEO-FENCE (READY)"
+                  : " OUTSIDE GEO-FENCE"}
               </button>
             </div>
           </div>
@@ -674,7 +674,7 @@ export default function ServiceProviderPortal({
                 >
                   <div>
                     <p className="font-black text-white text-[11px]">
-                      \u23F0 {slotLabel}
+                       {slotLabel}
                     </p>
                     {bookingForSlot ? (
                       <p className="text-[10px] text-amber-300 font-bold">
@@ -699,7 +699,7 @@ export default function ServiceProviderPortal({
                     }`}
                   >
                     {bookingForSlot
-                      ? "BOOKED \u2713"
+                      ? "BOOKED "
                       : isEnabled
                       ? "AVAILABLE"
                       : "OFF-DUTY"}

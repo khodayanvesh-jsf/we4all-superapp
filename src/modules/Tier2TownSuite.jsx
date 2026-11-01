@@ -20,7 +20,7 @@ export function TownMandiTicker({ onSelectCategory, onTriggerToast }) {
     <div className="bg-slate-900 text-white p-2.5 rounded-2xl border border-amber-500/40 space-y-1.5 shadow">
       <div className="flex justify-between items-center">
         <span className="text-[10px] font-black text-amber-400 flex items-center gap-1">
-          \uD83D\uDCE2 TODAY&apos;S ADILABAD MANDI & ESSENTIAL RATES
+           TODAY&apos;S ADILABAD MANDI & ESSENTIAL RATES
         </span>
         <span className="bg-emerald-500/20 text-emerald-300 text-[8px] font-black px-1.5 py-0.5 rounded">
           LIVE MORNING BOARD
@@ -140,7 +140,7 @@ export function ParchaAndVoiceOrderBox({
       <div className="flex justify-between items-center gap-2">
         <div>
           <h4 className="font-black text-amber-300 text-xs">
-            \uD83D\uDCDD Quick Parcha (Handwritten Slip) & Voice-Note Order
+             Quick Parcha (Handwritten Slip) & Voice-Note Order
           </h4>
           <p className="text-[10px] text-slate-300">
             Snap your paper kirana list, medical prescription, or record a voice note!
@@ -176,7 +176,7 @@ export function ParchaAndVoiceOrderBox({
           <div className="grid grid-cols-2 gap-1.5">
             <label className="bg-slate-900 border border-emerald-500/50 rounded-xl p-2 text-center cursor-pointer block">
               <span className="font-black text-emerald-300 block">
-                \uD83D\uDCF7 Snap Parcha / Rx Photo
+                 Snap Parcha / Rx Photo
               </span>
               <span className="text-[8px] text-slate-400 truncate block mt-0.5">
                 {parchaImageName || "Camera or Gallery"}
@@ -200,7 +200,7 @@ export function ParchaAndVoiceOrderBox({
               }`}
             >
               <span className="font-black block">
-                \uD83C\uDF99\uFE0F {isRecordingVoice ? "Recording... Tap Stop" : "Record Voice Note"}
+                 {isRecordingVoice ? "Recording... Tap Stop" : "Record Voice Note"}
               </span>
               <span className="text-[8px] text-slate-300 truncate block mt-0.5">
                 {voiceRecordedLabel || "Speak in Telugu/Hindi"}
@@ -243,7 +243,7 @@ export function TownLandmarkPresetBar({ onApplyLandmark }) {
             onClick={() => onApplyLandmark(lm)}
             className="bg-slate-950 border border-teal-500/40 hover:border-amber-400 p-1.5 rounded-xl text-left cursor-pointer"
           >
-            <div className="font-black text-teal-300 text-[10px]">\uD83D\uDCCD {lm.label}</div>
+            <div className="font-black text-teal-300 text-[10px]"> {lm.label}</div>
             <div className="text-[8px] text-slate-400 truncate">
               {lm.pickup} &rarr; {lm.drop}
             </div>

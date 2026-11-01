@@ -616,7 +616,7 @@ export default function RiderCaptainPortal({
           <div className="bg-slate-900 p-3 rounded-2xl border border-rose-500/40 space-y-2">
             <div className="flex justify-between items-center">
               <span className="font-black text-rose-300 text-[11px]">
-                \uD83D\uDD12 Other Vehicle Orders ({lockedOtherVehicleJobs.length} Locked - Zero Interference)
+                 Other Vehicle Orders ({lockedOtherVehicleJobs.length} Locked - Zero Interference)
               </span>
               <button
                 type="button"
@@ -643,7 +643,7 @@ export default function RiderCaptainPortal({
                     </p>
                   </div>
                   <span className="bg-slate-800 text-rose-300 font-black px-2 py-1 rounded-lg text-[8px] shrink-0">
-                    \uD83D\uDD12 {myVehicleCode} BLOCKED
+                     {myVehicleCode} BLOCKED
                   </span>
                 </div>
               ))}
@@ -818,7 +818,7 @@ export default function RiderCaptainPortal({
                     </span>
                     {isPaid ? (
                       <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-lg text-[9px] font-black">
-                        SETTLED TO UPI \u2713
+                        SETTLED TO UPI 
                       </span>
                     ) : (
                       <button

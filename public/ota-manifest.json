@@ -1,9 +1,9 @@
 {
-  "currentVersion": "2.9.6",
-  "latestAvailableVersion": "2.9.8",
+  "currentVersion": "3.0.0",
+  "latestAvailableVersion": "3.0.1",
   "updateAvailable": true,
-  "publishedAt": "2026-10-31T01:55:00Z",
+  "publishedAt": "2026-11-01T08:15:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=2.9.8",
-  "releaseNotes": "WE4ALL v2.9.8: Live Supabase Cloud Database Sync (we4all_town_state & we4all_orders_ledger), Working Captain OTP Verification, Universal Error Diagnostic Popup & 5-Language MNC Suite."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.1",
+  "releaseNotes": "WE4ALL v3.0.1: Unified Mega Super Joint Local Market (All Products, 1-Hr Services, Halls, Rides & Mandi in One Place), Clean Product Titles & Automatic Device Layout."
 }

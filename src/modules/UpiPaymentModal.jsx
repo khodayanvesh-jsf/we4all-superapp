@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 
 const UPI_APPS = [
-  { id: "phonepe", name: "PhonePe", badge: "Fastest in Adilabad", icon: "\uD83D\uDFE3" },
-  { id: "gpay", name: "Google Pay (GPay)", badge: "Zero-MDR Instant", icon: "\uD83D\uDD35" },
-  { id: "paytm", name: "Paytm UPI", badge: "Instant Wallet/UPI", icon: "\uD83D\uDC99" },
-  { id: "bhim", name: "BHIM NPCI Official", badge: "Direct Bank UPI", icon: "\uD83D\uDFE0" },
-  { id: "cred", name: "CRED Pay", badge: "Cashback UPI", icon: "\u26AB" }
+  { id: "phonepe", name: "PhonePe", badge: "Fastest in Adilabad", icon: "" },
+  { id: "gpay", name: "Google Pay (GPay)", badge: "Zero-MDR Instant", icon: "" },
+  { id: "paytm", name: "Paytm UPI", badge: "Instant Wallet/UPI", icon: "" },
+  { id: "bhim", name: "BHIM NPCI Official", badge: "Direct Bank UPI", icon: "" },
+  { id: "cred", name: "CRED Pay", badge: "Cashback UPI", icon: "" }
 ];
 
 export default function UpiPaymentModal({
