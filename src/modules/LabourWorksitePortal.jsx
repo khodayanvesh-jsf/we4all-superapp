@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { getGeoSlangConfig } from "./i18n/indianLanguages";
 
 export const LABOUR_SKILL_CATEGORIES = [
   {
@@ -7,19 +8,19 @@ export const LABOUR_SKILL_CATEGORIES = [
     defaultFullDay: 900,
     defaultHalfDay: 500,
     contractUnit: "Rs.22 / Sq.Ft",
-    toolsDefault: "Trowel, Plumb Bob, Spirit Level, Pan"
+    toolsDefault: "Trowel (Thapi), Plumb Bob ( Gundu), Spirit Level, Pan"
   },
   {
     id: "daily_helper",
-    name: "Daily Wage Helper / Coolie (Site & General)",
+    name: "Daily Wage Helper / Kooli / Chithaal / Bigari",
     defaultFullDay: 550,
     defaultHalfDay: 300,
     contractUnit: "Rs.550 / Day",
-    toolsDefault: "Spade (Phawda), Mortar Pan (Ghamela)"
+    toolsDefault: "Spade (Phawda), Mortar Pan (Ghamela / Thatti)"
   },
   {
     id: "hamali_loading",
-    name: "Hamali / Mandi Loading, Unloading & Shifting",
+    name: "Hamali / Mathadi / Loadman (Loading & Shifting)",
     defaultFullDay: 700,
     defaultHalfDay: 400,
     contractUnit: "Rs.12 / Bag or Quintal",
@@ -27,7 +28,7 @@ export const LABOUR_SKILL_CATEGORIES = [
   },
   {
     id: "centring_barbender",
-    name: "Centring, Shuttering & Steel Bar-Bending",
+    name: "Centring, Shuttering & Sarya / Bar-Bending",
     defaultFullDay: 950,
     defaultHalfDay: 550,
     contractUnit: "Rs.18 / Sq.Ft Slab",
@@ -35,7 +36,7 @@ export const LABOUR_SKILL_CATEGORIES = [
   },
   {
     id: "tiles_painter",
-    name: "Tiles, Granite Fitting, Putty & Painting",
+    name: "Tiles, Farsi, Granite & Rangula / Painting",
     defaultFullDay: 850,
     defaultHalfDay: 500,
     contractUnit: "Rs.16 / Sq.Ft",
@@ -54,19 +55,18 @@ export const LABOUR_SKILL_CATEGORIES = [
 export const INITIAL_LABOUR_WORKERS = [
   {
     id: "LAB-101",
-    workerName: "Mallesh Gavandi & Team",
+    workerName: "Mallesh & Team",
     phone: "9848066112",
     skillId: "mason_mistri",
-    skillLabel: "Mason / Gavandi (Brick & Plastering)",
     workerType: "MISTRI_TOLI",
     toliCount: 5,
     experienceYrs: 9,
-    addaLocation: "Old Bus Stand Labour Adda, Adilabad",
+    addaLocation: "Old Bus Stand Adda",
     fullDayWage: 900,
     halfDayWage: 500,
     helperDailyWage: 550,
     hasOwnTools: true,
-    toolsList: "Trowel, Spirit Level, Laser Plumb, 4 Pans",
+    toolsList: "Trowel (Thapi), Spirit Level, Laser Plumb, 4 Pans",
     requiresAddaPickup: false,
     teaBhattaExpected: true,
     rating: 4.9,
@@ -75,14 +75,13 @@ export const INITIAL_LABOUR_WORKERS = [
   },
   {
     id: "LAB-102",
-    workerName: "Bheemrao Hamali Gang (6 Strong Loaders)",
+    workerName: "Bheemrao Gang (6 Loaders)",
     phone: "9848066223",
     skillId: "hamali_loading",
-    skillLabel: "Hamali / Mandi Loading, Unloading & Shifting",
     workerType: "MISTRI_TOLI",
     toliCount: 6,
     experienceYrs: 7,
-    addaLocation: "Cotton Market Yard / Gunj Adda, Adilabad",
+    addaLocation: "Market Yard / Gunj Stand",
     fullDayWage: 700,
     halfDayWage: 400,
     helperDailyWage: 650,
@@ -96,20 +95,18 @@ export const INITIAL_LABOUR_WORKERS = [
   },
   {
     id: "LAB-103",
-    workerName: "Raju & Shankar (Daily Site Helpers)",
+    workerName: "Raju & Shankar",
     phone: "9848066334",
     skillId: "daily_helper",
-    skillLabel: "Daily Wage Helper / Coolie (Site & General)",
     workerType: "INDIVIDUAL",
     toliCount: 2,
     experienceYrs: 4,
-    addaLocation: "Collectorate Chowk Adda, Adilabad",
+    addaLocation: "Collectorate Chowk Stand",
     fullDayWage: 550,
     halfDayWage: 300,
     helperDailyWage: 550,
     hasOwnTools: true,
-    toolsDefault: "Spade & Ghamela",
-    toolsList: "2 Spades, 2 Pans, Crowbar",
+    toolsList: "2 Spades (Phawda), 2 Pans (Ghamela), Crowbar",
     requiresAddaPickup: false,
     teaBhattaExpected: true,
     rating: 4.9,
@@ -118,14 +115,13 @@ export const INITIAL_LABOUR_WORKERS = [
   },
   {
     id: "LAB-104",
-    workerName: "Laxmi Bai Farm Harvest Toli (10 Workers)",
+    workerName: "Laxmi Bai Harvest Group (10 Workers)",
     phone: "9848066445",
     skillId: "farm_harvest",
-    skillLabel: "Agricultural / Cotton Picking & Farm Toli",
     workerType: "MISTRI_TOLI",
     toliCount: 10,
     experienceYrs: 8,
-    addaLocation: "Dasnapur Cross Road Adda, Adilabad",
+    addaLocation: "Bypass Cross Road Stand",
     fullDayWage: 500,
     halfDayWage: 280,
     helperDailyWage: 500,
@@ -143,6 +139,7 @@ export default function LabourWorksitePortal({
   footerTab,
   setFooterTab,
   currentUser,
+  geoRegion = "TELANGANA",
   labourWorkers = [],
   setLabourWorkers = () => {},
   labourBookings = [],
@@ -151,6 +148,8 @@ export default function LabourWorksitePortal({
   onTriggerToast,
   renderAccountTab
 }) {
+  const geoSlang = getGeoSlangConfig(geoRegion);
+
   const [availableAtAdda, setAvailableAtAdda] = useState(true);
   const [mySkillId, setMySkillId] = useState("mason_mistri");
   const [myWorkerMode, setMyWorkerMode] = useState("MISTRI_TOLI");
@@ -160,17 +159,22 @@ export default function LabourWorksitePortal({
   const [myHelperRate, setMyHelperRate] = useState(550);
   const [bringOwnTools, setBringOwnTools] = useState(true);
   const [myToolsDesc, setMyToolsDesc] = useState(
-    "Trowel, Plumb Bob, Spirit Level, Cutter & 4 Pans"
+    "Trowel (Thapi), Plumb Bob, Spirit Level, Cutter & 4 Pans"
   );
   const [needTransportPickup, setNeedTransportPickup] = useState(false);
-  const [addaStandName, setAddaStandName] = useState(
-    "Old Bus Stand Labour Adda, Adilabad"
-  );
   const [otpInputs, setOtpInputs] = useState({});
 
   if (footerTab === "account") {
     return renderAccountTab();
   }
+
+  const getLocalSkillTitle = (skillId) => {
+    return (
+      geoSlang?.labourRoles?.[skillId] ||
+      LABOUR_SKILL_CATEGORIES.find((s) => s.id === skillId)?.name ||
+      "Skilled Worker"
+    );
+  };
 
   const activeJobs = (labourBookings || []).filter(
     (b) => b.status !== "WAGE_SETTLED_COMPLETED"
@@ -180,9 +184,7 @@ export default function LabourWorksitePortal({
   );
 
   const handleSimulateWorksiteCall = () => {
-    const skillObj =
-      LABOUR_SKILL_CATEGORIES.find((s) => s.id === mySkillId) ||
-      LABOUR_SKILL_CATEGORIES[0];
+    const localSkillName = getLocalSkillTitle(mySkillId);
     const startOtp = String(Math.floor(1000 + Math.random() * 9000));
     const releaseOtp = String(Math.floor(1000 + Math.random() * 9000));
     const totalWage =
@@ -192,22 +194,22 @@ export default function LabourWorksitePortal({
 
     const simJob = {
       id: `WRK-${Math.floor(1000 + Math.random() * 9000)}`,
-      customerName: "KVR Constructions / Rameshwar Rao",
-      siteAddress: "Plot 42, Subhash Nagar Colony, Adilabad",
-      skillNeeded: skillObj.name,
+      customerName: "KVR Builders / Local Site Owner",
+      siteAddress: "Plot 42, Subhash Nagar Site",
+      skillNeeded: localSkillName,
       shiftType: "Full-Day Shift (09:00 AM - 05:30 PM)",
       hiringMode:
         myWorkerMode === "MISTRI_TOLI"
-          ? `Mistri Toli (1 Mistri + ${Math.max(1, myToliSize - 1)} Helpers)`
-          : "Individual Skilled Worker",
+          ? `${geoSlang.groupSlang} (${myToliSize} Workers)`
+          : "Individual Worker (1 Person)",
       workersCount: myWorkerMode === "MISTRI_TOLI" ? myToliSize : 1,
       toolsRequirement: bringOwnTools
         ? "Bring Own Hand Tools"
         : "Tools Provided at Site",
       transportNote: needTransportPickup
-        ? "Customer Sends 3W Auto to Adda"
+        ? `3W Auto Pickup from ${geoSlang.standSlang}`
         : "Direct Reach to Site",
-      teaBhattaNote: "2x Site Tea + Rs.30 Bhatta Included",
+      teaBhattaNote: `2x Site Tea (${geoSlang.bhattaSlang}) Included`,
       totalDailyWage: totalWage,
       startWorkOtp: startOtp,
       wageReleaseOtp: releaseOtp,
@@ -219,26 +221,27 @@ export default function LabourWorksitePortal({
     };
     setLabourBookings([simJob, ...labourBookings]);
     onTriggerToast(
-      `New Work-Site Call #${simJob.id} (Rs.${totalWage}/Day) received on Adda Radar!`
+      `New Site Call #${simJob.id} (${localSkillName} - Rs.${totalWage}) received!`
     );
   };
 
   return (
     <div className="space-y-3 text-xs text-white">
-      {/* TOP LABOUR ADDA STATUS & BETA TESTING BANNER */}
+      {/* TOP GEO-LOCAL LABOUR STAND BANNER */}
       <div className="bg-slate-900 p-3.5 rounded-2xl border-2 border-amber-400/60 space-y-2">
         <div className="flex flex-wrap justify-between items-start gap-2">
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px]">
-                BETA TESTING PORTAL #6
+                {geoSlang.stateName.toUpperCase()}
               </span>
               <h3 className="font-black text-amber-300 text-sm">
-                Local Labour &amp; Work-Site Hub (Mistri / Helper / Hamali / Farm)
+                {geoSlang.standSlang} &amp; {geoSlang.groupSlang} Hub
               </h3>
             </div>
             <p className="text-[10px] text-slate-300 mt-0.5">
-              Adda Stand: <strong>{addaStandName}</strong> | Morning Stand Time: 07:30 AM
+              Active Local Roles: {geoSlang.labourRoles.mason_mistri} |{" "}
+              {geoSlang.labourRoles.daily_helper}
             </p>
           </div>
           <div className="flex gap-1.5">
@@ -262,8 +265,8 @@ export default function LabourWorksitePortal({
         <div className="flex justify-between items-center bg-slate-950 p-2 rounded-xl border border-slate-800">
           <span className="text-[10px] font-bold text-slate-200">
             {availableAtAdda
-              ? "AVAILABLE FOR WORK TODAY (VISIBLE TO CONTRACTORS & HOMES)"
-              : "ALREADY BOOKED ON SITE TODAY (PAUSED)"}
+              ? `LIVE AT ${geoSlang.standSlang.toUpperCase()} (READY FOR SITE WORK)`
+              : "BOOKED ON SITE TODAY (PAUSED)"}
           </span>
           <button
             type="button"
@@ -279,33 +282,26 @@ export default function LabourWorksitePortal({
         </div>
       </div>
 
-      {/* ================================================================== */}
-      {/* TAB 1: LIVE SITE CALLS & ADDA DISPATCH QUEUE ("home")              */}
-      {/* ================================================================== */}
+      {/* TAB 1: LIVE SITE CALLS */}
       {footerTab === "home" && (
         <div className="space-y-2.5">
-          <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex justify-between items-center">
-            <div>
-              <h4 className="font-black text-amber-400 text-xs">
-                1. Live Work-Site Calls &amp; Contractor Bookings ({activeJobs.length})
-              </h4>
-              <p className="text-[10px] text-slate-400">
-                Inspect work type, shift hours, tool requirements &amp; accept site call
-              </p>
-            </div>
+          <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800">
+            <h4 className="font-black text-amber-400 text-xs">
+              1. Live Work-Site Calls at {geoSlang.standSlang} ({activeJobs.length})
+            </h4>
           </div>
 
           {activeJobs.length === 0 ? (
             <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center space-y-2">
               <p className="font-bold text-slate-300">
-                No active work-site calls in your queue right now.
+                No active work-site calls right now.
               </p>
               <button
                 type="button"
                 onClick={handleSimulateWorksiteCall}
                 className="bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-xl text-[10px] cursor-pointer"
               >
-                + Simulate Local Work-Site Call Now
+                + Simulate Work-Site Call ({getLocalSkillTitle(mySkillId)})
               </button>
             </div>
           ) : (
@@ -338,11 +334,11 @@ export default function LabourWorksitePortal({
 
                 <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[10px] space-y-1">
                   <p>
-                    <strong className="text-amber-300">Work Site:</strong>{" "}
+                    <strong className="text-amber-300">Site Location:</strong>{" "}
                     {job.siteAddress}
                   </p>
                   <p>
-                    <strong className="text-teal-300">Hiring Mode:</strong>{" "}
+                    <strong className="text-teal-300">Group / Mode:</strong>{" "}
                     {job.hiringMode} | <strong>Tools:</strong>{" "}
                     {job.toolsRequirement}
                   </p>
@@ -365,12 +361,12 @@ export default function LabourWorksitePortal({
                       );
                       setFooterTab("muster");
                       onTriggerToast(
-                        `Accepted Site Call #${job.id}! Proceed to Site & verify Morning Start OTP.`
+                        `Accepted Site Call #${job.id}! Open Muster Roll to verify Morning OTP.`
                       );
                     }}
                     className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer shadow"
                   >
-                    Accept Work-Site Call (Rs.{job.totalDailyWage}) &amp; Open Muster Roll
+                    Accept Site Call (Rs.{job.totalDailyWage}) &amp; Open Muster Roll
                   </button>
                 ) : (
                   <button
@@ -387,18 +383,16 @@ export default function LabourWorksitePortal({
         </div>
       )}
 
-      {/* ================================================================== */}
-      {/* TAB 2: SKILL, TOLI SIZE, TOOLS & WAGE CARD ("skills")              */}
-      {/* ================================================================== */}
+      {/* TAB 2: GEO-SLANG SKILL, TOLI SIZE & TOOLS */}
       {footerTab === "skills" && (
         <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/40 space-y-3">
           <h4 className="font-black text-emerald-400 text-xs">
-            2. Worker / Mistri Skill Profile, Toli Size &amp; Daily Wage Card
+            2. Local Role, {geoSlang.groupSlang} Size &amp; Daily Wage Card
           </h4>
 
           <div>
             <label className="block text-[10px] text-slate-400 font-bold mb-1">
-              Primary Trade / Work Skill:
+              Select Local Trade / Work Role ({geoSlang.stateName}):
             </label>
             <select
               value={mySkillId}
@@ -418,7 +412,7 @@ export default function LabourWorksitePortal({
             >
               {LABOUR_SKILL_CATEGORIES.map((sc) => (
                 <option key={sc.id} value={sc.id}>
-                  {sc.name}
+                  {getLocalSkillTitle(sc.id)}
                 </option>
               ))}
             </select>
@@ -437,7 +431,7 @@ export default function LabourWorksitePortal({
                   : "bg-slate-950 text-slate-300 border-slate-800"
               }`}
             >
-              Individual Worker (1 Person)
+              Single Worker (1 Person)
             </button>
             <button
               type="button"
@@ -451,7 +445,7 @@ export default function LabourWorksitePortal({
                   : "bg-slate-950 text-slate-300 border-slate-800"
               }`}
             >
-              Mistri + Helper Toli (Group)
+              {geoSlang.groupSlang} (Group)
             </button>
           </div>
 
@@ -484,7 +478,7 @@ export default function LabourWorksitePortal({
             </div>
             <div>
               <label className="block text-[9px] text-slate-400">
-                Toli Size (Workers):
+                Group Size:
               </label>
               <input
                 type="number"
@@ -499,58 +493,20 @@ export default function LabourWorksitePortal({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="block text-[10px] text-slate-400 font-bold">
-              Tools Carried to Work Site:
-            </label>
-            <input
-              type="text"
-              value={myToolsDesc}
-              onChange={(e) => setMyToolsDesc(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={bringOwnTools}
-                onChange={(e) => setBringOwnTools(e.target.checked)}
-              />
-              <span className="text-[10px] font-bold">
-                We Bring Own Hand Tools
-              </span>
-            </label>
-            <label className="flex items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={needTransportPickup}
-                onChange={(e) => setNeedTransportPickup(e.target.checked)}
-              />
-              <span className="text-[10px] font-bold">
-                Need Auto Pickup from Adda
-              </span>
-            </label>
-          </div>
-
           <button
             type="button"
             onClick={() => {
-              const skillObj =
-                LABOUR_SKILL_CATEGORIES.find((s) => s.id === mySkillId) ||
-                LABOUR_SKILL_CATEGORIES[0];
+              const localSkillName = getLocalSkillTitle(mySkillId);
               const newCard = {
                 id: `LAB-${Date.now()}`,
-                workerName:
-                  currentUser?.fullName || "Verified Mistri & Team",
+                workerName: currentUser?.fullName || "Verified Mistri & Team",
                 phone: currentUser?.phone || "9848011223",
                 skillId: mySkillId,
-                skillLabel: skillObj.name,
+                skillLabel: localSkillName,
                 workerType: myWorkerMode,
                 toliCount: myToliSize,
                 experienceYrs: 6,
-                addaLocation: addaStandName,
+                addaLocation: geoSlang.standSlang,
                 fullDayWage: myFullDayRate,
                 halfDayWage: myHalfDayRate,
                 helperDailyWage: myHelperRate,
@@ -564,184 +520,133 @@ export default function LabourWorksitePortal({
               };
               setLabourWorkers([newCard, ...labourWorkers]);
               onTriggerToast(
-                `Published ${newCard.workerName} (${skillObj.name}) live to Mega Market Labour Hub!`
+                `Published ${newCard.workerName} (${localSkillName}) live to ${geoSlang.standSlang}!`
               );
             }}
             className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
           >
-            Publish My Availability &amp; Rate Card Live to Market
+            Publish My Rate Card Live to {geoSlang.standSlang}
           </button>
         </div>
       )}
 
-      {/* ================================================================== */}
-      {/* TAB 3: MUSTER ROLL & SITE ATTENDANCE OTP ("muster")                */}
-      {/* ================================================================== */}
+      {/* TAB 3: MUSTER ROLL & SITE ATTENDANCE OTP */}
       {footerTab === "muster" && (
         <div className="space-y-3">
           <div className="bg-slate-900 p-3 rounded-2xl border border-amber-500/40">
             <h4 className="font-black text-amber-400 text-xs">
-              3. Live Work-Site Muster Roll (Morning Check-In OTP &amp; Evening Wage OTP)
+              3. Site Muster Roll (Morning Reporting OTP &amp; Evening Wage OTP)
             </h4>
-            <p className="text-[10px] text-slate-400">
-              Prevents wage disputes: Verify Morning Arrival OTP to start shift &amp; Evening OTP to release full daily wage
-            </p>
           </div>
-
-          {activeJobs.length === 0 ? (
-            <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center">
-              <p className="text-slate-400">
-                No active site shift in progress. Accept a call in Tab 1 first.
-              </p>
-            </div>
-          ) : (
-            activeJobs.map((job) => {
-              const sOtp = job.startWorkOtp || "1122";
-              const rOtp = job.wageReleaseOtp || "8899";
-              return (
-                <div
-                  key={job.id}
-                  className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40 space-y-2.5"
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="font-black text-emerald-400">
-                      #{job.id} | {job.skillNeeded}
-                    </span>
-                    <span className="bg-amber-400 text-slate-950 px-2 py-0.5 rounded font-black text-[9px]">
-                      Wage: Rs.{job.totalDailyWage}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-300">
-                    Site: {job.siteAddress} | Status:{" "}
-                    <strong className="text-amber-300">{job.status}</strong>
-                  </p>
-
-                  {job.status !== "WORK_IN_PROGRESS_ON_SITE" ? (
-                    <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex justify-between items-center text-[10px]">
-                        <span>
-                          Morning Site Reporting OTP:{" "}
-                          <strong className="text-emerald-400 font-mono">
-                            {sOtp}
-                          </strong>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLabourBookings(
-                              labourBookings.map((b) =>
-                                b.id === job.id
-                                  ? {
-                                      ...b,
-                                      status: "WORK_IN_PROGRESS_ON_SITE",
-                                      checkedInAt: new Date().toLocaleTimeString()
-                                    }
-                                  : b
-                              )
-                            );
-                            onTriggerToast(
-                              `Morning Attendance Verified (#${job.id})! Shift timer started.`
-                            );
-                          }}
-                          className="bg-emerald-400 text-slate-950 font-black px-3 py-1 rounded-lg cursor-pointer"
-                        >
-                          Verify Start OTP ({sOtp}) &amp; Start Shift
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-slate-950 p-2.5 rounded-xl border border-amber-400/50 space-y-2">
-                      <p className="text-[10px] text-emerald-300 font-bold">
-                        Shift Checked In at {job.checkedInAt || "09:00 AM"} | Ready for Evening Wage Settlement
-                      </p>
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          maxLength={4}
-                          placeholder={`Wage OTP (${rOtp})`}
-                          value={otpInputs[job.id] || ""}
-                          onChange={(e) =>
-                            setOtpInputs({
-                              ...otpInputs,
-                              [job.id]: e.target.value
-                            })
-                          }
-                          className="w-28 bg-slate-900 border border-amber-400 rounded-xl p-2 text-center font-mono text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLabourBookings(
-                              labourBookings.map((b) =>
-                                b.id === job.id
-                                  ? {
-                                      ...b,
-                                      status: "WAGE_SETTLED_COMPLETED",
-                                      completedAt: new Date().toLocaleTimeString()
-                                    }
-                                  : b
-                              )
-                            );
-                            setFooterTab("orders");
-                            onTriggerToast(
-                              `Evening OTP (${rOtp}) Verified! Rs.${job.totalDailyWage} Daily Wage settled to Ledger.`
-                            );
-                          }}
-                          className="flex-1 bg-amber-400 text-slate-950 font-black rounded-xl text-[10px] cursor-pointer"
-                        >
-                          Verify Evening OTP ({rOtp}) &amp; Release Rs.{job.totalDailyWage}
-                        </button>
-                      </div>
-                    </div>
-                  )}
+          {activeJobs.map((job) => {
+            const sOtp = job.startWorkOtp || "1122";
+            const rOtp = job.wageReleaseOtp || "8899";
+            return (
+              <div
+                key={job.id}
+                className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40 space-y-2.5"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-black text-emerald-400">
+                    #{job.id} | {job.skillNeeded}
+                  </span>
+                  <span className="bg-amber-400 text-slate-950 px-2 py-0.5 rounded font-black text-[9px]">
+                    Wage: Rs.{job.totalDailyWage}
+                  </span>
                 </div>
-              );
-            })
-          )}
+                {job.status !== "WORK_IN_PROGRESS_ON_SITE" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLabourBookings(
+                        labourBookings.map((b) =>
+                          b.id === job.id
+                            ? {
+                                ...b,
+                                status: "WORK_IN_PROGRESS_ON_SITE",
+                                checkedInAt: new Date().toLocaleTimeString()
+                              }
+                            : b
+                        )
+                      );
+                      onTriggerToast(
+                        `Morning Attendance OTP (${sOtp}) Verified!`
+                      );
+                    }}
+                    className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
+                  >
+                    Verify Morning Start OTP ({sOtp}) &amp; Begin Work
+                  </button>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder={`OTP (${rOtp})`}
+                      value={otpInputs[job.id] || ""}
+                      onChange={(e) =>
+                        setOtpInputs({
+                          ...otpInputs,
+                          [job.id]: e.target.value
+                        })
+                      }
+                      className="w-28 bg-slate-950 border border-amber-400 rounded-xl p-2 text-center font-mono text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLabourBookings(
+                          labourBookings.map((b) =>
+                            b.id === job.id
+                              ? {
+                                  ...b,
+                                  status: "WAGE_SETTLED_COMPLETED",
+                                  completedAt: new Date().toLocaleTimeString()
+                                }
+                              : b
+                          )
+                        );
+                        setFooterTab("orders");
+                        onTriggerToast(
+                          `Evening OTP (${rOtp}) Verified! Rs.${job.totalDailyWage} settled.`
+                        );
+                      }}
+                      className="flex-1 bg-amber-400 text-slate-950 font-black rounded-xl text-[10px] cursor-pointer"
+                    >
+                      Verify Evening OTP ({rOtp}) &amp; Settle Wage
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* ================================================================== */}
-      {/* TAB 4: DAILY WAGE & CONTRACT PAYOUT LEDGER ("orders")              */}
-      {/* ================================================================== */}
+      {/* TAB 4: WAGE LEDGER */}
       {footerTab === "orders" && (
-        <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/40 space-y-2.5">
-          <div className="flex justify-between items-center">
-            <h4 className="font-black text-emerald-400 text-xs">
-              4. Daily Wage &amp; Mistri Toli Payout Ledger ({completedJobs.length})
-            </h4>
-            <span className="font-black text-amber-300 text-xs">
-              Total Earned: Rs.
-              {completedJobs.reduce(
-                (s, j) => s + Number(j.totalDailyWage || 0),
-                0
-              )}
-            </span>
-          </div>
-          {completedJobs.length === 0 ? (
-            <p className="text-slate-400 text-[11px]">
-              Completed shifts will appear here with instant UPI / Cash settlement records.
-            </p>
-          ) : (
-            completedJobs.map((cj) => (
-              <div
-                key={cj.id}
-                className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
-              >
-                <div>
-                  <p className="font-bold text-white">
-                    #{cj.id} | {cj.skillNeeded} ({cj.workersCount} Workers)
-                  </p>
-                  <p className="text-[10px] text-slate-400">
-                    Site: {cj.siteAddress} | Settled at {cj.completedAt}
-                  </p>
-                </div>
-                <span className="font-black text-emerald-400 text-xs">
-                  +Rs.{cj.totalDailyWage}
-                </span>
+        <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/40 space-y-2">
+          <h4 className="font-black text-emerald-400 text-xs">
+            4. Daily Wage &amp; {geoSlang.groupSlang} Payout Ledger ({completedJobs.length})
+          </h4>
+          {completedJobs.map((cj) => (
+            <div
+              key={cj.id}
+              className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
+            >
+              <div>
+                <p className="font-bold text-white">
+                  #{cj.id} | {cj.skillNeeded}
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  {cj.siteAddress} | Settled at {cj.completedAt}
+                </p>
               </div>
-            ))
-          )}
+              <span className="font-black text-emerald-400 text-xs">
+                +Rs.{cj.totalDailyWage}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

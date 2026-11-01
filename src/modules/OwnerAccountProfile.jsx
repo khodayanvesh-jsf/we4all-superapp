@@ -1,4 +1,10 @@
 import React, { useState } from "react";
+import {
+  INDIAN_LANGUAGES,
+  GEO_SLANG_REGIONS,
+  getLangText,
+  getGeoSlangConfig
+} from "./i18n/indianLanguages";
 
 export default function OwnerAccountProfile({
   currentUser,
@@ -11,6 +17,10 @@ export default function OwnerAccountProfile({
   onLockApp,
   brightTheme,
   setBrightTheme,
+  lang = "EN",
+  setLang = () => {},
+  geoRegion = "TELANGANA",
+  setGeoRegion = () => {},
   appUpdateInfo,
   onCheckForUpdate,
   checkingUpdate,
@@ -18,431 +28,261 @@ export default function OwnerAccountProfile({
   otaProgress,
   onTriggerToast
 }) {
-  const [bankDetails, setBankDetails] = useState({
-    bankName: currentUser?.bankName || "State Bank of India (Adilabad Main)",
-    accountNumber: currentUser?.accountNumber || "30984451209",
-    ifscCode: currentUser?.ifscCode || "SBIN0000801",
-    upiId: currentUser?.upiId || "khodayanvesh@ybl"
-  });
   const [editingBank, setEditingBank] = useState(false);
-
-  const [basicProfile, setBasicProfile] = useState({
+  const [bankForm, setBankForm] = useState({
     fullName: currentUser?.fullName || "Khoday Anvesh",
     phone: currentUser?.phone || "9848011223",
-    savedLocation: activeAddressObj?.fullAddress || "Subhash Nagar, Adilabad",
-    profilePhoto:
-      currentUser?.profilePhoto ||
-      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-    lastModifiedTimestamp: null
+    upiId: currentUser?.upiId || "khodayanvesh@ybl",
+    bankName: currentUser?.bankName || "State Bank of India",
+    accountNumber: currentUser?.accountNumber || "30984451209",
+    ifscCode: currentUser?.ifscCode || "SBIN0000801"
   });
-  const [editingBasicInfo, setEditingBasicInfo] = useState(false);
-  const [basicEditOtpSent, setBasicEditOtpSent] = useState("");
-  const [basicEditOtpInput, setBasicEditOtpInput] = useState("");
-  const [pinInput, setPinInput] = useState(accountSecurity?.fastPin || "1234");
 
-  const daysSinceLastEdit = basicProfile.lastModifiedTimestamp
-    ? Math.floor((Date.now() - basicProfile.lastModifiedTimestamp) / (1000 * 60 * 60 * 24))
-    : 31;
-  const canEditBasicThisMonth = daysSinceLastEdit >= 30;
-
-  const isUpdateReady = Boolean(
+  const t = getLangText(lang);
+  const activeGeoSlang = getGeoSlangConfig(geoRegion);
+  const hasUpdate = Boolean(
     appUpdateInfo?.updateAvailable ||
       (appUpdateInfo?.latestAvailableVersion &&
         appUpdateInfo?.currentVersion !== appUpdateInfo?.latestAvailableVersion)
   );
 
   return (
-    <div className="space-y-3 text-xs pb-4">
-      {/* 1. OWNER PROFILE IDENTITY CARD */}
-      <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-3 space-y-2.5 text-white">
-        <div className="flex items-center gap-3">
-          <label className="relative w-14 h-14 rounded-2xl border-2 border-amber-400 overflow-hidden cursor-pointer shrink-0">
-            <img
-              src={basicProfile.profilePhoto}
-              alt="Profile"
-              className="w-full h-full object-cover"
-            />
-            <span className="absolute bottom-0 inset-x-0 bg-black/75 text-[8px] text-amber-300 text-center font-bold">
-              Photo
-            </span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) {
-                  setBasicProfile({ ...basicProfile, profilePhoto: URL.createObjectURL(f) });
-                  if (onTriggerToast) onTriggerToast("Profile photo updated!");
-                }
-              }}
-              className="hidden"
-            />
-          </label>
-          <div className="flex-1 min-w-0">
-            <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[9px] font-black uppercase">
-              Verified {activePortal.replace(/_/g, " ")}
-            </span>
-            <h3 className="text-sm font-black text-white truncate mt-0.5">
-              {basicProfile.fullName}
-            </h3>
-            <p className="text-[11px] text-amber-300 font-mono">+91 {basicProfile.phone}</p>
-            <p className="text-[10px] text-slate-400 truncate">{basicProfile.savedLocation}</p>
-          </div>
-        </div>
-
-        <div className="pt-2 border-t border-slate-800">
-          {!editingBasicInfo ? (
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] text-slate-400">
-                {canEditBasicThisMonth
-                  ? "Monthly Basic Info Edit Ready (OTP Required)"
-                  : `Locked for ${30 - daysSinceLastEdit} more days`}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!canEditBasicThisMonth) {
-                    alert("Basic Profile Info can only be modified once every 30 days.");
-                    return;
-                  }
-                  setEditingBasicInfo(true);
-                }}
-                className="bg-slate-800 text-amber-300 border border-amber-400/40 px-2.5 py-1 rounded-xl text-[10px] font-black cursor-pointer"
-              >
-                Edit Basic Info (OTP)
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2 bg-slate-950 p-2.5 rounded-xl border border-amber-400/50">
-              <input
-                type="text"
-                value={basicProfile.fullName}
-                onChange={(e) => setBasicProfile({ ...basicProfile, fullName: e.target.value })}
-                placeholder="Full Legal Name"
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white"
-              />
-              <input
-                type="tel"
-                maxLength={10}
-                value={basicProfile.phone}
-                onChange={(e) => setBasicProfile({ ...basicProfile, phone: e.target.value })}
-                placeholder="10-Digit Mobile"
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white"
-              />
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const otp = String(Math.floor(1000 + Math.random() * 9000));
-                    setBasicEditOtpSent(otp);
-                    setBasicEditOtpInput(otp);
-                    if (onTriggerToast) onTriggerToast(`Profile OTP: ${otp}`);
-                  }}
-                  className="flex-1 bg-amber-400 text-slate-950 font-black py-1.5 rounded-lg cursor-pointer"
-                >
-                  Send OTP
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditingBasicInfo(false)}
-                  className="bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-              {basicEditOtpSent && (
-                <div className="space-y-1.5">
-                  <input
-                    type="text"
-                    value={basicEditOtpInput}
-                    onChange={(e) => setBasicEditOtpInput(e.target.value)}
-                    className="w-full bg-slate-900 border border-emerald-400 rounded-lg p-1.5 text-center font-mono text-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (basicEditOtpInput !== basicEditOtpSent) {
-                        alert("Invalid OTP!");
-                        return;
-                      }
-                      setBasicProfile({
-                        ...basicProfile,
-                        lastModifiedTimestamp: Date.now()
-                      });
-                      setCurrentUser({
-                        ...currentUser,
-                        fullName: basicProfile.fullName,
-                        phone: basicProfile.phone
-                      });
-                      setEditingBasicInfo(false);
-                      setBasicEditOtpSent("");
-                      if (onTriggerToast)
-                        onTriggerToast("Basic Profile Updated & Locked for 30 Days!");
-                    }}
-                    className="w-full bg-emerald-500 text-slate-950 font-black py-1.5 rounded-lg cursor-pointer"
-                  >
-                    Verify OTP ({basicEditOtpSent}) & Save
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 2. BANK ACCOUNT & UPI ID MANAGER */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2 text-white">
-        <div className="flex justify-between items-center">
+    <div className="space-y-3 text-xs text-white">
+      {/* 1. PROFILE IDENTITY & PORTAL ROLE SWITCHER */}
+      <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/40 space-y-2.5">
+        <div className="flex justify-between items-start gap-2">
           <div>
-            <h4 className="font-black text-emerald-400 text-xs">
-              Bank Account & UPI ID (Modify Anytime)
-            </h4>
+            <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-[9px] font-black px-2 py-0.5 rounded uppercase">
+              VERIFIED ACCOUNT | {activePortal.replace("_", " ")}
+            </span>
+            <h3 className="font-black text-white text-sm mt-1">
+              {currentUser?.fullName || "Khoday Anvesh"}
+            </h3>
             <p className="text-[10px] text-slate-400">
-              Used for instant UPI payouts, settlements & refunds
+              Mobile: +91 {currentUser?.phone || "9848011223"} | UPI:{" "}
+              <strong className="text-amber-300">
+                {currentUser?.upiId || "khodayanvesh@ybl"}
+              </strong>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setEditingBank(!editingBank)}
-            className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-2.5 py-1 rounded-xl text-[10px] font-black cursor-pointer"
-          >
-            {editingBank ? "Close" : "Modify Anytime"}
-          </button>
-        </div>
-
-        {!editingBank ? (
-          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1 text-[10px]">
-            <p>
-              UPI ID: <strong className="text-amber-300 font-mono">{bankDetails.upiId}</strong>
-            </p>
-            <p>
-              Bank: <strong>{bankDetails.bankName}</strong> ({bankDetails.accountNumber} /{" "}
-              {bankDetails.ifscCode})
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-1.5 bg-slate-950 p-2.5 rounded-xl border border-emerald-500/40">
-            <input
-              type="text"
-              value={bankDetails.upiId}
-              onChange={(e) => setBankDetails({ ...bankDetails, upiId: e.target.value })}
-              placeholder="UPI ID (e.g. name@ybl)"
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white"
-            />
-            <input
-              type="text"
-              value={bankDetails.bankName}
-              onChange={(e) => setBankDetails({ ...bankDetails, bankName: e.target.value })}
-              placeholder="Bank Name"
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white"
-            />
-            <div className="grid grid-cols-2 gap-1.5">
-              <input
-                type="text"
-                value={bankDetails.accountNumber}
-                onChange={(e) =>
-                  setBankDetails({ ...bankDetails, accountNumber: e.target.value })
-                }
-                placeholder="A/C Number"
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white"
-              />
-              <input
-                type="text"
-                value={bankDetails.ifscCode}
-                onChange={(e) => setBankDetails({ ...bankDetails, ifscCode: e.target.value })}
-                placeholder="IFSC Code"
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setCurrentUser({ ...currentUser, ...bankDetails });
-                setEditingBank(false);
-                if (onTriggerToast) onTriggerToast("Bank & UPI details updated immediately!");
-              }}
-              className="w-full bg-emerald-500 text-slate-950 font-black py-1.5 rounded-lg cursor-pointer"
-            >
-              Save Bank & UPI Details
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* 3. PIN, BIOMETRIC, BRIGHT THEME & PERSONAL SHOPPING */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2 text-white">
-        <h4 className="font-black text-teal-300 text-xs">
-          Security (PIN / Biometric), UI Theme & Personal Shopping
-        </h4>
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            onClick={() =>
-              setAccountSecurity({
-                ...accountSecurity,
-                pinEnabled: !accountSecurity.pinEnabled
-              })
-            }
-            className={`py-1.5 rounded-xl font-black text-[10px] cursor-pointer ${
-              accountSecurity.pinEnabled
-                ? "bg-emerald-500 text-slate-950"
-                : "bg-slate-800 text-slate-400"
-            }`}
-          >
-            4-Digit PIN: {accountSecurity.pinEnabled ? "ON" : "OFF"}
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              setAccountSecurity({
-                ...accountSecurity,
-                biometricEnabled: !accountSecurity.biometricEnabled
-              })
-            }
-            className={`py-1.5 rounded-xl font-black text-[10px] cursor-pointer ${
-              accountSecurity.biometricEnabled
-                ? "bg-teal-400 text-slate-950"
-                : "bg-slate-800 text-slate-400"
-            }`}
-          >
-            Biometric: {accountSecurity.biometricEnabled ? "ON" : "OFF"}
-          </button>
-        </div>
-
-        <div className="flex gap-1.5">
-          <input
-            type="password"
-            maxLength={4}
-            value={pinInput}
-            onChange={(e) => setPinInput(e.target.value)}
-            placeholder="4-Digit PIN"
-            className="w-24 bg-slate-950 border border-slate-700 rounded-xl p-1.5 text-center font-mono text-white"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setAccountSecurity({ ...accountSecurity, fastPin: pinInput });
-              if (onTriggerToast) onTriggerToast("4-Digit Quick PIN updated!");
-            }}
-            className="flex-1 bg-slate-800 text-amber-300 font-bold rounded-xl text-[10px] cursor-pointer"
-          >
-            Save PIN
-          </button>
           <button
             type="button"
             onClick={() => setBrightTheme(!brightTheme)}
-            className="bg-slate-800 text-emerald-300 px-2.5 rounded-xl font-bold text-[10px] cursor-pointer"
+            className="bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
           >
-            {brightTheme ? "Dark UI" : "Bright UI"}
-          </button>
-          <button
-            type="button"
-            onClick={onLockApp}
-            className="bg-rose-600 text-white font-black px-2.5 rounded-xl text-[10px] cursor-pointer"
-          >
-            Lock
+            {brightTheme ? "Dark Mode" : "Bright Mode"}
           </button>
         </div>
 
-        {activePortal !== "customer" && (
-          <button
-            type="button"
-            onClick={() => {
-              setActivePortal("customer");
-              if (onTriggerToast)
-                onTriggerToast("Switched to Personal Consumer Shopping Mode!");
-            }}
-            className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl text-xs cursor-pointer shadow"
+        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+          <label className="block text-[10px] text-emerald-300 font-black">
+            Switch Active Portal / Business Console:
+          </label>
+          <select
+            value={activePortal}
+            onChange={(e) => setActivePortal(e.target.value)}
+            className="w-full bg-slate-900 border border-emerald-500/50 rounded-xl p-2 text-white font-bold text-xs cursor-pointer"
           >
-            Shop as Consumer (Personal Shopping Mode)
-          </button>
-        )}
+            <option value="customer">1. Mega Super Joint Market (Customer)</option>
+            <option value="merchant">2. Product Merchant Portal (Kirana / Supermart)</option>
+            <option value="service_provider">3. 1-Hr Home Service Provider Portal</option>
+            <option value="decorator">4. Flower Decorator &amp; Function Halls</option>
+            <option value="rider">5. Delivery Captain Portal (2W / 3W / 4W)</option>
+            <option value="labour_portal">6. Local Labour &amp; Work-Site Portal (Mistri / Adda)</option>
+          </select>
+        </div>
       </div>
 
-      {/* 4. LAST OPTION IN ACCOUNT: WE4ALL OTA UPDATE CENTER + CHECK UPDATE REFRESH ICON */}
-      <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 border-2 border-amber-400 rounded-2xl p-3 space-y-2.5 text-white shadow-lg">
-        <div className="flex justify-between items-center gap-2">
-          <div>
-            <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded uppercase">
-              WE4ALL App Update Center (OTA)
-            </span>
-            <h4 className="font-black text-emerald-300 text-xs mt-1">
-              Installed: v{appUpdateInfo?.currentVersion || "2.8.0"} | Latest: v
-              {appUpdateInfo?.latestAvailableVersion || "2.8.6"}
-            </h4>
-          </div>
+      {/* 2. LANGUAGE & GEO-LOCATION LOCAL SLANG CONTROLLER (IN ACCOUNT SECTION ONLY!) */}
+      <div className="bg-slate-900 p-3.5 rounded-2xl border-2 border-amber-400/70 space-y-2.5">
+        <div>
+          <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px]">
+            LOCAL LANGUAGE &amp; GEO-SLANG ENGINE
+          </span>
+          <h4 className="font-black text-amber-300 text-xs mt-1">
+            App Language &amp; State-Wise Local Market Terminology
+          </h4>
+          <p className="text-[10px] text-slate-300">
+            Default installation language is <strong>English</strong>. Changing language or geo-region automatically updates category names, sub-categories, and worker roles to local slang (e.g. Gavandi, Bigari, Gare Mestri, Kothanar, Rajmistri).
+          </p>
+        </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={onCheckForUpdate}
-              title="Check Server for New OTA Updates"
-              className="bg-slate-800 hover:bg-slate-700 border border-emerald-400/60 text-emerald-300 px-2.5 py-1 rounded-xl text-[10px] font-black flex items-center gap-1 cursor-pointer shadow"
-            >
-              <span className={checkingUpdate ? "animate-spin inline-block" : "inline-block"}>
-                &#x21BB;
-              </span>
-              <span>{checkingUpdate ? "Checking..." : "Check Update"}</span>
-            </button>
-            {isUpdateReady ? (
-              <span className="bg-rose-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse">
-                READY
-              </span>
-            ) : (
-              <span className="bg-emerald-500/20 text-emerald-300 text-[9px] font-bold px-2 py-0.5 rounded-full">
-                LATEST
-              </span>
-            )}
+        <div className="space-y-1">
+          <label className="block text-[10px] text-slate-300 font-bold">
+            1. Select Application Language (Default: English):
+          </label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {INDIAN_LANGUAGES.map((l) => {
+              const selected = lang === l.code;
+              return (
+                <button
+                  key={l.code}
+                  type="button"
+                  onClick={() => {
+                    setLang(l.code);
+                    if (l.defaultGeo) setGeoRegion(l.defaultGeo);
+                    if (onTriggerToast) {
+                      onTriggerToast(
+                        `Language set to ${l.label} & local slang synced!`
+                      );
+                    }
+                  }}
+                  className={`p-2 rounded-xl border text-center cursor-pointer transition ${
+                    selected
+                      ? "bg-amber-400 text-slate-950 border-white font-black shadow"
+                      : "bg-slate-950 text-slate-300 border-slate-800"
+                  }`}
+                >
+                  <div className="text-[11px] font-black">{l.native}</div>
+                  <div className="text-[8px] opacity-80">{l.label}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <p className="text-[10px] text-slate-300 leading-relaxed">
-          {appUpdateInfo?.releaseNotes ||
-            "Tap 'Check Update' to verify the latest cloud release, then tap 'Download & Install' to upgrade and restart with zero data loss."}
-        </p>
+        <div className="space-y-1 pt-1">
+          <label className="block text-[10px] text-emerald-300 font-bold">
+            2. Active Geo-Location Local Slang Dialect (Categories &amp; Roles):
+          </label>
+          <select
+            value={geoRegion}
+            onChange={(e) => {
+              setGeoRegion(e.target.value);
+              const found = getGeoSlangConfig(e.target.value);
+              if (onTriggerToast) {
+                onTriggerToast(
+                  `Geo-Location Slang switched to ${found.stateName}!`
+                );
+              }
+            }}
+            className="w-full bg-slate-950 border border-emerald-400 rounded-xl p-2 text-emerald-300 font-bold text-[11px] cursor-pointer"
+          >
+            {GEO_SLANG_REGIONS.map((reg) => (
+              <option key={reg.id} value={reg.id}>
+                {reg.stateName} ({reg.standSlang})
+              </option>
+            ))}
+          </select>
+        </div>
 
-        {otaProgress && (
-          <div className="space-y-1 bg-slate-950 p-2 rounded-xl border border-emerald-500/40">
-            <div className="flex justify-between text-[10px] font-bold text-amber-300">
-              <span>{otaProgress.msg}</span>
-              <span>{otaProgress.pct}%</span>
-            </div>
-            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div
-                className="bg-emerald-400 h-full transition-all duration-300"
-                style={{ width: `${otaProgress.pct}%` }}
-              />
-            </div>
+        {/* Live Preview of Local Slang Terms Active in Current Region */}
+        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1 text-[10px]">
+          <p className="font-black text-amber-300">
+            Active Local Slang in {activeGeoSlang.stateName}:
+          </p>
+          <p className="text-slate-300">
+            <strong>Stand:</strong> {activeGeoSlang.standSlang} |{" "}
+            <strong>Group:</strong> {activeGeoSlang.groupSlang}
+          </p>
+          <p className="text-emerald-300">
+            <strong>Mason:</strong> {activeGeoSlang.labourRoles.mason_mistri}
+          </p>
+          <p className="text-teal-300">
+            <strong>Helper:</strong> {activeGeoSlang.labourRoles.daily_helper}
+          </p>
+          <p className="text-indigo-300">
+            <strong>Loader:</strong> {activeGeoSlang.labourRoles.hamali_loading}
+          </p>
+        </div>
+      </div>
+
+      {/* 3. IN-APP OTA SOFTWARE UPDATER */}
+      <div className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40 space-y-2">
+        <div className="flex justify-between items-center">
+          <div>
+            <h4 className="font-black text-teal-300 text-xs">
+              In-App Software Updater (OTA)
+            </h4>
+            <p className="text-[10px] text-slate-400">
+              Installed: <strong>v{appUpdateInfo?.currentVersion || "3.0.3"}</strong> | Latest Cloud:{" "}
+              <strong className="text-emerald-400">
+                v{appUpdateInfo?.latestAvailableVersion || "3.0.3"}
+              </strong>
+            </p>
           </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-1.5 pt-1">
+          <button
+            type="button"
+            onClick={onCheckForUpdate}
+            disabled={checkingUpdate}
+            className="bg-slate-800 border border-teal-400 text-teal-300 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
+          >
+            {checkingUpdate ? "Checking..." : "Check Update"}
+          </button>
+        </div>
+        {hasUpdate && (
           <button
             type="button"
             onClick={onRunOtaUpdate}
-            className={`font-black py-2 rounded-xl text-[10px] cursor-pointer shadow ${
-              isUpdateReady
-                ? "bg-amber-400 hover:bg-amber-300 text-slate-950 animate-pulse"
-                : "bg-emerald-500 hover:bg-emerald-400 text-slate-950"
-            }`}
+            className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer shadow"
           >
-            {isUpdateReady
-              ? `Download & Install v${appUpdateInfo?.latestAvailableVersion} (Restart)`
-              : "Re-Sync & Restart App"}
+            Download &amp; Install v{appUpdateInfo?.latestAvailableVersion} Now
           </button>
-          <a
-            href={appUpdateInfo?.apkDownloadUrl || "/WE4ALL.apk"}
-            download="WE4ALL.apk"
-            onClick={() =>
-              onTriggerToast &&
-              onTriggerToast("Downloading WE4ALL.apk installer package...")
-            }
-            className="bg-slate-800 hover:bg-slate-700 border border-emerald-400/50 text-emerald-300 font-black py-2 rounded-xl text-[10px] text-center cursor-pointer shadow block"
-          >
-            Download Local WE4ALL.apk
-          </a>
-        </div>
+        )}
       </div>
+
+      {/* 4. BANK & UPI SETTLEMENT VAULT */}
+      <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+        <div className="flex justify-between items-center">
+          <h4 className="font-black text-slate-200 text-xs">
+            Bank &amp; Instant UPI Settlement Details
+          </h4>
+          <button
+            type="button"
+            onClick={() => setEditingBank(!editingBank)}
+            className="text-[10px] text-amber-300 underline font-bold cursor-pointer"
+          >
+            {editingBank ? "Close" : "Edit"}
+          </button>
+        </div>
+        {editingBank ? (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={bankForm.fullName}
+              onChange={(e) =>
+                setBankForm({ ...bankForm, fullName: e.target.value })
+              }
+              placeholder="Full Name"
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
+            />
+            <input
+              type="text"
+              value={bankForm.upiId}
+              onChange={(e) =>
+                setBankForm({ ...bankForm, upiId: e.target.value })
+              }
+              placeholder="UPI ID"
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentUser({ ...currentUser, ...bankForm });
+                setEditingBank(false);
+                if (onTriggerToast) onTriggerToast("Account & UPI details saved!");
+              }}
+              className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
+            >
+              Save Details
+            </button>
+          </div>
+        ) : (
+          <p className="text-[10px] text-slate-400">
+            Bank: {currentUser?.bankName || "State Bank of India"} | IFSC:{" "}
+            {currentUser?.ifscCode || "SBIN0000801"}
+          </p>
+        )}
+      </div>
+
+      {/* 5. EXPLICIT LOGOUT BUTTON (PERSISTENT SESSION UNTIL CLICKED) */}
+      <button
+        type="button"
+        onClick={onLockApp}
+        className="w-full bg-rose-600 hover:bg-rose-500 text-white font-black py-2.5 rounded-2xl cursor-pointer shadow"
+      >
+        {t.logoutBtn || "Sign Out / Logout"}
+      </button>
     </div>
   );
 }

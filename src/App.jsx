@@ -11,7 +11,11 @@ import {
   INITIAL_FUNCTION_HALLS,
   INITIAL_RIDERS
 } from "./data";
-import { INDIAN_LANGUAGES, getLangText } from "./modules/i18n/indianLanguages";
+import {
+  getLangText,
+  getGeoSlangConfig,
+  GEO_SLANG_REGIONS
+} from "./modules/i18n/indianLanguages";
 import GeoTargetedAdBanner from "./modules/ads/GeoTargetedAdBanner";
 import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
@@ -71,7 +75,9 @@ function FounderLogoBadge({ logoUrl }) {
 }
 
 // ============================================================================
-// CLEAN AMAZON-STYLE HEADER SHELL (ZERO NOTIFICATION OR UPDATE BUTTON CLUTTER)
+// ULTRA-CLEAN AMAZON-STYLE HEADER SHELL:
+// Zero notification bells, zero update buttons, and zero language dropdowns!
+// Language & Geo-Slang selection are managed exclusively inside Account tab.
 // ============================================================================
 function MobilePhoneShell({
   title,
@@ -85,7 +91,6 @@ function MobilePhoneShell({
   onOpenLiveOrderModal,
   brightTheme,
   lang,
-  setLang,
   personalShoppingFromPartner,
   onReturnToPartnerDesk,
   customPortalTabs = null,
@@ -98,9 +103,9 @@ function MobilePhoneShell({
         brightTheme ? "bg-white text-slate-900" : "bg-[#071118] text-white"
       }`}
     >
-      {/* Strictly Clean Amazon-Style Top Header Bar */}
+      {/* Pure Amazon-Style Top Header Bar */}
       <div
-        className={`px-3 py-2.5 flex justify-between items-center gap-2 text-xs border-b shrink-0 ${
+        className={`px-3.5 py-2.5 flex justify-between items-center gap-2 text-xs border-b shrink-0 ${
           brightTheme
             ? "bg-[#131921] text-white border-slate-800"
             : "bg-slate-950 text-slate-100 border-emerald-950/60"
@@ -112,22 +117,9 @@ function MobilePhoneShell({
             WE4ALL.in | {cleanLabel(title)}
           </span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <select
-            value={lang}
-            onChange={(e) => setLang(e.target.value)}
-            className="bg-slate-800 text-amber-300 border border-slate-600 rounded-lg px-2 py-1 text-[10px] font-black outline-none cursor-pointer"
-          >
-            {INDIAN_LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.code} - {l.native}
-              </option>
-            ))}
-          </select>
-          <span className="bg-emerald-900/80 border border-emerald-500/40 text-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold truncate">
-            {cleanLabel(badge)}
-          </span>
-        </div>
+        <span className="bg-emerald-900/80 border border-emerald-500/40 text-emerald-200 px-2.5 py-0.5 rounded text-[10px] font-bold truncate shrink-0">
+          {cleanLabel(badge)}
+        </span>
       </div>
 
       {personalShoppingFromPartner && (
@@ -214,8 +206,26 @@ function AppContent() {
   const [adminPinInput, setAdminPinInput] = useState("");
   const [adminLoginError, setAdminLoginError] = useState("");
 
-  const [lang, setLang] = useState("EN");
+  // DEFAULT ENGLISH ("EN") ON INSTALLATION; PERSISTED WHEN CHANGED IN ACCOUNT SECTION
+  const [lang, setLangState] = useState(() => {
+    return localStorage.getItem("we4all_app_lang_v4") || "EN";
+  });
+  const setLang = (nextLang) => {
+    localStorage.setItem("we4all_app_lang_v4", nextLang);
+    setLangState(nextLang);
+  };
+
+  // GEO-LOCATION REGIONAL SLANG STATE (TELANGANA, MAHARASHTRA, KARNATAKA, TAMIL_NADU, NORTH_HINDI)
+  const [geoRegion, setGeoRegionState] = useState(() => {
+    return localStorage.getItem("we4all_geo_region_v4") || "TELANGANA";
+  });
+  const setGeoRegion = (nextGeo) => {
+    localStorage.setItem("we4all_geo_region_v4", nextGeo);
+    setGeoRegionState(nextGeo);
+  };
+
   const t = getLangText(lang);
+  const geoSlang = getGeoSlangConfig(geoRegion);
   const [brightTheme, setBrightTheme] = useState(true);
 
   const [founderLogoUrl, setFounderLogoUrl] = useState(
@@ -251,7 +261,7 @@ function AppContent() {
     });
   };
 
-  const [deviceBoundUser, setDeviceBoundUser] = useState(() => {
+  const [deviceBoundUser] = useState(() => {
     const raw = localStorage.getItem("we4all_device_bound_user_v4");
     return raw ? JSON.parse(raw) : null;
   });
@@ -261,7 +271,6 @@ function AppContent() {
       ? "auth"
       : "app";
   });
-  const [regStep, setRegStep] = useState(1);
   const [selectedRole, setSelectedRole] = useState(
     deviceBoundUser?.role || savedCloud?.activePortal || "customer"
   );
@@ -272,20 +281,17 @@ function AppContent() {
     useState(null);
   const [footerTab, setFooterTab] = useState("home");
 
-  // ==========================================================================
-  // AUTOMATIC STARTUP OTA CHECKER:
-  // Checks on app open -> Prompts to accept if new update exists -> Skips if latest!
-  // ==========================================================================
+  // AUTOMATIC STARTUP OTA UPDATE CHECKER (SKIPS IF ALREADY ON LATEST VERSION)
   const [appUpdateInfo, setAppUpdateInfo] = useState(() => {
-    const installedVer = getDeviceInstalledVersion("3.0.1");
+    const installedVer = getDeviceInstalledVersion("3.0.2");
     return (
       savedCloud?.appUpdateInfo || {
         ...(INITIAL_APP_UPDATE_INFO || {}),
         currentVersion: installedVer,
-        latestAvailableVersion: "3.0.2",
-        updateAvailable: installedVer !== "3.0.2",
+        latestAvailableVersion: "3.0.3",
+        updateAvailable: installedVer !== "3.0.3",
         releaseNotes:
-          "WE4ALL v3.0.2: Automatic Startup OTA Update Prompt, Clean Amazon Header, and New 6. Local Labour & Work-Site Portal (Mistri, Helper, Hamali & Farm Adda)."
+          "WE4ALL v3.0.3: Geo-Location Regional Slang Titles (Telangana, Maharashtra, Karnataka, Tamil Nadu & Hindi), Default English Install, Account-Only Language Switcher & Labour Adda Hub."
       }
     );
   });
@@ -299,23 +305,21 @@ function AppContent() {
 
   useEffect(() => {
     linkMobileHardwareServicesSilently();
-    // Automatic Startup Version Check
     const runStartupUpdateCheck = async () => {
       const installedVer =
-        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.1";
+        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.2";
       const remoteOta = await checkLiveCloudOtaManifest((payload) => {
         if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
       });
       const latestVer =
         remoteOta?.latestAvailableVersion ||
         appUpdateInfo?.latestAvailableVersion ||
-        "3.0.2";
+        "3.0.3";
       const notes =
         remoteOta?.releaseNotes ||
         appUpdateInfo?.releaseNotes ||
-        "New features and performance improvements ready.";
+        "New geo-regional slang and market features available.";
 
-      // Only prompt if a newer version is available; if already latest, skip directly to app!
       if (latestVer && latestVer !== installedVer) {
         setStartupUpdatePrompt({
           currentVersion: installedVer,
@@ -336,11 +340,11 @@ function AppContent() {
     setTimeout(() => {
       setCheckingUpdate(false);
       const installedVer =
-        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.2";
+        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.3";
       const targetVer =
         latest?.latestAvailableVersion ||
         appUpdateInfo?.latestAvailableVersion ||
-        "3.0.2";
+        "3.0.3";
       const isNewer = targetVer !== installedVer;
       setAppUpdateInfo((prev) => ({
         ...prev,
@@ -367,7 +371,7 @@ function AppContent() {
       targetVerOverride ||
       startupUpdatePrompt?.latestAvailableVersion ||
       appUpdateInfo?.latestAvailableVersion ||
-      "3.0.2";
+      "3.0.3";
     setStartupUpdatePrompt(null);
     localStorage.setItem("we4all_installed_ota_ver_v4", targetVer);
     performZeroLossOtaUpdate(
@@ -387,8 +391,7 @@ function AppContent() {
     );
   };
 
-  // Labour & Work-Site Portal States (Beta Testing Portal #6)
-  const [labourPortalEnabled, setLabourPortalEnabled] = useState(true);
+  const [labourPortalEnabled] = useState(true);
   const [labourWorkers, setLabourWorkers] = useState(
     savedCloud?.labourWorkers && savedCloud.labourWorkers.length > 0
       ? savedCloud.labourWorkers
@@ -406,7 +409,6 @@ function AppContent() {
     pickupFromAdda: false
   });
 
-  // Dynamic No-Code Market Portals
   const [customPortals, setCustomPortals] = useState(
     savedCloud?.customPortals || [
       {
@@ -439,38 +441,6 @@ function AppContent() {
     ]
   );
 
-  const sigCanvasRef = useRef(null);
-  const [isDrawingSig, setIsDrawingSig] = useState(false);
-
-  const startSigDraw = (e) => {
-    const canvas = sigCanvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const ctx = canvas.getContext("2d");
-    ctx.strokeStyle = "#10b981";
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(clientX - rect.left, clientY - rect.top);
-    setIsDrawingSig(true);
-  };
-
-  const moveSigDraw = (e) => {
-    if (!isDrawingSig) return;
-    const canvas = sigCanvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const ctx = canvas.getContext("2d");
-    ctx.lineTo(clientX - rect.left, clientY - rect.top);
-    ctx.stroke();
-  };
-
-  const endSigDraw = () => setIsDrawingSig(false);
-
   const [accountSecurity, setAccountSecurity] = useState(
     savedCloud?.accountSecurity || {
       pinEnabled: true,
@@ -500,19 +470,6 @@ function AppContent() {
         fastPin: "1990"
       }
   );
-
-  const [regForm, setRegForm] = useState({
-    role: "customer",
-    vehicleCode: "2W",
-    vehicleModel: "Hero Splendor / Activa",
-    rcPlate: "",
-    phone: "",
-    generatedOtp: "",
-    fullName: "",
-    upiId: "",
-    tcAccepted: false,
-    digitalSignatureText: ""
-  });
 
   const [pendingUpiPayment, setPendingUpiPayment] = useState(null);
   const [geoAds, setGeoAds] = useState(savedCloud?.geoAds || INITIAL_GEO_ADS);
@@ -627,18 +584,9 @@ function AppContent() {
       fullAddress: "Subhash Nagar, Adilabad",
       distanceKm: 1.8,
       verified: true
-    },
-    {
-      id: "addr_office",
-      label: "Office",
-      fullAddress: "Collectorate Chowk, Adilabad",
-      distanceKm: 2.5,
-      verified: true
     }
   ]);
-  const [selectedAddressId] = useState("addr_home");
-  const activeAddressObj =
-    addressBook.find((a) => a.id === selectedAddressId) || addressBook[0];
+  const activeAddressObj = addressBook[0];
 
   const [selectedCategory, setSelectedCategory] = useState("ALL_MARKET");
   const [searchQuery, setSearchQuery] = useState("");
@@ -646,10 +594,8 @@ function AppContent() {
   const [selectedMerchantByProduct, setSelectedMerchantByProduct] = useState({});
   const [expandedCompareProdId, setExpandedCompareProdId] = useState(null);
 
-  const [serviceFilterDate, setServiceFilterDate] = useState("2026-11-02");
-  const [serviceFilterSlot, setServiceFilterSlot] = useState(
-    "10:00 AM - 11:00 AM"
-  );
+  const [serviceFilterDate] = useState("2026-11-02");
+  const [serviceFilterSlot] = useState("10:00 AM - 11:00 AM");
 
   const [customerBookingForm, setCustomerBookingForm] = useState({
     forWhom: "For Myself",
@@ -946,13 +892,10 @@ function AppContent() {
     setViewMode("founder_web");
   };
 
-  // ==========================================================================
-  // SECURITY & BIOMETRIC VAULT
-  // ==========================================================================
   const renderAuthVault = () => (
     <MobilePhoneShell
       title="Security & KYC Vault"
-      badge="v3.0.2"
+      badge="v3.0.3"
       activePortal={activePortal}
       footerTab={footerTab}
       setFooterTab={setFooterTab}
@@ -960,7 +903,6 @@ function AppContent() {
       totalOrdersCount={orders.length}
       brightTheme={brightTheme}
       lang={lang}
-      setLang={setLang}
       showFooter={false}
     >
       <div className="space-y-3 text-xs">
@@ -987,10 +929,7 @@ function AppContent() {
           </div>
           <select
             value={selectedRole}
-            onChange={(e) => {
-              setSelectedRole(e.target.value);
-              setRegForm({ ...regForm, role: e.target.value });
-            }}
+            onChange={(e) => setSelectedRole(e.target.value)}
             className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl p-2 text-white font-bold text-xs"
           >
             <option value="customer">1. Mega Super Joint Market (Customer App)</option>
@@ -998,54 +937,44 @@ function AppContent() {
             <option value="service_provider">3. 1-Hr Home Service Provider Portal</option>
             <option value="decorator">4. Flower Decorator &amp; Function Halls Portal</option>
             <option value="rider">5. Delivery Captain Portal (2W / 3W / 4W)</option>
-            {labourPortalEnabled && (
-              <option value="labour_portal">
-                6. Local Labour &amp; Work-Site Portal (Mistri / Helper / Hamali - Beta)
-              </option>
-            )}
-            {customPortals.map((cp) => (
-              <option key={cp.id} value={cp.id}>
-                {cleanLabel(cp.title)}
-              </option>
-            ))}
+            <option value="labour_portal">
+              6. {geoSlang.standSlang} Portal (Mistri / Kooli / Hamali)
+            </option>
           </select>
-          <div className="grid grid-cols-2 gap-1.5 pt-1">
-            <button
-              type="button"
-              onClick={async () => {
-                await verifyPhoneHardwareBiometric(
-                  currentUser?.fullName || "WE4ALL User"
-                );
-                localStorage.setItem("we4all_persistent_session_v4", "active");
-                setActivePortal(selectedRole);
-                setFooterTab("home");
-                setOnboardingStep("app");
-                triggerToast(
-                  `Biometric Verified! Opened ${selectedRole.toUpperCase()}.`
-                );
-              }}
-              className="py-2 rounded-xl font-black text-[10px] bg-emerald-400 text-slate-950 cursor-pointer shadow"
-            >
-              1-Tap Biometric Login
-            </button>
-            <button
-              type="button"
-              onClick={() => setRegStep(1)}
-              className="py-2 rounded-xl font-black text-[10px] bg-amber-400 text-slate-950 cursor-pointer"
-            >
-              New KYC Registration
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              await verifyPhoneHardwareBiometric(
+                currentUser?.fullName || "WE4ALL User"
+              );
+              localStorage.setItem("we4all_persistent_session_v4", "active");
+              setActivePortal(selectedRole);
+              setFooterTab("home");
+              setOnboardingStep("app");
+            }}
+            className="w-full py-2.5 rounded-xl font-black text-[11px] bg-emerald-400 text-slate-950 cursor-pointer shadow"
+          >
+            1-Tap Biometric Login
+          </button>
         </div>
       </div>
     </MobilePhoneShell>
   );
 
   // ==========================================================================
-  // PORTAL 1: UNIFIED MEGA SUPER JOINT LOCAL MARKET (INCLUDES LABOUR HUB!)
+  // PORTAL 1: UNIFIED MEGA SUPER JOINT LOCAL MARKET (GEO-SLANG ADAPTIVE!)
   // ==========================================================================
   const renderCustomerPortal = () => {
     const q = searchQuery.trim().toLowerCase();
+
+    // Helper: Get Geo-Slang Category Name (e.g. "Kirana & Inti Sarukulu" in TS, "Maligai Kadai" in TN)
+    const getGeoCategoryLabel = (cat) => {
+      return geoSlang?.categories?.[cat.id] || cleanLabel(cat.name);
+    };
+
+    const getGeoLabourRoleLabel = (skillId, fallback) => {
+      return geoSlang?.labourRoles?.[skillId] || cleanLabel(fallback);
+    };
 
     const matchingProducts = products.filter(
       (p) =>
@@ -1066,20 +995,21 @@ function AppContent() {
           cleanLabel(sp.maskedId).toLowerCase().includes(q))
     );
 
-    const matchingLabour = labourWorkers.filter(
-      (lw) =>
+    const matchingLabour = labourWorkers.filter((lw) => {
+      const roleSlang = getGeoLabourRoleLabel(lw.skillId, lw.skillLabel);
+      return (
         lw.isAvailableToday !== false &&
         (labourFilterSkill === "ALL" || lw.skillId === labourFilterSkill) &&
         (cleanLabel(lw.workerName).toLowerCase().includes(q) ||
-          cleanLabel(lw.skillLabel).toLowerCase().includes(q) ||
+          roleSlang.toLowerCase().includes(q) ||
           cleanLabel(lw.addaLocation).toLowerCase().includes(q))
-    );
+      );
+    });
 
     const matchingDecor = decorPortfolio.filter(
       (dp) =>
         cleanLabel(dp.title).toLowerCase().includes(q) ||
-        cleanLabel(dp.merchantName).toLowerCase().includes(q) ||
-        cleanLabel(dp.decorType).toLowerCase().includes(q)
+        cleanLabel(dp.merchantName).toLowerCase().includes(q)
     );
 
     const { topProducts } = getPersonalizedRecommendations(
@@ -1128,22 +1058,22 @@ function AppContent() {
         customerBookingForm.distanceKm * chosenRule.perKmRate
     );
 
+    // Geo-Slang Sector Strip
     const megaMarketSectors = [
       { id: "ALL_MARKET", label: "All Local Market", badge: "MEGA HUB" },
       ...categories.map((c) => ({
         id: c.id,
-        label: cleanLabel(c.name),
+        label: getGeoCategoryLabel(c),
         badge: "SHOP"
       })),
-      { id: "SECTOR_LABOUR", label: "Labour & Mistri Adda", badge: "NEW BETA" },
-      { id: "SECTOR_SERVICES", label: "1-Hr Home Services", badge: "PRO" },
-      { id: "SECTOR_DECOR", label: "Halls & Flower Decor", badge: "EVENTS" },
-      { id: "SECTOR_TAXI", label: "2W / 3W / 4W Rides", badge: "TAXI" },
-      ...customPortals.map((cp) => ({
-        id: `DYN_${cp.id}`,
-        label: cleanLabel(cp.title),
-        badge: cleanLabel(cp.badge)
-      }))
+      {
+        id: "SECTOR_LABOUR",
+        label: geoSlang.standSlang,
+        badge: geoSlang.groupSlang
+      },
+      { id: "SECTOR_SERVICES", label: t.services || "1-Hr Services", badge: "PRO" },
+      { id: "SECTOR_DECOR", label: t.decor || "Decor & Halls", badge: "EVENTS" },
+      { id: "SECTOR_TAXI", label: t.taxi || "2W/3W/4W Rides", badge: "TAXI" }
     ];
 
     const showStoresSection =
@@ -1174,7 +1104,6 @@ function AppContent() {
         onOpenLiveOrderModal={() => setLiveOrderDrawerOpen(true)}
         brightTheme={brightTheme}
         lang={lang}
-        setLang={setLang}
         personalShoppingFromPartner={personalShoppingFromPartner}
         onReturnToPartnerDesk={() => {
           setActivePortal(personalShoppingFromPartner);
@@ -1182,48 +1111,59 @@ function AppContent() {
           setFooterTab("home");
         }}
       >
-        {/* Clean Amazon-Style Sub-Header: Deliver To Address + Partner Role Switcher */}
+        {/* Sub-Header: Deliver To Address + Quick Geo-Location Slang Switcher + Portal Switcher */}
         <div className="bg-[#232f3e] text-white px-3 py-2 rounded-xl flex flex-wrap justify-between items-center gap-2 text-[10px]">
           <div className="flex items-center gap-2 truncate">
             <FounderLogoBadge logoUrl={founderLogoUrl} />
             <div>
               <span className="text-slate-300 block text-[8px]">
-                {t.deliverTo} {cleanLabel(currentUser.fullName)}
+                {t.deliverTo} {cleanLabel(currentUser.fullName)} ({geoSlang.stateName.split(" ")[0]} Slang)
               </span>
               <span className="text-amber-300 font-black text-[10px]">
                 {activeAddressObj.label}: {activeAddressObj.fullAddress}
               </span>
             </div>
           </div>
-          <select
-            value={activePortal}
-            onChange={(e) => {
-              if (e.target.value === "founder_admin") {
-                openAdminGate();
-                return;
-              }
-              setActivePortal(e.target.value);
-              setFooterTab("home");
-            }}
-            className="bg-slate-900 text-emerald-300 border border-slate-700 rounded-lg px-2 py-1 text-[10px] font-black cursor-pointer"
-          >
-            <option value="customer">1. Mega Super Joint Market</option>
-            <option value="merchant">2. Product Merchant Portal</option>
-            <option value="service_provider">3. 1-Hr Service Provider Portal</option>
-            <option value="decorator">4. Flower Decorator &amp; Halls Portal</option>
-            <option value="rider">5. Delivery Captain Portal (2W/3W/4W)</option>
-            {labourPortalEnabled && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <select
+              value={geoRegion}
+              onChange={(e) => {
+                setGeoRegion(e.target.value);
+                const found = getGeoSlangConfig(e.target.value);
+                triggerToast(`Local Slang updated to ${found.stateName}!`);
+              }}
+              className="bg-slate-900 text-amber-300 border border-amber-400/50 rounded-lg px-2 py-1 text-[9px] font-black cursor-pointer"
+              title="Geo-Location Local Slang Region"
+            >
+              {GEO_SLANG_REGIONS.map((gr) => (
+                <option key={gr.id} value={gr.id}>
+                  Geo: {gr.id}
+                </option>
+              ))}
+            </select>
+            <select
+              value={activePortal}
+              onChange={(e) => {
+                if (e.target.value === "founder_admin") {
+                  openAdminGate();
+                  return;
+                }
+                setActivePortal(e.target.value);
+                setFooterTab("home");
+              }}
+              className="bg-slate-900 text-emerald-300 border border-slate-700 rounded-lg px-2 py-1 text-[10px] font-black cursor-pointer"
+            >
+              <option value="customer">1. Mega Super Joint Market</option>
+              <option value="merchant">2. Product Merchant Portal</option>
+              <option value="service_provider">3. 1-Hr Service Provider Portal</option>
+              <option value="decorator">4. Flower Decorator &amp; Halls Portal</option>
+              <option value="rider">5. Delivery Captain Portal (2W/3W/4W)</option>
               <option value="labour_portal">
-                6. Labour &amp; Work-Site Portal (Beta Test)
+                6. {geoSlang.standSlang} Portal
               </option>
-            )}
-            {customPortals.map((cp) => (
-              <option key={cp.id} value={cp.id}>
-                {cleanLabel(cp.title)}
-              </option>
-            ))}
-            <option value="founder_admin">7. Founder Admin Console</option>
-          </select>
+              <option value="founder_admin">7. Founder Admin Console</option>
+            </select>
+          </div>
         </div>
 
         {footerTab === "home" && (
@@ -1235,7 +1175,7 @@ function AppContent() {
               brightTheme={brightTheme}
             />
 
-            {/* Universal Mega Market Search & Sector Strip */}
+            {/* Universal Mega Market Search & Geo-Slang Sector Strip */}
             <div className="bg-slate-900 p-2.5 rounded-2xl border border-emerald-500/40 space-y-2">
               <div className="flex gap-1.5">
                 <input
@@ -1247,7 +1187,7 @@ function AppContent() {
                       query: e.target.value
                     });
                   }}
-                  placeholder="Search Mega Market: atta, cement, mason mistri, hamali, plumber, halls..."
+                  placeholder={t.searchPlaceholder}
                   className="flex-1 bg-white border-2 border-amber-400 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold shadow-sm"
                 />
                 {searchQuery && (
@@ -1309,16 +1249,16 @@ function AppContent() {
             )}
 
             {/* ============================================================== */}
-            {/* SECTION A: LOCAL SUPERMARTS & MERCHANT SHOPS                   */}
+            {/* SECTION A: LOCAL SUPERMARTS & SHOPS (WITH GEO-SLANG TITLES)    */}
             {/* ============================================================== */}
             {showStoresSection && (
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-1">
                   <h3 className="font-black text-emerald-700 text-xs uppercase tracking-wide">
-                    1. Local Supermarts, Kirana, Veg, Meat, Hardware &amp; Pharmacy ({matchingProducts.length})
+                    1. {geoSlang.categories.daily_needs}, {geoSlang.categories.veg_fruits} &amp; {geoSlang.categories.construction} ({matchingProducts.length})
                   </h3>
                   <span className="text-[10px] font-bold text-slate-500">
-                    Multi-Shop Price Comparison Active
+                    {t.compareShops}
                   </span>
                 </div>
 
@@ -1332,9 +1272,9 @@ function AppContent() {
                     const { offers, activeOffer } = getProductBestOffer(prod);
                     const isCompareOpen = expandedCompareProdId === prod.id;
                     const cleanTitle = cleanLabel(prod.subCategoryBrand);
-                    const cleanTag = cleanLabel(
-                      prod.curiosityTag || "Verified Local Stock"
-                    );
+                    const localCatTitle =
+                      geoSlang?.categories?.[prod.categoryId] ||
+                      cleanLabel(prod.curiosityTag || "Local Market");
                     const inCartItem = merchantCart.find(
                       (i) =>
                         i.productId === prod.id &&
@@ -1353,15 +1293,15 @@ function AppContent() {
                             className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200"
                           />
                           <div className="flex-1 min-w-0">
-                            <span className="text-[9px] text-amber-600 font-black block">
-                              {cleanTag} | Stock: {prod.stockQty ?? 25} left
+                            <span className="text-[9px] text-amber-600 font-black block truncate">
+                              {localCatTitle} | Stock: {prod.stockQty ?? 25}
                             </span>
                             <h4 className="text-xs font-black text-slate-900 truncate">
                               {cleanTitle}
                             </h4>
                             <div className="flex justify-between items-center mt-0.5">
                               <p className="text-[10px] text-emerald-700 font-bold truncate">
-                                Shop: {cleanLabel(activeOffer.merchantName)}
+                                {cleanLabel(activeOffer.merchantName)}
                               </p>
                               <button
                                 type="button"
@@ -1475,7 +1415,7 @@ function AppContent() {
             )}
 
             {/* ============================================================== */}
-            {/* SECTION B: NEW LOCAL LABOUR & WORK-SITE ADDA HUB (TESTING)     */}
+            {/* SECTION B: GEO-SLANG LABOUR ADDA / MAJOOR NAKA / KOTHANAR HUB  */}
             {/* ============================================================== */}
             {showLabourSection && (
               <div className="bg-slate-900 text-white p-3.5 rounded-2xl border-2 border-amber-400/70 space-y-3 text-xs">
@@ -1483,14 +1423,14 @@ function AppContent() {
                   <div>
                     <div className="flex items-center gap-1.5">
                       <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[8px]">
-                        NEW BETA TESTING MODULE
+                        {geoSlang.stateName.toUpperCase()} SLANG
                       </span>
                       <h3 className="font-black text-amber-300 text-xs uppercase">
-                        2. Local Labour Adda &amp; Work-Site Hiring (Mistri, Helper, Hamali &amp; Farm Toli)
+                        2. {geoSlang.standSlang} &amp; {geoSlang.groupSlang} Hiring
                       </h3>
                     </div>
                     <p className="text-[10px] text-slate-300 mt-0.5">
-                      Hire individual daily-wage workers or complete Mistri Tolis by skill, shift hours, tools &amp; site location
+                      Hire local {geoSlang.labourRoles.mason_mistri}, {geoSlang.labourRoles.daily_helper}, or {geoSlang.labourRoles.hamali_loading}
                     </p>
                   </div>
                   <button
@@ -1501,23 +1441,22 @@ function AppContent() {
                     }}
                     className="bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
                   >
-                    Open Worker / Mistri Portal
+                    Open {geoSlang.standSlang} Portal
                   </button>
                 </div>
 
-                {/* Filter by Labour Skill Type & Site Conditions */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
                   <select
                     value={labourFilterSkill}
                     onChange={(e) => setLabourFilterSkill(e.target.value)}
                     className="bg-slate-900 border border-amber-400/50 rounded-lg p-1.5 text-amber-300 font-bold text-[10px]"
                   >
                     <option value="ALL">
-                      All Labour Types ({labourWorkers.length})
+                      All Local Roles ({labourWorkers.length})
                     </option>
                     {LABOUR_SKILL_CATEGORIES.map((sc) => (
                       <option key={sc.id} value={sc.id}>
-                        {sc.name}
+                        {getGeoLabourRoleLabel(sc.id, sc.name)}
                       </option>
                     ))}
                   </select>
@@ -1539,7 +1478,7 @@ function AppContent() {
                       Half-Day Shift (4 Hours)
                     </option>
                     <option value="Piece-Rate / Sq.Ft / Bag Contract">
-                      Contract (Per Sq.Ft / Per Bag / Acre)
+                      Contract (Per Sq.Ft / Bag / Acre)
                     </option>
                   </select>
 
@@ -1555,40 +1494,14 @@ function AppContent() {
                     placeholder="Work-Site Address / Colony..."
                     className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white text-[10px]"
                   />
-
-                  <div className="flex items-center gap-2 px-1">
-                    <label className="flex items-center gap-1 text-[9px] text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={labourBookingForm.needOwnTools}
-                        onChange={(e) =>
-                          setLabourBookingForm({
-                            ...labourBookingForm,
-                            needOwnTools: e.target.checked
-                          })
-                        }
-                      />
-                      <span>With Tools</span>
-                    </label>
-                    <label className="flex items-center gap-1 text-[9px] text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={labourBookingForm.pickupFromAdda}
-                        onChange={(e) =>
-                          setLabourBookingForm({
-                            ...labourBookingForm,
-                            pickupFromAdda: e.target.checked
-                          })
-                        }
-                      />
-                      <span>Adda Auto Pickup</span>
-                    </label>
-                  </div>
                 </div>
 
-                {/* Available Workers & Mistri Tolis */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {matchingLabour.map((lw) => {
+                    const localRoleTitle = getGeoLabourRoleLabel(
+                      lw.skillId,
+                      lw.skillLabel
+                    );
                     const isHalf =
                       labourBookingForm.shiftType.includes("Half-Day");
                     const baseRate = isHalf ? lw.halfDayWage : lw.fullDayWage;
@@ -1610,15 +1523,15 @@ function AppContent() {
                           <div>
                             <span className="bg-emerald-500/20 text-emerald-300 text-[8px] font-black px-2 py-0.5 rounded">
                               {lw.workerType === "MISTRI_TOLI"
-                                ? `MISTRI TOLI (${lw.toliCount} WORKERS)`
-                                : `INDIVIDUAL (${lw.toliCount} WORKER)`}{" "}
+                                ? `${geoSlang.groupSlang} (${lw.toliCount} WORKERS)`
+                                : `SINGLE (${lw.toliCount} WORKER)`}{" "}
                               | {lw.experienceYrs} YRS EXP
                             </span>
                             <h4 className="font-black text-white text-xs mt-1">
                               {lw.workerName}
                             </h4>
                             <p className="text-[10px] text-amber-300 font-bold">
-                              {lw.skillLabel}
+                              {localRoleTitle}
                             </p>
                           </div>
                           <div className="text-right shrink-0">
@@ -1633,10 +1546,11 @@ function AppContent() {
 
                         <div className="text-[9px] text-slate-300 space-y-0.5 bg-slate-900 p-2 rounded-lg border border-slate-800">
                           <p>
-                            <strong>Adda Stand:</strong> {lw.addaLocation}
+                            <strong>Stand:</strong> {geoSlang.standSlang} ({lw.addaLocation})
                           </p>
                           <p>
-                            <strong>Tools Carried:</strong> {lw.toolsList}
+                            <strong>Tools:</strong> {lw.toolsList} |{" "}
+                            <strong>Perks:</strong> {geoSlang.bhattaSlang}
                           </p>
                         </div>
 
@@ -1655,20 +1569,16 @@ function AppContent() {
                               )}`,
                               customerName: currentUser.fullName,
                               siteAddress: labourBookingForm.sitePin,
-                              skillNeeded: `${lw.workerName} (${lw.skillLabel})`,
+                              skillNeeded: `${lw.workerName} (${localRoleTitle})`,
                               shiftType: labourBookingForm.shiftType,
                               hiringMode:
                                 lw.workerType === "MISTRI_TOLI"
-                                  ? `Mistri Toli (${lw.toliCount} Workers)`
-                                  : "Individual Worker",
+                                  ? `${geoSlang.groupSlang} (${lw.toliCount} Workers)`
+                                  : "Single Worker",
                               workersCount: lw.toliCount || 1,
-                              toolsRequirement: labourBookingForm.needOwnTools
-                                ? `Bring Tools (${lw.toolsList})`
-                                : "Site Provides Tools",
-                              transportNote: labourBookingForm.pickupFromAdda
-                                ? "Auto Pickup from Adda Arranged"
-                                : "Reach Site Directly",
-                              teaBhattaNote: "Site Tea & Muster OTP Active",
+                              toolsRequirement: `Bring Tools (${lw.toolsList})`,
+                              transportNote: "Direct Site Reach / Adda Auto",
+                              teaBhattaNote: `${geoSlang.bhattaSlang} & Muster OTP Active`,
                               totalDailyWage: estTotalWage,
                               startWorkOtp: sOtp,
                               wageReleaseOtp: rOtp,
@@ -1680,12 +1590,12 @@ function AppContent() {
                             };
                             setLabourBookings([newCall, ...labourBookings]);
                             triggerToast(
-                              `Booked ${lw.workerName} (#${newCall.id}) for ${labourBookingForm.shiftType}! Sent to Labour Portal.`
+                              `Hired ${lw.workerName} (${localRoleTitle})! Sent to ${geoSlang.standSlang} Portal.`
                             );
                           }}
                           className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-2 rounded-xl text-[10px] cursor-pointer shadow"
                         >
-                          Hire for Work Site (Rs.{estTotalWage} | {labourBookingForm.shiftType.split(" ")[0]})
+                          Hire {localRoleTitle.split("(")[0]} (Rs.{estTotalWage})
                         </button>
                       </div>
                     );
@@ -1694,13 +1604,11 @@ function AppContent() {
               </div>
             )}
 
-            {/* ============================================================== */}
-            {/* SECTION C: 1-HR HOME SERVICES IN MEGA MARKET                   */}
-            {/* ============================================================== */}
+            {/* SECTION C: 1-HR HOME SERVICES */}
             {showServicesSection && (
               <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-indigo-500/40 space-y-2.5 text-xs">
                 <h3 className="font-black text-indigo-300 text-xs uppercase">
-                  3. 1-Hr Home Services Market (Plumber, Electrician, AC, Carpenter)
+                  3. {t.services || "1-Hr Home Services"} (Plumber, Electrician, AC, Carpenter)
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {matchingServices.map((sp) => (
@@ -1737,9 +1645,6 @@ function AppContent() {
                             }
                           ]);
                           setFooterTab("carts");
-                          triggerToast(
-                            `Added ${cleanLabel(sp.maskedId)} to Service Cart!`
-                          );
                         }}
                         className="bg-indigo-500 text-white font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
                       >
@@ -1751,13 +1656,11 @@ function AppContent() {
               </div>
             )}
 
-            {/* ============================================================== */}
-            {/* SECTION D: FUNCTION HALLS & FLOWER DECORATORS                  */}
-            {/* ============================================================== */}
+            {/* SECTION D: FUNCTION HALLS & FLOWER DECOR */}
             {showDecorSection && (
               <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-amber-500/40 space-y-2.5 text-xs">
                 <h3 className="font-black text-amber-400 text-xs uppercase">
-                  4. Function Halls &amp; Flower Decoration Market
+                  4. {t.decor || "Function Halls & Flower Decor"}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {matchingDecor.map((item) => (
@@ -1784,9 +1687,6 @@ function AppContent() {
                         onClick={() => {
                           setDecorCart([...decorCart, item]);
                           setFooterTab("carts");
-                          triggerToast(
-                            `Added "${cleanLabel(item.title)}" to Decor Cart!`
-                          );
                         }}
                         className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[9px] cursor-pointer shrink-0"
                       >
@@ -1798,13 +1698,11 @@ function AppContent() {
               </div>
             )}
 
-            {/* ============================================================== */}
-            {/* SECTION E: 2W / 3W / 4W RIDES & PARCEL LOGISTICS               */}
-            {/* ============================================================== */}
+            {/* SECTION E: 2W / 3W / 4W RIDES */}
             {showTaxiSection && (
               <div className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40 space-y-2.5 text-xs text-white">
                 <h3 className="font-black text-teal-300 uppercase">
-                  5. Instant Local Transport: 2W Bike, 3W Auto &amp; 4W Mini-Truck Booking
+                  5. {t.taxi || "2W Bike, 3W Auto & 4W Mini-Truck Booking"}
                 </h3>
                 <div className="grid grid-cols-3 gap-1.5">
                   {[
@@ -2046,6 +1944,10 @@ function AppContent() {
       }}
       brightTheme={brightTheme}
       setBrightTheme={setBrightTheme}
+      lang={lang}
+      setLang={setLang}
+      geoRegion={geoRegion}
+      setGeoRegion={setGeoRegion}
       appUpdateInfo={appUpdateInfo}
       onCheckForUpdate={handleManualCheckForUpdate}
       checkingUpdate={checkingUpdate}
@@ -2066,7 +1968,6 @@ function AppContent() {
       totalOrdersCount={orders.length}
       brightTheme={brightTheme}
       lang={lang}
-      setLang={setLang}
     >
       <PortalPowerToolsBar
         activePortal="merchant"
@@ -2106,7 +2007,6 @@ function AppContent() {
       totalOrdersCount={serviceBookings.length}
       brightTheme={brightTheme}
       lang={lang}
-      setLang={setLang}
     >
       <PortalPowerToolsBar
         activePortal="service_provider"
@@ -2143,7 +2043,6 @@ function AppContent() {
       totalOrdersCount={decorReverseBids.length}
       brightTheme={brightTheme}
       lang={lang}
-      setLang={setLang}
     >
       <PortalPowerToolsBar
         activePortal="decorator"
@@ -2176,7 +2075,7 @@ function AppContent() {
   const renderRiderPortal = () => (
     <MobilePhoneShell
       title="5. Delivery Captain"
-      badge={`v3.0.2 (${currentUser?.vehicleCode || "2W"})`}
+      badge={`v3.0.3 (${currentUser?.vehicleCode || "2W"})`}
       activePortal="rider"
       footerTab={footerTab}
       setFooterTab={setFooterTab}
@@ -2184,7 +2083,6 @@ function AppContent() {
       totalOrdersCount={captainRadarJobs.length + orders.length}
       brightTheme={brightTheme}
       lang={lang}
-      setLang={setLang}
     >
       <PortalPowerToolsBar
         activePortal="rider"
@@ -2211,8 +2109,8 @@ function AppContent() {
 
   const renderLabourPortal = () => (
     <MobilePhoneShell
-      title="6. Labour & Work-Site Adda"
-      badge="Beta Test"
+      title={`6. ${geoSlang.standSlang}`}
+      badge={geoSlang.groupSlang}
       activePortal="labour_portal"
       footerTab={footerTab}
       setFooterTab={setFooterTab}
@@ -2220,12 +2118,12 @@ function AppContent() {
       totalOrdersCount={labourBookings.length}
       brightTheme={brightTheme}
       lang={lang}
-      setLang={setLang}
     >
       <LabourWorksitePortal
         footerTab={footerTab}
         setFooterTab={setFooterTab}
         currentUser={currentUser}
+        geoRegion={geoRegion}
         labourWorkers={labourWorkers}
         setLabourWorkers={setLabourWorkers}
         labourBookings={labourBookings}
@@ -2251,7 +2149,6 @@ function AppContent() {
       totalOrdersCount={(portalCfg.bookings || []).length}
       brightTheme={brightTheme}
       lang={lang}
-      setLang={setLang}
       customPortalTabs={portalCfg.tabs}
     >
       <DynamicPortalEngine
@@ -2409,12 +2306,12 @@ function AppContent() {
             onBroadcastOtaPushNotification={(nextInfo) => {
               saveCloudAndLocalState({ appUpdateInfo: nextInfo });
               setStartupUpdatePrompt({
-                currentVersion: appUpdateInfo?.currentVersion || "3.0.1",
+                currentVersion: appUpdateInfo?.currentVersion || "3.0.2",
                 latestAvailableVersion: nextInfo.latestAvailableVersion,
                 releaseNotes: nextInfo.releaseNotes
               });
               triggerToast(
-                `OTA v${nextInfo.latestAvailableVersion} broadcasted! Startup prompt & Account Updater active.`
+                `OTA v${nextInfo.latestAvailableVersion} broadcasted!`
               );
             }}
             onLaunchMultiPhoneView={() => {
@@ -2496,10 +2393,7 @@ function AppContent() {
         </main>
       )}
 
-      {/* ==================================================================== */}
-      {/* AUTOMATIC STARTUP OTA UPDATE ACCEPTANCE MODAL                        */}
-      {/* Only appears when a newer version exists; skipped if already latest! */}
-      {/* ==================================================================== */}
+      {/* AUTOMATIC STARTUP OTA UPDATE PROMPT (SKIPPED AUTOMATICALLY IF ALREADY ON LATEST) */}
       {startupUpdatePrompt && !otaProgress && (
         <div className="fixed inset-0 bg-black/85 z-[95] flex items-center justify-center p-4">
           <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-sm w-full p-5 space-y-3 text-xs text-white shadow-2xl">
@@ -2573,14 +2467,6 @@ function AppContent() {
               </p>
               <p className="text-[11px] font-mono text-white">
                 {diagnosticErrorModal.details}
-              </p>
-            </div>
-            <div className="bg-slate-950 p-2.5 rounded-xl border border-amber-400/40">
-              <p className="text-[10px] font-bold text-amber-300">
-                How to Resolve Immediately:
-              </p>
-              <p className="text-[10px] text-slate-300 mt-0.5">
-                {diagnosticErrorModal.hint}
               </p>
             </div>
             <div className="flex gap-2 pt-1">
