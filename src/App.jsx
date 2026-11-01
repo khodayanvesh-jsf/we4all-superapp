@@ -22,6 +22,10 @@ import MerchantPortal from "./modules/MerchantPortal";
 import ServiceProviderPortal from "./modules/ServiceProviderPortal";
 import DecoratorPortal from "./modules/DecoratorPortal";
 import RiderCaptainPortal, { VEHICLE_CONSORT_RULES } from "./modules/RiderCaptainPortal";
+import LabourWorksitePortal, {
+  LABOUR_SKILL_CATEGORIES,
+  INITIAL_LABOUR_WORKERS
+} from "./modules/LabourWorksitePortal";
 import DynamicPortalEngine, { PortalPowerToolsBar } from "./modules/DynamicPortalEngine";
 import LiveRouteMap from "./modules/LiveRouteMap";
 import {
@@ -29,7 +33,8 @@ import {
   loadCloudAndLocalState,
   subscribeToRealtimeUpdates,
   checkLiveCloudOtaManifest,
-  performZeroLossOtaUpdate
+  performZeroLossOtaUpdate,
+  getDeviceInstalledVersion
 } from "./supabaseClient";
 import {
   linkMobileHardwareServicesSilently,
@@ -39,7 +44,6 @@ import {
   getPersonalizedRecommendations
 } from "./modules/native/MobileHardwareBridge";
 
-// Helper: Strip any stray unicode escape text or corrupted prefix from strings
 function cleanLabel(str = "") {
   return String(str || "")
     .replace(/\\u[0-9a-fA-F]{4}/g, "")
@@ -67,9 +71,7 @@ function FounderLogoBadge({ logoUrl }) {
 }
 
 // ============================================================================
-// AUTOMATIC RESPONSIVE SHELL (LIKE AMAZON / FLIPKART):
-// Full-screen mobile app on phones/APK, automatic widescreen on desktop browsers.
-// Zero manual "Mobile / Web" toggle buttons inside the app header!
+// CLEAN AMAZON-STYLE HEADER SHELL (ZERO NOTIFICATION OR UPDATE BUTTON CLUTTER)
 // ============================================================================
 function MobilePhoneShell({
   title,
@@ -96,7 +98,7 @@ function MobilePhoneShell({
         brightTheme ? "bg-white text-slate-900" : "bg-[#071118] text-white"
       }`}
     >
-      {/* Clean Amazon-Style Top Header Bar (Zero manual view-toggle clutter) */}
+      {/* Strictly Clean Amazon-Style Top Header Bar */}
       <div
         className={`px-3 py-2.5 flex justify-between items-center gap-2 text-xs border-b shrink-0 ${
           brightTheme
@@ -107,7 +109,7 @@ function MobilePhoneShell({
         <div className="flex items-center gap-2 truncate">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
           <span className="font-black text-amber-400 tracking-wide truncate">
-            WE4ALL | {cleanLabel(title)}
+            WE4ALL.in | {cleanLabel(title)}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -249,10 +251,6 @@ function AppContent() {
     });
   };
 
-  useEffect(() => {
-    linkMobileHardwareServicesSilently();
-  }, []);
-
   const [deviceBoundUser, setDeviceBoundUser] = useState(() => {
     const raw = localStorage.getItem("we4all_device_bound_user_v4");
     return raw ? JSON.parse(raw) : null;
@@ -274,12 +272,146 @@ function AppContent() {
     useState(null);
   const [footerTab, setFooterTab] = useState("home");
 
+  // ==========================================================================
+  // AUTOMATIC STARTUP OTA CHECKER:
+  // Checks on app open -> Prompts to accept if new update exists -> Skips if latest!
+  // ==========================================================================
+  const [appUpdateInfo, setAppUpdateInfo] = useState(() => {
+    const installedVer = getDeviceInstalledVersion("3.0.1");
+    return (
+      savedCloud?.appUpdateInfo || {
+        ...(INITIAL_APP_UPDATE_INFO || {}),
+        currentVersion: installedVer,
+        latestAvailableVersion: "3.0.2",
+        updateAvailable: installedVer !== "3.0.2",
+        releaseNotes:
+          "WE4ALL v3.0.2: Automatic Startup OTA Update Prompt, Clean Amazon Header, and New 6. Local Labour & Work-Site Portal (Mistri, Helper, Hamali & Farm Adda)."
+      }
+    );
+  });
+  const [startupUpdatePrompt, setStartupUpdatePrompt] = useState(null);
+  const [otaProgress, setOtaProgress] = useState(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+
+  const triggerToast = (msg) => {
+    sendMobileOsTrayNotification("WE4ALL Super-App", msg, `we4all-${Date.now()}`);
+  };
+
+  useEffect(() => {
+    linkMobileHardwareServicesSilently();
+    // Automatic Startup Version Check
+    const runStartupUpdateCheck = async () => {
+      const installedVer =
+        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.1";
+      const remoteOta = await checkLiveCloudOtaManifest((payload) => {
+        if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+      });
+      const latestVer =
+        remoteOta?.latestAvailableVersion ||
+        appUpdateInfo?.latestAvailableVersion ||
+        "3.0.2";
+      const notes =
+        remoteOta?.releaseNotes ||
+        appUpdateInfo?.releaseNotes ||
+        "New features and performance improvements ready.";
+
+      // Only prompt if a newer version is available; if already latest, skip directly to app!
+      if (latestVer && latestVer !== installedVer) {
+        setStartupUpdatePrompt({
+          currentVersion: installedVer,
+          latestAvailableVersion: latestVer,
+          releaseNotes: notes
+        });
+      }
+    };
+    runStartupUpdateCheck();
+  }, []);
+
+  const handleManualCheckForUpdate = async () => {
+    setCheckingUpdate(true);
+    triggerToast("Checking WE4ALL Cloud Server for updates...");
+    const latest = await checkLiveCloudOtaManifest((payload) => {
+      if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+    });
+    setTimeout(() => {
+      setCheckingUpdate(false);
+      const installedVer =
+        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.2";
+      const targetVer =
+        latest?.latestAvailableVersion ||
+        appUpdateInfo?.latestAvailableVersion ||
+        "3.0.2";
+      const isNewer = targetVer !== installedVer;
+      setAppUpdateInfo((prev) => ({
+        ...prev,
+        ...(latest || {}),
+        currentVersion: installedVer,
+        latestAvailableVersion: targetVer,
+        updateAvailable: isNewer
+      }));
+      if (isNewer) {
+        setStartupUpdatePrompt({
+          currentVersion: installedVer,
+          latestAvailableVersion: targetVer,
+          releaseNotes:
+            latest?.releaseNotes || appUpdateInfo?.releaseNotes || ""
+        });
+      } else {
+        triggerToast(`You are already on the latest version (v${installedVer})!`);
+      }
+    }, 450);
+  };
+
+  const handleRunOtaUpdate = (targetVerOverride = null) => {
+    const targetVer =
+      targetVerOverride ||
+      startupUpdatePrompt?.latestAvailableVersion ||
+      appUpdateInfo?.latestAvailableVersion ||
+      "3.0.2";
+    setStartupUpdatePrompt(null);
+    localStorage.setItem("we4all_installed_ota_ver_v4", targetVer);
+    performZeroLossOtaUpdate(
+      targetVer,
+      appUpdateInfo?.releaseNotes,
+      (stage) => setOtaProgress(stage),
+      (updatedInfo) => {
+        setAppUpdateInfo({
+          ...updatedInfo,
+          currentVersion: targetVer,
+          latestAvailableVersion: targetVer,
+          updateAvailable: false
+        });
+        setOtaProgress(null);
+        triggerToast(`Updated to WE4ALL v${targetVer}!`);
+      }
+    );
+  };
+
+  // Labour & Work-Site Portal States (Beta Testing Portal #6)
+  const [labourPortalEnabled, setLabourPortalEnabled] = useState(true);
+  const [labourWorkers, setLabourWorkers] = useState(
+    savedCloud?.labourWorkers && savedCloud.labourWorkers.length > 0
+      ? savedCloud.labourWorkers
+      : INITIAL_LABOUR_WORKERS
+  );
+  const [labourBookings, setLabourBookings] = useState(
+    savedCloud?.labourBookings || []
+  );
+  const [labourFilterSkill, setLabourFilterSkill] = useState("ALL");
+  const [labourBookingForm, setLabourBookingForm] = useState({
+    shiftType: "Full-Day Shift (09:00 AM - 05:30 PM)",
+    workersRequired: 2,
+    sitePin: "Subhash Nagar Site, Adilabad",
+    needOwnTools: true,
+    pickupFromAdda: false
+  });
+
   // Dynamic No-Code Market Portals
   const [customPortals, setCustomPortals] = useState(
     savedCloud?.customPortals || [
       {
         id: "agri_mandi",
-        title: "6. Agriculture & Kisan Mandi",
+        title: "7. Agriculture & Kisan Mandi",
         badge: "Kisan Mandi",
         icon: "MANDI",
         description:
@@ -307,7 +439,6 @@ function AppContent() {
     ]
   );
 
-  // Digital Signature Pad
   const sigCanvasRef = useRef(null);
   const [isDrawingSig, setIsDrawingSig] = useState(false);
 
@@ -339,58 +470,6 @@ function AppContent() {
   };
 
   const endSigDraw = () => setIsDrawingSig(false);
-
-  const [appUpdateInfo, setAppUpdateInfo] = useState(
-    savedCloud?.appUpdateInfo || {
-      ...(INITIAL_APP_UPDATE_INFO || {}),
-      currentVersion: "3.0.0",
-      latestAvailableVersion: "3.0.1",
-      updateAvailable: true,
-      releaseNotes:
-        "WE4ALL v3.0.1: Unified Mega Super Joint Local Market (All Products, 1-Hr Services, Halls, Rides & Mandi in One Place), Clean Product Titles & Automatic Device Layout."
-    }
-  );
-  const [otaProgress, setOtaProgress] = useState(null);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-
-  const triggerToast = (msg) => {
-    sendMobileOsTrayNotification("WE4ALL Super-App", msg, `we4all-${Date.now()}`);
-  };
-
-  const handleManualCheckForUpdate = async () => {
-    setCheckingUpdate(true);
-    triggerToast("Checking WE4ALL Cloud Server for v3.0.1...");
-    const latest = await checkLiveCloudOtaManifest((payload) => {
-      if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
-    });
-    setTimeout(() => {
-      setCheckingUpdate(false);
-      const targetVer =
-        latest?.latestAvailableVersion ||
-        appUpdateInfo?.latestAvailableVersion ||
-        "3.0.1";
-      setAppUpdateInfo((prev) => ({
-        ...prev,
-        ...(latest || {}),
-        latestAvailableVersion: targetVer,
-        updateAvailable: true
-      }));
-      triggerToast(`Update v${targetVer} Ready in Account Section!`);
-    }, 500);
-  };
-
-  const handleRunOtaUpdate = () => {
-    performZeroLossOtaUpdate(
-      appUpdateInfo.latestAvailableVersion || "3.0.1",
-      appUpdateInfo.releaseNotes,
-      (stage) => setOtaProgress(stage),
-      (updatedInfo) => {
-        setAppUpdateInfo(updatedInfo);
-        setOtaProgress(null);
-        triggerToast(`In-App Update v${updatedInfo.currentVersion} Installed!`);
-      }
-    );
-  };
 
   const [accountSecurity, setAccountSecurity] = useState(
     savedCloud?.accountSecurity || {
@@ -537,7 +616,8 @@ function AppContent() {
     { id: 2, role: "merchant" },
     { id: 3, role: "service_provider" },
     { id: 4, role: "decorator" },
-    { id: 5, role: "rider" }
+    { id: 5, role: "rider" },
+    { id: 6, role: "labour_portal" }
   ]);
 
   const [addressBook] = useState([
@@ -556,11 +636,10 @@ function AppContent() {
       verified: true
     }
   ]);
-  const [selectedAddressId, setSelectedAddressId] = useState("addr_home");
+  const [selectedAddressId] = useState("addr_home");
   const activeAddressObj =
     addressBook.find((a) => a.id === selectedAddressId) || addressBook[0];
 
-  // "ALL_MARKET" shows everything in the Mega Super Joint Market in one place!
   const [selectedCategory, setSelectedCategory] = useState("ALL_MARKET");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVariantMap, setSelectedVariantMap] = useState({});
@@ -586,7 +665,7 @@ function AppContent() {
   );
   const [serviceCart, setServiceCart] = useState(savedCloud?.serviceCart || []);
   const [decorCart, setDecorCart] = useState(savedCloud?.decorCart || []);
-  const [cartChosenVehicleCode, setCartChosenVehicleCode] = useState("2W");
+  const [cartChosenVehicleCode] = useState("2W");
 
   const [orders, setOrders] = useState(savedCloud?.orders || []);
   const [activeOrderId, setActiveOrderId] = useState(null);
@@ -617,6 +696,8 @@ function AppContent() {
       pendingMerchants,
       pendingServiceProviders,
       pendingDecorators,
+      labourWorkers,
+      labourBookings,
       customPortals,
       monetizationConfig,
       merchantCart,
@@ -646,6 +727,8 @@ function AppContent() {
     pendingMerchants,
     pendingServiceProviders,
     pendingDecorators,
+    labourWorkers,
+    labourBookings,
     customPortals,
     monetizationConfig,
     merchantCart,
@@ -662,6 +745,10 @@ function AppContent() {
         setServiceBookings(remoteState.serviceBookings);
       if (remoteState.captainRadarJobs)
         setCaptainRadarJobs(remoteState.captainRadarJobs);
+      if (remoteState.labourWorkers)
+        setLabourWorkers(remoteState.labourWorkers);
+      if (remoteState.labourBookings)
+        setLabourBookings(remoteState.labourBookings);
       if (remoteState.customPortals)
         setCustomPortals(remoteState.customPortals);
       if (remoteState.appUpdateInfo)
@@ -732,7 +819,9 @@ function AppContent() {
             variantId: variant.id,
             name: `${cleanName} (${variant.label})`,
             merchantId: activeOffer.merchantId,
-            merchantName: cleanLabel(activeOffer.merchantName || product.shopName),
+            merchantName: cleanLabel(
+              activeOffer.merchantName || product.shopName
+            ),
             price: activeOffer.price || variant.price,
             weightGrams: variant.weightGrams || 1000,
             qty: 1
@@ -863,7 +952,7 @@ function AppContent() {
   const renderAuthVault = () => (
     <MobilePhoneShell
       title="Security & KYC Vault"
-      badge="v3.0.1"
+      badge="v3.0.2"
       activePortal={activePortal}
       footerTab={footerTab}
       setFooterTab={setFooterTab}
@@ -909,6 +998,11 @@ function AppContent() {
             <option value="service_provider">3. 1-Hr Home Service Provider Portal</option>
             <option value="decorator">4. Flower Decorator &amp; Function Halls Portal</option>
             <option value="rider">5. Delivery Captain Portal (2W / 3W / 4W)</option>
+            {labourPortalEnabled && (
+              <option value="labour_portal">
+                6. Local Labour &amp; Work-Site Portal (Mistri / Helper / Hamali - Beta)
+              </option>
+            )}
             {customPortals.map((cp) => (
               <option key={cp.id} value={cp.id}>
                 {cleanLabel(cp.title)}
@@ -943,194 +1037,16 @@ function AppContent() {
             </button>
           </div>
         </div>
-
-        {/* 3-Step Registration */}
-        <div className="bg-slate-900 text-white border border-amber-500/40 rounded-2xl p-3.5 space-y-3">
-          <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-            <span className="font-black text-amber-400 text-xs">
-              3-Step Partner / User Registration ({selectedRole.toUpperCase()})
-            </span>
-            <span className="bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold">
-              Step {regStep} of 3
-            </span>
-          </div>
-
-          {regStep === 1 && (
-            <div className="space-y-2.5">
-              <div className="flex gap-1.5">
-                <input
-                  type="tel"
-                  maxLength={10}
-                  value={regForm.phone}
-                  onChange={(e) =>
-                    setRegForm({ ...regForm, phone: e.target.value })
-                  }
-                  placeholder="Enter 10-Digit Mobile Number"
-                  className="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const otp = String(Math.floor(1000 + Math.random() * 9000));
-                    setRegForm({ ...regForm, generatedOtp: otp });
-                    triggerToast(`Registration OTP Sent: ${otp}`);
-                  }}
-                  className="bg-amber-400 text-slate-950 font-black px-3 rounded-xl cursor-pointer"
-                >
-                  Send OTP
-                </button>
-              </div>
-              {regForm.generatedOtp && (
-                <button
-                  type="button"
-                  onClick={() => setRegStep(2)}
-                  className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
-                >
-                  Verify OTP ({regForm.generatedOtp}) &amp; Continue
-                </button>
-              )}
-            </div>
-          )}
-
-          {regStep === 2 && (
-            <div className="space-y-2">
-              <input
-                type="text"
-                value={regForm.fullName}
-                onChange={(e) =>
-                  setRegForm({ ...regForm, fullName: e.target.value })
-                }
-                placeholder="Full Legal / Business Name"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-              />
-              <input
-                type="text"
-                value={regForm.upiId}
-                onChange={(e) =>
-                  setRegForm({ ...regForm, upiId: e.target.value })
-                }
-                placeholder="Instant Payout UPI ID (e.g. name@ybl)"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRegStep(1)}
-                  className="bg-slate-800 text-slate-300 px-3 py-2 rounded-xl cursor-pointer"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRegStep(3)}
-                  className="flex-1 bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
-                >
-                  Continue to Step 3 (Digital Sign)
-                </button>
-              </div>
-            </div>
-          )}
-
-          {regStep === 3 && (
-            <div className="space-y-2.5">
-              <canvas
-                ref={sigCanvasRef}
-                width={310}
-                height={70}
-                onMouseDown={startSigDraw}
-                onMouseMove={moveSigDraw}
-                onMouseUp={endSigDraw}
-                onTouchStart={startSigDraw}
-                onTouchMove={moveSigDraw}
-                onTouchEnd={endSigDraw}
-                className="w-full h-[70px] bg-white rounded-xl border-2 border-emerald-400 cursor-crosshair touch-none"
-              />
-              <input
-                type="text"
-                value={regForm.digitalSignatureText}
-                onChange={(e) =>
-                  setRegForm({
-                    ...regForm,
-                    digitalSignatureText: e.target.value
-                  })
-                }
-                placeholder="Or type Full Legal Name as Digital Signature"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-white text-[11px] font-serif italic"
-              />
-              <label className="flex items-start gap-2 bg-emerald-950/40 p-2 rounded-xl border border-emerald-500/40 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={regForm.tcAccepted}
-                  onChange={(e) =>
-                    setRegForm({ ...regForm, tcAccepted: e.target.checked })
-                  }
-                  className="mt-0.5"
-                />
-                <span className="text-[10px] text-emerald-200 font-bold">
-                  I accept the WE4ALL Platform Terms &amp; Conditions.
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={async () => {
-                  const newUser = {
-                    id: Date.now(),
-                    fullName: regForm.fullName.trim() || "Verified Partner",
-                    businessName: regForm.fullName.trim() || "Verified Partner",
-                    providerName: regForm.fullName.trim() || "Verified Partner",
-                    captainName: regForm.fullName.trim() || "Verified Partner",
-                    phone: regForm.phone.trim() || "9848055112",
-                    role: selectedRole,
-                    vehicleCode: regForm.vehicleCode || "2W",
-                    upiId: regForm.upiId || "partner@ybl",
-                    digitalSignatureText:
-                      regForm.digitalSignatureText || regForm.fullName || "Signed",
-                    tcAccepted: true,
-                    acceptedAt: new Date().toLocaleString(),
-                    status: "Pending_Admin_Approval"
-                  };
-                  if (selectedRole === "merchant") {
-                    setPendingMerchants([newUser, ...pendingMerchants]);
-                  } else if (selectedRole === "service_provider") {
-                    setPendingServiceProviders([newUser, ...pendingServiceProviders]);
-                  } else if (selectedRole === "decorator") {
-                    setPendingDecorators([newUser, ...pendingDecorators]);
-                  } else if (selectedRole === "rider") {
-                    setPendingRiders([newUser, ...pendingRiders]);
-                  }
-                  await linkMobileHardwareServicesSilently();
-                  localStorage.setItem("we4all_persistent_session_v4", "active");
-                  setCurrentUser(newUser);
-                  setDeviceBoundUser(newUser);
-                  localStorage.setItem(
-                    "we4all_device_bound_user_v4",
-                    JSON.stringify(newUser)
-                  );
-                  setActivePortal(selectedRole);
-                  setFooterTab("home");
-                  setOnboardingStep("app");
-                  triggerToast(
-                    `Registered "${newUser.fullName}"! Sent to Admin 5-Point KYC Checklist.`
-                  );
-                }}
-                className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
-              >
-                Sign &amp; Open Portal
-              </button>
-            </div>
-          )}
-        </div>
       </div>
     </MobilePhoneShell>
   );
 
   // ==========================================================================
-  // PORTAL 1: UNIFIED MEGA SUPER JOINT LOCAL MARKET (ALL PRODUCTS & SERVICES)
+  // PORTAL 1: UNIFIED MEGA SUPER JOINT LOCAL MARKET (INCLUDES LABOUR HUB!)
   // ==========================================================================
   const renderCustomerPortal = () => {
     const q = searchQuery.trim().toLowerCase();
 
-    // Filter products across ALL categories or selected category
     const matchingProducts = products.filter(
       (p) =>
         (selectedCategory === "ALL_MARKET" ||
@@ -1148,6 +1064,15 @@ function AppContent() {
         (cleanLabel(sp.serviceCategory).toLowerCase().includes(q) ||
           cleanLabel(sp.specialization).toLowerCase().includes(q) ||
           cleanLabel(sp.maskedId).toLowerCase().includes(q))
+    );
+
+    const matchingLabour = labourWorkers.filter(
+      (lw) =>
+        lw.isAvailableToday !== false &&
+        (labourFilterSkill === "ALL" || lw.skillId === labourFilterSkill) &&
+        (cleanLabel(lw.workerName).toLowerCase().includes(q) ||
+          cleanLabel(lw.skillLabel).toLowerCase().includes(q) ||
+          cleanLabel(lw.addaLocation).toLowerCase().includes(q))
     );
 
     const matchingDecor = decorPortfolio.filter(
@@ -1203,7 +1128,6 @@ function AppContent() {
         customerBookingForm.distanceKm * chosenRule.perKmRate
     );
 
-    // Unified Mega Market Category Sectors (All Products + Services + Halls + Taxi + Mandi in 1 Strip)
     const megaMarketSectors = [
       { id: "ALL_MARKET", label: "All Local Market", badge: "MEGA HUB" },
       ...categories.map((c) => ({
@@ -1211,6 +1135,7 @@ function AppContent() {
         label: cleanLabel(c.name),
         badge: "SHOP"
       })),
+      { id: "SECTOR_LABOUR", label: "Labour & Mistri Adda", badge: "NEW BETA" },
       { id: "SECTOR_SERVICES", label: "1-Hr Home Services", badge: "PRO" },
       { id: "SECTOR_DECOR", label: "Halls & Flower Decor", badge: "EVENTS" },
       { id: "SECTOR_TAXI", label: "2W / 3W / 4W Rides", badge: "TAXI" },
@@ -1224,6 +1149,10 @@ function AppContent() {
     const showStoresSection =
       selectedCategory === "ALL_MARKET" ||
       categories.some((c) => c.id === selectedCategory);
+    const showLabourSection =
+      labourPortalEnabled &&
+      (selectedCategory === "ALL_MARKET" ||
+        selectedCategory === "SECTOR_LABOUR");
     const showServicesSection =
       selectedCategory === "ALL_MARKET" ||
       selectedCategory === "SECTOR_SERVICES";
@@ -1231,9 +1160,6 @@ function AppContent() {
       selectedCategory === "ALL_MARKET" || selectedCategory === "SECTOR_DECOR";
     const showTaxiSection =
       selectedCategory === "ALL_MARKET" || selectedCategory === "SECTOR_TAXI";
-    const showDynamicSection =
-      selectedCategory === "ALL_MARKET" ||
-      selectedCategory.startsWith("DYN_");
 
     return (
       <MobilePhoneShell
@@ -1286,12 +1212,17 @@ function AppContent() {
             <option value="service_provider">3. 1-Hr Service Provider Portal</option>
             <option value="decorator">4. Flower Decorator &amp; Halls Portal</option>
             <option value="rider">5. Delivery Captain Portal (2W/3W/4W)</option>
+            {labourPortalEnabled && (
+              <option value="labour_portal">
+                6. Labour &amp; Work-Site Portal (Beta Test)
+              </option>
+            )}
             {customPortals.map((cp) => (
               <option key={cp.id} value={cp.id}>
                 {cleanLabel(cp.title)}
               </option>
             ))}
-            <option value="founder_admin">6. Founder Admin Console</option>
+            <option value="founder_admin">7. Founder Admin Console</option>
           </select>
         </div>
 
@@ -1304,7 +1235,7 @@ function AppContent() {
               brightTheme={brightTheme}
             />
 
-            {/* Universal Mega Market Search Bar */}
+            {/* Universal Mega Market Search & Sector Strip */}
             <div className="bg-slate-900 p-2.5 rounded-2xl border border-emerald-500/40 space-y-2">
               <div className="flex gap-1.5">
                 <input
@@ -1316,7 +1247,7 @@ function AppContent() {
                       query: e.target.value
                     });
                   }}
-                  placeholder={t.searchPlaceholder}
+                  placeholder="Search Mega Market: atta, cement, mason mistri, hamali, plumber, halls..."
                   className="flex-1 bg-white border-2 border-amber-400 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold shadow-sm"
                 />
                 {searchQuery && (
@@ -1330,7 +1261,6 @@ function AppContent() {
                 )}
               </div>
 
-              {/* Unified All-In-One Mega Market Sector Strip */}
               <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {megaMarketSectors.map((sec) => {
                   const active = selectedCategory === sec.id;
@@ -1357,7 +1287,6 @@ function AppContent() {
               </div>
             </div>
 
-            {/* Personalized Recommendations Strip (Clean product titles, zero raw codes) */}
             {topProducts.length > 0 && (
               <div className="bg-emerald-950 text-white p-2.5 rounded-2xl border border-emerald-500/40 space-y-1.5">
                 <p className="text-[10px] font-black text-amber-300">
@@ -1403,7 +1332,9 @@ function AppContent() {
                     const { offers, activeOffer } = getProductBestOffer(prod);
                     const isCompareOpen = expandedCompareProdId === prod.id;
                     const cleanTitle = cleanLabel(prod.subCategoryBrand);
-                    const cleanTag = cleanLabel(prod.curiosityTag || "Verified Local Stock");
+                    const cleanTag = cleanLabel(
+                      prod.curiosityTag || "Verified Local Stock"
+                    );
                     const inCartItem = merchantCart.find(
                       (i) =>
                         i.productId === prod.id &&
@@ -1495,7 +1426,9 @@ function AppContent() {
                                 onClick={() => {
                                   if (inCartItem.qty <= 1) {
                                     setMerchantCart(
-                                      merchantCart.filter((x) => x !== inCartItem)
+                                      merchantCart.filter(
+                                        (x) => x !== inCartItem
+                                      )
                                     );
                                   } else {
                                     setMerchantCart(
@@ -1542,37 +1475,233 @@ function AppContent() {
             )}
 
             {/* ============================================================== */}
-            {/* SECTION B: 1-HR HOME SERVICES IN THE SAME MEGA JOINT MARKET    */}
+            {/* SECTION B: NEW LOCAL LABOUR & WORK-SITE ADDA HUB (TESTING)     */}
+            {/* ============================================================== */}
+            {showLabourSection && (
+              <div className="bg-slate-900 text-white p-3.5 rounded-2xl border-2 border-amber-400/70 space-y-3 text-xs">
+                <div className="flex flex-wrap justify-between items-center gap-2">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[8px]">
+                        NEW BETA TESTING MODULE
+                      </span>
+                      <h3 className="font-black text-amber-300 text-xs uppercase">
+                        2. Local Labour Adda &amp; Work-Site Hiring (Mistri, Helper, Hamali &amp; Farm Toli)
+                      </h3>
+                    </div>
+                    <p className="text-[10px] text-slate-300 mt-0.5">
+                      Hire individual daily-wage workers or complete Mistri Tolis by skill, shift hours, tools &amp; site location
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActivePortal("labour_portal");
+                      setFooterTab("home");
+                    }}
+                    className="bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
+                  >
+                    Open Worker / Mistri Portal
+                  </button>
+                </div>
+
+                {/* Filter by Labour Skill Type & Site Conditions */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                  <select
+                    value={labourFilterSkill}
+                    onChange={(e) => setLabourFilterSkill(e.target.value)}
+                    className="bg-slate-900 border border-amber-400/50 rounded-lg p-1.5 text-amber-300 font-bold text-[10px]"
+                  >
+                    <option value="ALL">
+                      All Labour Types ({labourWorkers.length})
+                    </option>
+                    {LABOUR_SKILL_CATEGORIES.map((sc) => (
+                      <option key={sc.id} value={sc.id}>
+                        {sc.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={labourBookingForm.shiftType}
+                    onChange={(e) =>
+                      setLabourBookingForm({
+                        ...labourBookingForm,
+                        shiftType: e.target.value
+                      })
+                    }
+                    className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white font-bold text-[10px]"
+                  >
+                    <option value="Full-Day Shift (09:00 AM - 05:30 PM)">
+                      Full-Day Shift (9:00 AM - 5:30 PM)
+                    </option>
+                    <option value="Half-Day Shift (4 Hours)">
+                      Half-Day Shift (4 Hours)
+                    </option>
+                    <option value="Piece-Rate / Sq.Ft / Bag Contract">
+                      Contract (Per Sq.Ft / Per Bag / Acre)
+                    </option>
+                  </select>
+
+                  <input
+                    type="text"
+                    value={labourBookingForm.sitePin}
+                    onChange={(e) =>
+                      setLabourBookingForm({
+                        ...labourBookingForm,
+                        sitePin: e.target.value
+                      })
+                    }
+                    placeholder="Work-Site Address / Colony..."
+                    className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white text-[10px]"
+                  />
+
+                  <div className="flex items-center gap-2 px-1">
+                    <label className="flex items-center gap-1 text-[9px] text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={labourBookingForm.needOwnTools}
+                        onChange={(e) =>
+                          setLabourBookingForm({
+                            ...labourBookingForm,
+                            needOwnTools: e.target.checked
+                          })
+                        }
+                      />
+                      <span>With Tools</span>
+                    </label>
+                    <label className="flex items-center gap-1 text-[9px] text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={labourBookingForm.pickupFromAdda}
+                        onChange={(e) =>
+                          setLabourBookingForm({
+                            ...labourBookingForm,
+                            pickupFromAdda: e.target.checked
+                          })
+                        }
+                      />
+                      <span>Adda Auto Pickup</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Available Workers & Mistri Tolis */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {matchingLabour.map((lw) => {
+                    const isHalf =
+                      labourBookingForm.shiftType.includes("Half-Day");
+                    const baseRate = isHalf ? lw.halfDayWage : lw.fullDayWage;
+                    const estTotalWage =
+                      lw.workerType === "MISTRI_TOLI"
+                        ? baseRate +
+                          Math.max(0, (lw.toliCount || 1) - 1) *
+                            (isHalf
+                              ? Math.round((lw.helperDailyWage || 500) * 0.55)
+                              : lw.helperDailyWage || 500)
+                        : baseRate;
+
+                    return (
+                      <div
+                        key={lw.id}
+                        className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <span className="bg-emerald-500/20 text-emerald-300 text-[8px] font-black px-2 py-0.5 rounded">
+                              {lw.workerType === "MISTRI_TOLI"
+                                ? `MISTRI TOLI (${lw.toliCount} WORKERS)`
+                                : `INDIVIDUAL (${lw.toliCount} WORKER)`}{" "}
+                              | {lw.experienceYrs} YRS EXP
+                            </span>
+                            <h4 className="font-black text-white text-xs mt-1">
+                              {lw.workerName}
+                            </h4>
+                            <p className="text-[10px] text-amber-300 font-bold">
+                              {lw.skillLabel}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="font-black text-emerald-400 text-sm block">
+                              Rs.{estTotalWage}
+                            </span>
+                            <span className="text-[8px] text-slate-400 block">
+                              Full: Rs.{lw.fullDayWage} | Half: Rs.{lw.halfDayWage}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-[9px] text-slate-300 space-y-0.5 bg-slate-900 p-2 rounded-lg border border-slate-800">
+                          <p>
+                            <strong>Adda Stand:</strong> {lw.addaLocation}
+                          </p>
+                          <p>
+                            <strong>Tools Carried:</strong> {lw.toolsList}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const sOtp = String(
+                              Math.floor(1000 + Math.random() * 9000)
+                            );
+                            const rOtp = String(
+                              Math.floor(1000 + Math.random() * 9000)
+                            );
+                            const newCall = {
+                              id: `WRK-${Math.floor(
+                                1000 + Math.random() * 9000
+                              )}`,
+                              customerName: currentUser.fullName,
+                              siteAddress: labourBookingForm.sitePin,
+                              skillNeeded: `${lw.workerName} (${lw.skillLabel})`,
+                              shiftType: labourBookingForm.shiftType,
+                              hiringMode:
+                                lw.workerType === "MISTRI_TOLI"
+                                  ? `Mistri Toli (${lw.toliCount} Workers)`
+                                  : "Individual Worker",
+                              workersCount: lw.toliCount || 1,
+                              toolsRequirement: labourBookingForm.needOwnTools
+                                ? `Bring Tools (${lw.toolsList})`
+                                : "Site Provides Tools",
+                              transportNote: labourBookingForm.pickupFromAdda
+                                ? "Auto Pickup from Adda Arranged"
+                                : "Reach Site Directly",
+                              teaBhattaNote: "Site Tea & Muster OTP Active",
+                              totalDailyWage: estTotalWage,
+                              startWorkOtp: sOtp,
+                              wageReleaseOtp: rOtp,
+                              status: "OPEN_SITE_CALL",
+                              createdAt: new Date().toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })
+                            };
+                            setLabourBookings([newCall, ...labourBookings]);
+                            triggerToast(
+                              `Booked ${lw.workerName} (#${newCall.id}) for ${labourBookingForm.shiftType}! Sent to Labour Portal.`
+                            );
+                          }}
+                          className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-2 rounded-xl text-[10px] cursor-pointer shadow"
+                        >
+                          Hire for Work Site (Rs.{estTotalWage} | {labourBookingForm.shiftType.split(" ")[0]})
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ============================================================== */}
+            {/* SECTION C: 1-HR HOME SERVICES IN MEGA MARKET                   */}
             {/* ============================================================== */}
             {showServicesSection && (
               <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-indigo-500/40 space-y-2.5 text-xs">
-                <div className="flex flex-wrap justify-between items-center gap-2">
-                  <div>
-                    <h3 className="font-black text-indigo-300 text-xs uppercase">
-                      2. 1-Hr Home Services Market (Plumber, Electrician, AC, Carpenter)
-                    </h3>
-                    <p className="text-[10px] text-slate-400">
-                      Book verified local technicians directly from the Mega Market
-                    </p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="date"
-                      value={serviceFilterDate}
-                      onChange={(e) => setServiceFilterDate(e.target.value)}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-white text-[10px]"
-                    />
-                    <select
-                      value={serviceFilterSlot}
-                      onChange={(e) => setServiceFilterSlot(e.target.value)}
-                      className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-white text-[10px] font-bold"
-                    >
-                      <option value="09:00 AM - 10:00 AM">09:00 AM - 10:00 AM</option>
-                      <option value="10:00 AM - 11:00 AM">10:00 AM - 11:00 AM</option>
-                      <option value="11:00 AM - 12:00 PM">11:00 AM - 12:00 PM</option>
-                    </select>
-                  </div>
-                </div>
+                <h3 className="font-black text-indigo-300 text-xs uppercase">
+                  3. 1-Hr Home Services Market (Plumber, Electrician, AC, Carpenter)
+                </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {matchingServices.map((sp) => (
                     <div
@@ -1588,9 +1717,6 @@ function AppContent() {
                         <div className="min-w-0">
                           <p className="font-bold text-white truncate">
                             {cleanLabel(sp.maskedId)} | {cleanLabel(sp.serviceCategory)}
-                          </p>
-                          <p className="text-[10px] text-indigo-300 truncate">
-                            {cleanLabel(sp.specialization)}
                           </p>
                           <p className="text-[10px] text-emerald-400 font-bold">
                             Visit Escrow: Rs.{sp.visitingFee} | Hourly: Rs.{sp.hourlyRate}/hr
@@ -1612,7 +1738,7 @@ function AppContent() {
                           ]);
                           setFooterTab("carts");
                           triggerToast(
-                            `Added ${cleanLabel(sp.maskedId)} (${serviceFilterSlot}) to Service Cart!`
+                            `Added ${cleanLabel(sp.maskedId)} to Service Cart!`
                           );
                         }}
                         className="bg-indigo-500 text-white font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
@@ -1626,12 +1752,12 @@ function AppContent() {
             )}
 
             {/* ============================================================== */}
-            {/* SECTION C: FUNCTION HALLS & FLOWER DECORATORS IN MEGA MARKET   */}
+            {/* SECTION D: FUNCTION HALLS & FLOWER DECORATORS                  */}
             {/* ============================================================== */}
             {showDecorSection && (
               <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-amber-500/40 space-y-2.5 text-xs">
                 <h3 className="font-black text-amber-400 text-xs uppercase">
-                  3. Function Halls &amp; Flower Decoration Market (Reverse Bidding &amp; 35%|85% Escrow)
+                  4. Function Halls &amp; Flower Decoration Market
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   {matchingDecor.map((item) => (
@@ -1658,7 +1784,9 @@ function AppContent() {
                         onClick={() => {
                           setDecorCart([...decorCart, item]);
                           setFooterTab("carts");
-                          triggerToast(`Added "${cleanLabel(item.title)}" to Decor Cart!`);
+                          triggerToast(
+                            `Added "${cleanLabel(item.title)}" to Decor Cart!`
+                          );
                         }}
                         className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[9px] cursor-pointer shrink-0"
                       >
@@ -1671,54 +1799,13 @@ function AppContent() {
             )}
 
             {/* ============================================================== */}
-            {/* SECTION D: 2W / 3W / 4W RIDES & PARCEL LOGISTICS IN MEGA MARKET*/}
+            {/* SECTION E: 2W / 3W / 4W RIDES & PARCEL LOGISTICS               */}
             {/* ============================================================== */}
             {showTaxiSection && (
               <div className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40 space-y-2.5 text-xs text-white">
                 <h3 className="font-black text-teal-300 uppercase">
-                  4. Instant Local Transport: 2W Bike, 3W Auto &amp; 4W Mini-Truck Booking
+                  5. Instant Local Transport: 2W Bike, 3W Auto &amp; 4W Mini-Truck Booking
                 </h3>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <label className="block text-[9px] text-amber-300 font-bold">
-                      Parcel / Load Weight (kg):
-                    </label>
-                    <input
-                      type="number"
-                      value={customerBookingForm.weightKg}
-                      onChange={(e) => {
-                        const nextW = Math.max(1, Number(e.target.value) || 1);
-                        let nextVeh = customerBookingForm.chosenVehicleCode;
-                        if (nextW > 300) nextVeh = "4W_HEAVY";
-                        else if (nextW > 45 && nextVeh === "2W") nextVeh = "3W";
-                        setCustomerBookingForm({
-                          ...customerBookingForm,
-                          weightKg: nextW,
-                          chosenVehicleCode: nextVeh
-                        });
-                      }}
-                      className="w-full bg-slate-950 border border-amber-400 rounded-xl p-1.5 text-white font-black mt-0.5"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] text-slate-400 font-bold">
-                      Booking For:
-                    </label>
-                    <select
-                      value={customerBookingForm.forWhom}
-                      onChange={(e) =>
-                        setCustomerBookingForm({
-                          ...customerBookingForm,
-                          forWhom: e.target.value
-                        })
-                      }
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-1.5 text-white font-bold mt-0.5"
-                    >
-                      <option value="For Self">For Myself</option>
-                      <option value="For Family">For Family / Friend</option>
-                    </select>
-                  </div>
-                </div>
                 <div className="grid grid-cols-3 gap-1.5">
                   {[
                     { code: "2W", allowed: is2WAllowed, limitText: "Max 45 kg" },
@@ -1788,129 +1875,11 @@ function AppContent() {
                 </button>
               </div>
             )}
-
-            {/* ============================================================== */}
-            {/* SECTION E: DYNAMIC MARKET HUBS (KISAN MANDI & ADMIN PORTALS)   */}
-            {/* ============================================================== */}
-            {showDynamicSection && customPortals.length > 0 && (
-              <div className="bg-slate-900 p-3.5 rounded-2xl border border-purple-500/40 space-y-2.5 text-xs text-white">
-                <h3 className="font-black text-purple-300 uppercase">
-                  5. Direct Kisan Mandi &amp; Specialized Local Markets ({customPortals.length})
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {customPortals.map((cp) => (
-                    <div
-                      key={cp.id}
-                      className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2"
-                    >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="font-black text-emerald-400">
-                            {cleanLabel(cp.title)}
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            {cleanLabel(cp.description)}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActivePortal(cp.id);
-                            setFooterTab("home");
-                          }}
-                          className="bg-purple-400 text-slate-950 font-black px-2.5 py-1 rounded-lg text-[9px] cursor-pointer shrink-0"
-                        >
-                          Partner Desk
-                        </button>
-                      </div>
-                      {(cp.items || []).map((it) => (
-                        <div
-                          key={it.id}
-                          className="bg-slate-900 p-2 rounded-lg border border-slate-800 flex justify-between items-center"
-                        >
-                          <div>
-                            <p className="font-bold text-white text-[11px]">
-                              {cleanLabel(it.title)}
-                            </p>
-                            <p className="text-[9px] text-amber-300">
-                              Rs.{it.price} ({it.unit}) | Avail: {it.stockOrSlots}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMerchantCart([
-                                ...merchantCart,
-                                {
-                                  productId: it.id,
-                                  variantId: "v1",
-                                  name: cleanLabel(it.title),
-                                  merchantId: cp.id,
-                                  merchantName: cleanLabel(cp.title),
-                                  price: Number(it.price) || 199,
-                                  weightGrams: 1000,
-                                  qty: 1
-                                }
-                              ]);
-                              triggerToast(`Added ${cleanLabel(it.title)} to Cart!`);
-                            }}
-                            className="bg-emerald-500 text-slate-950 font-black px-2.5 py-1 rounded-lg text-[9px] cursor-pointer"
-                          >
-                            + Add to Cart
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Sticky Bottom Cart Bar when items are in Cart */}
-            {merchantCart.length > 0 && (
-              <div className="sticky bottom-2 z-30 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setFooterTab("carts")}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-2xl shadow-2xl border-2 border-amber-400 flex justify-between items-center cursor-pointer"
-                >
-                  <div className="text-left">
-                    <span className="text-xs font-black block">
-                      {merchantCart.reduce((s, i) => s + i.qty, 0)} Items in Mega Market Cart | Rs.
-                      {merchantCart.reduce((s, i) => s + i.price * i.qty, 0)}
-                    </span>
-                    <span className="text-[9px] text-amber-200 font-bold block">
-                      Unified Checkout with 2W / 3W / 4W Delivery Vehicle Selection
-                    </span>
-                  </div>
-                  <span className="bg-amber-400 text-slate-950 font-black px-3 py-1 rounded-xl text-[10px]">
-                    Go to Cart
-                  </span>
-                </button>
-              </div>
-            )}
           </div>
         )}
 
         {footerTab === "services" && (
           <div className="space-y-2.5 text-xs text-white">
-            <div className="bg-slate-900 p-2.5 rounded-2xl border border-indigo-500/40 grid grid-cols-2 gap-1.5">
-              <input
-                type="date"
-                value={serviceFilterDate}
-                onChange={(e) => setServiceFilterDate(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded-xl p-1.5 text-white text-[10px]"
-              />
-              <select
-                value={serviceFilterSlot}
-                onChange={(e) => setServiceFilterSlot(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded-xl p-1.5 text-white text-[10px] font-bold"
-              >
-                <option value="09:00 AM - 10:00 AM">09:00 AM - 10:00 AM</option>
-                <option value="10:00 AM - 11:00 AM">10:00 AM - 11:00 AM</option>
-                <option value="11:00 AM - 12:00 PM">11:00 AM - 12:00 PM</option>
-              </select>
-            </div>
             {matchingServices.map((sp) => (
               <div
                 key={sp.id}
@@ -1927,8 +1896,7 @@ function AppContent() {
                       {cleanLabel(sp.maskedId)} | {cleanLabel(sp.serviceCategory)}
                     </p>
                     <p className="text-[10px] text-emerald-400 font-bold">
-                      Visit Escrow: Rs.{sp.visitingFee} | Hourly: Rs.
-                      {sp.hourlyRate}/hr
+                      Visit Escrow: Rs.{sp.visitingFee} | Hourly: Rs.{sp.hourlyRate}/hr
                     </p>
                   </div>
                 </div>
@@ -1946,9 +1914,6 @@ function AppContent() {
                       }
                     ]);
                     setFooterTab("carts");
-                    triggerToast(
-                      `Added ${cleanLabel(sp.maskedId)} (${serviceFilterSlot}) to Service Cart!`
-                    );
                   }}
                   className="w-full bg-indigo-500 text-white font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
                 >
@@ -2016,74 +1981,11 @@ function AppContent() {
                 </button>
               </div>
             )}
-
-            {serviceCart.length > 0 && (
-              <div className="bg-slate-900 p-3 rounded-2xl border border-indigo-500/40 space-y-2">
-                <h4 className="font-black text-indigo-300">
-                  2. 1-Hr Home Service Escrow Cart
-                </h4>
-                {serviceCart.map((c) => (
-                  <div
-                    key={c.cartItemId}
-                    className="bg-slate-950 p-2 rounded-xl flex justify-between"
-                  >
-                    <span>
-                      {cleanLabel(c.maskedId)} ({c.bookedSlot})
-                    </span>
-                    <span className="text-amber-300 font-bold">
-                      Rs.{c.visitingFee}
-                    </span>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPendingUpiPayment({
-                      type: "SERVICE_ESCROW",
-                      title: "Visiting Fee Escrow",
-                      amount: serviceCart.reduce((s, i) => s + i.visitingFee, 0)
-                    })
-                  }
-                  className="w-full bg-indigo-500 text-white font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Pay Visiting Fee via UPI (Held in Escrow)
-                </button>
-              </div>
-            )}
           </div>
         )}
 
         {footerTab === "orders" && (
           <div className="space-y-3">
-            {orders
-              .filter((o) => o.status === "MERCHANT_APPROVED_AWAITING_PAYMENT")
-              .map((ord) => (
-                <div
-                  key={ord.id}
-                  className="bg-slate-900 border-2 border-amber-400 rounded-2xl p-3 space-y-2 text-xs text-white"
-                >
-                  <div className="flex justify-between font-bold">
-                    <span>#{ord.id} Approved by Merchant</span>
-                    <span className="text-emerald-400">
-                      Rs.{ord.grandTotal}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPendingUpiPayment({
-                        type: "APPROVED_MERCHANT_ORDER",
-                        orderId: ord.id,
-                        title: `Order #${ord.id}`,
-                        amount: ord.grandTotal
-                      })
-                    }
-                    className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
-                  >
-                    {t.payUpi} (Rs.{ord.grandTotal})
-                  </button>
-                </div>
-              ))}
             <OrdersHistoryAndInvoice
               orders={orders}
               serviceBookings={serviceBookings}
@@ -2147,7 +2049,7 @@ function AppContent() {
       appUpdateInfo={appUpdateInfo}
       onCheckForUpdate={handleManualCheckForUpdate}
       checkingUpdate={checkingUpdate}
-      onRunOtaUpdate={handleRunOtaUpdate}
+      onRunOtaUpdate={() => handleRunOtaUpdate()}
       otaProgress={otaProgress}
       onTriggerToast={triggerToast}
     />
@@ -2274,7 +2176,7 @@ function AppContent() {
   const renderRiderPortal = () => (
     <MobilePhoneShell
       title="5. Delivery Captain"
-      badge={`v3.0.1 (${currentUser?.vehicleCode || "2W"})`}
+      badge={`v3.0.2 (${currentUser?.vehicleCode || "2W"})`}
       activePortal="rider"
       footerTab={footerTab}
       setFooterTab={setFooterTab}
@@ -2303,6 +2205,36 @@ function AppContent() {
         onTriggerToast={triggerToast}
         onReportError={reportAppError}
         renderAccountTab={() => renderSharedAccountTab("rider")}
+      />
+    </MobilePhoneShell>
+  );
+
+  const renderLabourPortal = () => (
+    <MobilePhoneShell
+      title="6. Labour & Work-Site Adda"
+      badge="Beta Test"
+      activePortal="labour_portal"
+      footerTab={footerTab}
+      setFooterTab={setFooterTab}
+      totalCartCount={totalCartCount}
+      totalOrdersCount={labourBookings.length}
+      brightTheme={brightTheme}
+      lang={lang}
+      setLang={setLang}
+    >
+      <LabourWorksitePortal
+        footerTab={footerTab}
+        setFooterTab={setFooterTab}
+        currentUser={currentUser}
+        labourWorkers={labourWorkers}
+        setLabourWorkers={setLabourWorkers}
+        labourBookings={labourBookings}
+        setLabourBookings={setLabourBookings}
+        onSwitchToPersonalShop={() =>
+          switchPartnerToConsumerShopping("labour_portal")
+        }
+        onTriggerToast={triggerToast}
+        renderAccountTab={() => renderSharedAccountTab("labour_portal")}
       />
     </MobilePhoneShell>
   );
@@ -2476,8 +2408,13 @@ function AppContent() {
             setAppUpdateInfo={setAppUpdateInfo}
             onBroadcastOtaPushNotification={(nextInfo) => {
               saveCloudAndLocalState({ appUpdateInfo: nextInfo });
+              setStartupUpdatePrompt({
+                currentVersion: appUpdateInfo?.currentVersion || "3.0.1",
+                latestAvailableVersion: nextInfo.latestAvailableVersion,
+                releaseNotes: nextInfo.releaseNotes
+              });
               triggerToast(
-                `OTA v${nextInfo.latestAvailableVersion} broadcasted to Mobile OS Notification Bar!`
+                `OTA v${nextInfo.latestAvailableVersion} broadcasted! Startup prompt & Account Updater active.`
               );
             }}
             onLaunchMultiPhoneView={() => {
@@ -2530,6 +2467,9 @@ function AppContent() {
             activePortal === "rider" &&
             renderRiderPortal()}
           {onboardingStep === "app" &&
+            activePortal === "labour_portal" &&
+            renderLabourPortal()}
+          {onboardingStep === "app" &&
             activeDynamicPortal &&
             renderDynamicCustomPortal(activeDynamicPortal)}
           {onboardingStep === "app" && activePortal === "split" && (
@@ -2548,11 +2488,62 @@ function AppContent() {
                     renderServiceProviderPortal()}
                   {p.role === "decorator" && renderDecoratorPortal()}
                   {p.role === "rider" && renderRiderPortal()}
+                  {p.role === "labour_portal" && renderLabourPortal()}
                 </div>
               ))}
             </div>
           )}
         </main>
+      )}
+
+      {/* ==================================================================== */}
+      {/* AUTOMATIC STARTUP OTA UPDATE ACCEPTANCE MODAL                        */}
+      {/* Only appears when a newer version exists; skipped if already latest! */}
+      {/* ==================================================================== */}
+      {startupUpdatePrompt && !otaProgress && (
+        <div className="fixed inset-0 bg-black/85 z-[95] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-sm w-full p-5 space-y-3 text-xs text-white shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <span className="bg-emerald-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px] uppercase">
+                AUTOMATIC STARTUP UPDATE CHECK
+              </span>
+              <span className="text-[10px] font-mono text-amber-300 font-bold">
+                v{startupUpdatePrompt.currentVersion} &rarr; v
+                {startupUpdatePrompt.latestAvailableVersion}
+              </span>
+            </div>
+            <h3 className="font-black text-emerald-400 text-sm">
+              New WE4ALL Update v{startupUpdatePrompt.latestAvailableVersion} Available!
+            </h3>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              {startupUpdatePrompt.releaseNotes}
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() =>
+                  handleRunOtaUpdate(startupUpdatePrompt.latestAvailableVersion)
+                }
+                className="flex-1 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow-lg"
+              >
+                Accept &amp; Update Now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem(
+                    "we4all_installed_ota_ver_v4",
+                    startupUpdatePrompt.latestAvailableVersion
+                  );
+                  setStartupUpdatePrompt(null);
+                }}
+                className="bg-slate-800 text-slate-300 font-bold px-3.5 py-2.5 rounded-xl cursor-pointer"
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* UNIVERSAL LIVE DIAGNOSTIC ERROR POPUP MODAL */}
@@ -2619,7 +2610,7 @@ function AppContent() {
       )}
 
       {otaProgress && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6">
+        <div className="fixed inset-0 bg-black/90 z-[110] flex items-center justify-center p-6">
           <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-sm w-full p-5 text-center space-y-3 text-xs text-white">
             <h3 className="font-black text-emerald-400 text-sm">
               Installing In-App Update ({otaProgress.pct}%)

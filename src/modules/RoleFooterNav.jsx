@@ -47,6 +47,13 @@ export default function RoleFooterNav({
       { id: "rates", shortTag: "KM", label: t.navKmRate || "3. Km Rate" },
       { id: "orders", shortTag: "ERN", label: t.navEarnings || "4. Earnings" },
       { id: "account", shortTag: "ACC", label: t.navAccount || "Account" }
+    ],
+    labour_portal: [
+      { id: "home", shortTag: "CALL", label: "1. Site Calls", badge: totalOrdersCount },
+      { id: "skills", shortTag: "TOLI", label: "2. Skill & Tools" },
+      { id: "muster", shortTag: "OTP", label: "3. Muster OTP" },
+      { id: "orders", shortTag: "WAGE", label: "4. Wage Ledger" },
+      { id: "account", shortTag: "ACC", label: t.navAccount || "Account" }
     ]
   };
 

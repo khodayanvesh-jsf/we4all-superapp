@@ -1,9 +1,9 @@
 {
-  "currentVersion": "3.0.0",
-  "latestAvailableVersion": "3.0.1",
+  "currentVersion": "3.0.1",
+  "latestAvailableVersion": "3.0.2",
   "updateAvailable": true,
-  "publishedAt": "2026-11-01T08:15:00Z",
+  "publishedAt": "2026-11-01T08:30:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.1",
-  "releaseNotes": "WE4ALL v3.0.1: Unified Mega Super Joint Local Market (All Products, 1-Hr Services, Halls, Rides & Mandi in One Place), Clean Product Titles & Automatic Device Layout."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.2",
+  "releaseNotes": "WE4ALL v3.0.2: Automatic Startup OTA Update Prompt (Skips if already on latest version), Clean Amazon Header, and New 6. Local Labour & Work-Site Portal (Mistri, Helper, Hamali & Farm Adda)."
 }
