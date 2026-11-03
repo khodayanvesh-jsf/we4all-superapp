@@ -1,9 +1,9 @@
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "3.0.0";
+const CURRENT_SCHEMA_VERSION = "3.0.1";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
 const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
 const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
-const SCHEMA_MIGRATED_KEY = "we4all_schema_migrated_v300_prod";
+const SCHEMA_MIGRATED_KEY = "we4all_schema_migrated_v301_prod";
 const ZONE_MASTER_ID = "adilabad_master";
 
 const SUPABASE_URL =
@@ -22,12 +22,11 @@ const syncChannel =
 let cloudSyncDebounceTimer = null;
 let lastAppliedCloudTimestamp = "";
 
-export function getDeviceInstalledVersion(fallback = "3.0.0") {
+export function getDeviceInstalledVersion(fallback = "3.0.1") {
   if (typeof window === "undefined") return fallback;
   return localStorage.getItem(INSTALLED_VER_KEY) || fallback;
 }
 
-// Upload KYC Docs, Parcha Slips, Signatures & Portfolios to Supabase Storage ("we4all-media")
 export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploads") {
   if (!isLiveSupabaseConfigured) {
     return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
@@ -79,7 +78,6 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
   }
 }
 
-// REQ 4: Hard Wipe All Test Data Both Offline (localStorage/Cache) and Online (Supabase DB)
 export async function wipeAllOnlineAndOfflineData() {
   const freshTimestamp = new Date().toISOString();
   const cleanState = {
@@ -100,7 +98,6 @@ export async function wipeAllOnlineAndOfflineData() {
   };
 
   if (typeof window !== "undefined") {
-    // Clear all legacy v4 and current v5 keys
     const keysToRemove = [
       "we4all_master_cloud_state_v4",
       "we4all_zero_loss_user_backup_v4",
@@ -180,7 +177,7 @@ export function saveCloudAndLocalState(stateSlice) {
             })
           });
         } catch (dbErr) {}
-      }, 350);
+      }, 400);
     }
   } catch (e) {}
 }
@@ -188,15 +185,12 @@ export function saveCloudAndLocalState(stateSlice) {
 export function loadCloudAndLocalState() {
   if (typeof window === "undefined") return null;
   try {
-    // One-time clean migration to v3.0.0 Production so old v4 test data is purged
     if (localStorage.getItem(SCHEMA_MIGRATED_KEY) !== CURRENT_SCHEMA_VERSION) {
       localStorage.setItem(SCHEMA_MIGRATED_KEY, CURRENT_SCHEMA_VERSION);
       localStorage.setItem(INSTALLED_VER_KEY, CURRENT_SCHEMA_VERSION);
       localStorage.removeItem("we4all_master_cloud_state_v4");
       localStorage.removeItem("we4all_zero_loss_user_backup_v4");
       localStorage.removeItem("we4all_device_bound_user_v4");
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(BACKUP_KEY);
       return null;
     }
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(BACKUP_KEY);
@@ -207,7 +201,6 @@ export function loadCloudAndLocalState() {
   }
 }
 
-// REQ 3: Silent Auto-Update on Opening of App Every Time (Zero Manual UI Needed)
 export async function checkLiveCloudOtaManifest() {
   try {
     const res = await fetch(`${LIVE_CLOUD_ORIGIN}/ota-manifest.json?_cb=${Date.now()}`, {
@@ -216,13 +209,8 @@ export async function checkLiveCloudOtaManifest() {
     });
     if (!res.ok) return null;
     const remoteOta = await res.json();
-    const installedVer = getDeviceInstalledVersion("3.0.0");
-    if (remoteOta?.latestAvailableVersion && remoteOta.latestAvailableVersion !== installedVer) {
+    if (remoteOta?.latestAvailableVersion) {
       localStorage.setItem(INSTALLED_VER_KEY, remoteOta.latestAvailableVersion);
-      if (typeof window !== "undefined" && "caches" in window) {
-        await caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n))));
-      }
-      window.location.reload();
     }
     return remoteOta;
   } catch (e) {
@@ -230,7 +218,6 @@ export async function checkLiveCloudOtaManifest() {
   }
 }
 
-// REQ 5 & 6: Real-Time Mobile Hardware Sensor & GPS Location Streamer
 export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetryPush) {
   if (typeof window === "undefined") return () => {};
 
@@ -238,7 +225,7 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
   let currentCoords = {
     lat: 19.6641,
     lng: 78.5320,
-    accuracyMeters: 12,
+    accuracyMeters: 10,
     speedKmh: 0,
     heading: 0,
     source: "Adilabad Town Default"
@@ -258,40 +245,42 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
   }
 
   const pushPing = () => {
-    const identity = getIdentityCallback ? getIdentityCallback() : {};
-    const conn =
-      navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-    const networkType = conn?.effectiveType ? conn.effectiveType.toUpperCase() : "4G/WIFI";
+    try {
+      const identity = getIdentityCallback ? getIdentityCallback() : {};
+      const conn =
+        navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      const networkType = conn?.effectiveType ? conn.effectiveType.toUpperCase() : "4G/WIFI";
 
-    const pingPacket = {
-      deviceId: identity.deviceId || "DEV-LOCAL",
-      userId: identity.userId || "GUEST",
-      fullName: identity.fullName || "Guest Consumer Shopper",
-      phone: identity.phone || "Unauthenticated Guest",
-      role: identity.role || "customer",
-      portal: identity.portal || "customer",
-      vehicleCode: identity.vehicleCode || "",
-      upiId: identity.upiId || "",
-      address: identity.address || "Adilabad Town",
-      lat: currentCoords.lat,
-      lng: currentCoords.lng,
-      accuracyMeters: currentCoords.accuracyMeters,
-      speedKmh: currentCoords.speedKmh,
-      locationSource: currentCoords.source,
-      batteryPct: batteryInfo.levelPct,
-      isCharging: batteryInfo.charging,
-      networkType,
-      online: navigator.onLine,
-      userAgent: navigator.userAgent.slice(0, 65),
-      lastActiveAt: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
-      }),
-      timestampIso: new Date().toISOString()
-    };
+      const pingPacket = {
+        deviceId: identity.deviceId || "DEV-LOCAL",
+        userId: identity.userId || "GUEST",
+        fullName: identity.fullName || "Guest Consumer Shopper",
+        phone: identity.phone || "Unauthenticated Guest",
+        role: identity.role || "customer",
+        portal: identity.portal || "customer",
+        vehicleCode: identity.vehicleCode || "",
+        upiId: identity.upiId || "",
+        address: identity.address || "Adilabad Town",
+        lat: currentCoords.lat,
+        lng: currentCoords.lng,
+        accuracyMeters: currentCoords.accuracyMeters,
+        speedKmh: currentCoords.speedKmh,
+        locationSource: currentCoords.source,
+        batteryPct: batteryInfo.levelPct,
+        isCharging: batteryInfo.charging,
+        networkType,
+        online: navigator.onLine,
+        userAgent: navigator.userAgent.slice(0, 65),
+        lastActiveAt: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        }),
+        timestampIso: new Date().toISOString()
+      };
 
-    if (onTelemetryPush) onTelemetryPush(pingPacket);
+      if (onTelemetryPush) onTelemetryPush(pingPacket);
+    } catch (err) {}
   };
 
   if ("geolocation" in navigator) {
@@ -316,10 +305,11 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
     } catch (e) {}
   }
 
-  pushPing();
+  const initTimer = setTimeout(pushPing, 150);
   const heartbeat = setInterval(pushPing, 12000);
 
   return () => {
+    clearTimeout(initTimer);
     if (watchId !== null && "geolocation" in navigator) {
       navigator.geolocation.clearWatch(watchId);
     }
@@ -390,7 +380,7 @@ export function subscribeToRealtimeUpdates(callback) {
 
   const cloudPollTimer = setInterval(() => {
     pullRemoteSupabaseState(applyIncomingPayload);
-  }, 3000);
+  }, 3500);
 
   return () => {
     if (syncChannel) syncChannel.removeEventListener("message", handler);
@@ -400,7 +390,6 @@ export function subscribeToRealtimeUpdates(callback) {
 }
 
 export function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress, onComplete) {
-  localStorage.setItem(INSTALLED_VER_KEY, targetVersion || "3.0.0");
-  if (onComplete) onComplete({ currentVersion: targetVersion || "3.0.0" });
-  if (typeof window !== "undefined") window.location.reload();
+  localStorage.setItem(INSTALLED_VER_KEY, targetVersion || "3.0.1");
+  if (onComplete) onComplete({ currentVersion: targetVersion || "3.0.1" });
 }
