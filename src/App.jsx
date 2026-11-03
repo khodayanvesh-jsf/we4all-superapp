@@ -2481,7 +2481,7 @@ function AppContent() {
         !isAdminAuthenticated ? (
           renderAdminAuthGate()
         ) : (
-          <FounderAdminSuite registeredUsers={registeredUsers} orders={orders} serviceBookings={serviceBookings} captainRadarJobs={captainRadarJobs} liveDeviceTelemetry={liveDeviceTelemetry} onWipeAllTestData={async () => { await wipeAllOnlineAndOfflineData(); setOrders([]); setServiceBookings([]); setCaptainRadarJobs([]); setPendingMerchants([]); setPendingServiceProviders([]); setPendingDecorators([]); setPendingRiders([]); setLiveDeviceTelemetry({}); triggerToast("Production Reset Complete: All Online & Offline Test Data Wiped!"); }}
+          <FounderAdminSuite captainRadarJobs={captainRadarJobs} liveDeviceTelemetry={liveDeviceTelemetry} onWipeAllTestData={async () => { await wipeAllOnlineAndOfflineData(); setOrders([]); setServiceBookings([]); setCaptainRadarJobs([]); setPendingMerchants([]); setPendingServiceProviders([]); setPendingDecorators([]); setPendingRiders([]); setLiveDeviceTelemetry({}); triggerToast("Production Reset Complete: All Online & Offline Test Data Wiped!"); }}
             founderLogoUrl={founderLogoUrl}
             onUploadFounderPhoto={handleUploadFounderPhoto}
             categories={categories}

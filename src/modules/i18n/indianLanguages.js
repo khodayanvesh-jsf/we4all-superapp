@@ -21,3 +21,42 @@ export const TRANSLATIONS = {
 };
 
 export const getLangText = (langCode) => TRANSLATIONS[langCode] || TRANSLATIONS.EN;
+
+export const GEO_SLANG_REGIONS = {
+  TELANGANA: {
+    stateLabel: "Telangana (Adilabad / Hyderabad)",
+    labourRoleTitle: "Adda Coolie / Mestri & Worksite Hands",
+    supervisorTitle: "Mestri / Site Munshi",
+    dailyWageLabel: "inaam / Dehadi (Daily Wage)",
+    teaAllowanceLabel: "Chai-Pani Allowance",
+    urgentBadge: "Pakka Local Mestri Verified"
+  },
+  MAHARASHTRA: {
+    stateLabel: "Maharashtra (Nanded / Nagpur / Mumbai)",
+    labourRoleTitle: "Naka Kamgar & Goundi Mestri",
+    supervisorTitle: "Mukadam / Mestri",
+    dailyWageLabel: "Rozandari / Majuri",
+    teaAllowanceLabel: "Cutting Chai & Vada Allowance",
+    urgentBadge: "Naka Kamgar Instant Dispatch"
+  },
+  KARNATAKA: {
+    stateLabel: "Karnataka (Bidar / Bengaluru)",
+    labourRoleTitle: "Gare Kelasa / Mestri & Coolie",
+    supervisorTitle: "Mestri / Site Lead",
+    dailyWageLabel: "Dina Coolie (Daily Rate)",
+    teaAllowanceLabel: "Tiffin & Cha Allowance",
+    urgentBadge: "Local Mestri Verified"
+  },
+  TAMIL_NADU: {
+    stateLabel: "Tamil Nadu (Chennai / Coimbatore)",
+    labourRoleTitle: "Kothanar / Periya Mestri & Chithal",
+    supervisorTitle: "Periya Mestri",
+    dailyWageLabel: "Dina Kooli (Daily Wage)",
+    teaAllowanceLabel: "Tea & Bajaar Allowance",
+    urgentBadge: "Kothanar Instant Squad"
+  }
+};
+
+export function getGeoSlangConfig(regionKey = "TELANGANA") {
+  return GEO_SLANG_REGIONS[regionKey] || GEO_SLANG_REGIONS.TELANGANA;
+}
