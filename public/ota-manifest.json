@@ -1,9 +1,9 @@
 {
-  "currentVersion": "3.0.3",
-  "latestAvailableVersion": "3.0.4",
+  "currentVersion": "2.9.8",
+  "latestAvailableVersion": "2.9.9",
   "updateAvailable": true,
-  "publishedAt": "2026-11-01T09:10:00Z",
+  "publishedAt": "2026-11-04T00:25:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.4",
-  "releaseNotes": "WE4ALL v3.0.4: Default Consumer Console on Install, Visual Category Icon Grid with Labour Cart Ordering, Checkout Login/Sign-Up Gate & Silent Auto-Update on App Open."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=2.9.9",
+  "releaseNotes": "WE4ALL v2.9.9: Live Supabase PostgreSQL & we4all-media Storage Bucket Sync for Parcha, Portfolio, and KYC uploads."
 }
