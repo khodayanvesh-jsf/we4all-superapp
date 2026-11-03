@@ -1,33 +1,20 @@
 import React, { useState } from "react";
-
-export const DEFAULT_MANDI_RATES = [
-  { id: "m1", item: "Broiler Chicken (Skinless)", unit: "1 kg", price: 220, categoryId: "meat_daily" },
-  { id: "m2", item: "Fresh Local Mutton", unit: "1 kg", price: 780, categoryId: "meat_daily" },
-  { id: "m3", item: "NECC Farm Eggs", unit: "Tray (30)", price: 165, categoryId: "daily_needs" },
-  { id: "m4", item: "Mandi Red Onions", unit: "5 kg", price: 175, categoryId: "vegetables" },
-  { id: "m5", item: "UltraTech / Local Cement", unit: "50 kg Bag", price: 380, categoryId: "construction" }
-];
-
-export const DEFAULT_LANDMARK_PRESETS = [
-  { id: "lm_bus", label: "RTC Bus Stand", pickup: "RTC Bus Stand, Adilabad", drop: "Subhash Nagar, Adilabad", km: 2.1 },
-  { id: "lm_rail", label: "Railway Station", pickup: "Railway Station Gate, Adilabad", drop: "Collectorate Chowk, Adilabad", km: 2.9 },
-  { id: "lm_rims", label: "RIMS Hospital", pickup: "RIMS Hospital Main Gate", drop: "Vidya Nagar, Adilabad", km: 2.4 },
-  { id: "lm_mandal", label: "Mandal Bus Parcel", pickup: "Main Bazar Wholesale Shop", drop: "RTC Cargo / Village Auto Stand", km: 3.5 }
-];
+import { INITIAL_MANDI_RATES, TOWN_LANDMARK_PRESETS } from "../data";
+import { uploadFileToSupabaseStorage } from "../supabaseClient";
 
 export function TownMandiTicker({ onSelectCategory, onTriggerToast }) {
   return (
     <div className="bg-slate-900 text-white p-2.5 rounded-2xl border border-amber-500/40 space-y-1.5 shadow">
       <div className="flex justify-between items-center">
         <span className="text-[10px] font-black text-amber-400 flex items-center gap-1">
-           TODAY&apos;S ADILABAD MANDI & ESSENTIAL RATES
+          \uD83D\uDCE2 TODAY&apos;S ADILABAD MANDI & ESSENTIAL RATES
         </span>
         <span className="bg-emerald-500/20 text-emerald-300 text-[8px] font-black px-1.5 py-0.5 rounded">
           LIVE MORNING BOARD
         </span>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {DEFAULT_MANDI_RATES.map((m) => (
+        {INITIAL_MANDI_RATES.map((m) => (
           <button
             key={m.id}
             type="button"
@@ -60,14 +47,21 @@ export function ParchaAndVoiceOrderBox({
   const [parchaShopType, setParchaShopType] = useState("Sri Laxmi Supermart (Kirana List)");
   const [parchaNotes, setParchaNotes] = useState("");
   const [parchaImageName, setParchaImageName] = useState("");
+  const [parchaCloudUrl, setParchaCloudUrl] = useState("");
+  const [uploadingParcha, setUploadingParcha] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [voiceRecordedLabel, setVoiceRecordedLabel] = useState("");
 
-  const handleParchaPhoto = (e) => {
+  const handleParchaPhoto = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setParchaImageName(f.name);
-    onTriggerToast(`Attached Parcha / Prescription Slip: ${f.name}`);
+    setUploadingParcha(true);
+    onTriggerToast(`Uploading ${f.name} to we4all-media/parcha...`);
+    const publicUrl = await uploadFileToSupabaseStorage(f, "parcha");
+    setUploadingParcha(false);
+    setParchaCloudUrl(publicUrl);
+    onTriggerToast(`Saved in we4all-media/parcha! URL: ${publicUrl.slice(0, 38)}...`);
   };
 
   const handleToggleVoiceRecord = () => {
@@ -94,9 +88,10 @@ export function ParchaAndVoiceOrderBox({
       id: `PRC-${Math.floor(1000 + Math.random() * 9000)}`,
       isParchaOrder: true,
       parchaImageName: parchaImageName || "Handwritten_Parcha_Slip.jpg",
+      parchaCloudUrl: parchaCloudUrl || "",
       voiceNoteLabel: voiceRecordedLabel || "",
       parchaText: parchaNotes.trim() || "Handwritten Kirana / Medical Slip Attached",
-      dateStr: "2026-11-01",
+      dateStr: "2026-11-04",
       createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       periodTag: "TODAY",
       customerName: currentUser?.fullName || "Town Customer",
@@ -112,6 +107,7 @@ export function ParchaAndVoiceOrderBox({
           qty: 1,
           price: 250,
           merchantName: parchaShopType,
+          parchaCloudUrl: parchaCloudUrl || "",
           approvalStatus: "PENDING_MERCHANT_PRICING"
         }
       ],
@@ -127,12 +123,11 @@ export function ParchaAndVoiceOrderBox({
     setOrders([newParchaOrder, ...orders]);
     setParchaNotes("");
     setParchaImageName("");
+    setParchaCloudUrl("");
     setVoiceRecordedLabel("");
     setOpenParcha(false);
     if (onNavigateToOrders) onNavigateToOrders();
-    onTriggerToast(
-      `Parcha Order #${newParchaOrder.id} sent to Merchant Queue for itemized billing!`
-    );
+    onTriggerToast(`Parcha Order #${newParchaOrder.id} synced to Supabase & Merchant Queue!`);
   };
 
   return (
@@ -140,10 +135,10 @@ export function ParchaAndVoiceOrderBox({
       <div className="flex justify-between items-center gap-2">
         <div>
           <h4 className="font-black text-amber-300 text-xs">
-             Quick Parcha (Handwritten Slip) & Voice-Note Order
+            \uD83D\uDCDD Quick Parcha (Handwritten Slip) & Voice-Note Order
           </h4>
           <p className="text-[10px] text-slate-300">
-            Snap your paper kirana list, medical prescription, or record a voice note!
+            Uploads directly to Supabase Storage (we4all-media/parcha)
           </p>
         </div>
         <button
@@ -176,10 +171,10 @@ export function ParchaAndVoiceOrderBox({
           <div className="grid grid-cols-2 gap-1.5">
             <label className="bg-slate-900 border border-emerald-500/50 rounded-xl p-2 text-center cursor-pointer block">
               <span className="font-black text-emerald-300 block">
-                 Snap Parcha / Rx Photo
+                \uD83D\uDCF7 {uploadingParcha ? "Uploading to Cloud..." : "Snap Parcha / Rx Photo"}
               </span>
               <span className="text-[8px] text-slate-400 truncate block mt-0.5">
-                {parchaImageName || "Camera or Gallery"}
+                {parchaImageName || "Saves to we4all-media/parcha"}
               </span>
               <input
                 type="file"
@@ -200,13 +195,29 @@ export function ParchaAndVoiceOrderBox({
               }`}
             >
               <span className="font-black block">
-                 {isRecordingVoice ? "Recording... Tap Stop" : "Record Voice Note"}
+                \uD83C\uDF99\uFE0F {isRecordingVoice ? "Recording... Tap Stop" : "Record Voice Note"}
               </span>
               <span className="text-[8px] text-slate-300 truncate block mt-0.5">
                 {voiceRecordedLabel || "Speak in Telugu/Hindi"}
               </span>
             </button>
           </div>
+
+          {parchaCloudUrl && (
+            <div className="bg-emerald-950/50 border border-emerald-500/40 p-1.5 rounded-lg flex justify-between items-center">
+              <span className="text-[9px] text-emerald-300 font-bold truncate">
+                \u2713 Cloud Saved: {parchaCloudUrl}
+              </span>
+              <a
+                href={parchaCloudUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="bg-emerald-400 text-slate-950 font-black px-2 py-0.5 rounded text-[8px] shrink-0"
+              >
+                Open URL
+              </a>
+            </div>
+          )}
 
           <input
             type="text"
@@ -236,14 +247,14 @@ export function TownLandmarkPresetBar({ onApplyLandmark }) {
         1-Tap Town Landmarks & Village Bus-Parcel Presets:
       </p>
       <div className="grid grid-cols-2 gap-1.5">
-        {DEFAULT_LANDMARK_PRESETS.map((lm) => (
+        {TOWN_LANDMARK_PRESETS.map((lm) => (
           <button
             key={lm.id}
             type="button"
             onClick={() => onApplyLandmark(lm)}
             className="bg-slate-950 border border-teal-500/40 hover:border-amber-400 p-1.5 rounded-xl text-left cursor-pointer"
           >
-            <div className="font-black text-teal-300 text-[10px]"> {lm.label}</div>
+            <div className="font-black text-teal-300 text-[10px]">\uD83D\uDCCD {lm.label}</div>
             <div className="text-[8px] text-slate-400 truncate">
               {lm.pickup} &rarr; {lm.drop}
             </div>

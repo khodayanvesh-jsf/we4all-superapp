@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { uploadFileToSupabaseStorage } from "../supabaseClient";
 
 export default function DecoratorPortal({
   footerTab,

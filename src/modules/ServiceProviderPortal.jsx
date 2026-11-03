@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { uploadFileToSupabaseStorage } from "../supabaseClient";
 
 const MASTER_ONE_HOUR_SLOTS = [
   "08:00 AM - 09:00 AM",
@@ -117,21 +118,20 @@ export default function ServiceProviderPortal({
     );
   };
 
-  const handleWorkPhotoUpload = (e) => {
+  const handleWorkPhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || "");
-      setRateCardConfig({ ...rateCardConfig, workImage: dataUrl });
+    onTriggerToast(`Uploading ${file.name} to we4all-media/portfolio...`);
+    const cloudUrl = await uploadFileToSupabaseStorage(file, "portfolio");
+    if (cloudUrl && cloudUrl.startsWith("http")) {
+      setRateCardConfig({ ...rateCardConfig, workImage: cloudUrl });
       setServiceProviders(
         serviceProviders.map((sp) =>
-          sp.id === activeProProfile.id ? { ...sp, image: dataUrl } : sp
+          sp.id === activeProProfile.id ? { ...sp, image: cloudUrl } : sp
         )
       );
-      onTriggerToast("Service work portfolio image uploaded & synced!");
-    };
-    reader.readAsDataURL(file);
+      onTriggerToast(`Saved in we4all-media/portfolio!`);
+    }
   };
 
   const handleSaveMasterRateCard = () => {
