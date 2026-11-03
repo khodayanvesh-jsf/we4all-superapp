@@ -508,24 +508,7 @@ function AppContent() {
   const [captainRadarJobs, setCaptainRadarJobs] = useState(
     savedCloud?.captainRadarJobs && savedCloud.captainRadarJobs.length > 0
       ? savedCloud.captainRadarJobs
-      : [
-          {
-            id: "RDR-2W-101",
-            requiredVehicleCode: "2W",
-            vehicleLabel: "2W Bike Captain (Up to 45 kg)",
-            weightKg: 6,
-            badge: "2W Bike Taxi / Kirana Pack (6 kg)",
-            bookedBy: "Customer: Rameshwar Reddy (Chose 2W Bike)",
-            pickupPin: "Sri Laxmi Supermart, Main Bazar",
-            dropPin: "Subhash Nagar, Adilabad",
-            distFromCaptainKm: 0.4,
-            distanceKm: 2.5,
-            captainPayout: 42,
-            secretOtp: "3388",
-            status: "OPEN_ON_RADAR",
-            paymentReqStatus: "PENDING_TRIP_COMPLETION"
-          }
-        ]
+      : []
   );
 
   const [decorPortfolio, setDecorPortfolio] = useState(
