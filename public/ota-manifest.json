@@ -1,9 +1,9 @@
 {
-  "currentVersion": "3.0.1",
-  "latestAvailableVersion": "3.0.1",
+  "currentVersion": "3.0.0",
+  "latestAvailableVersion": "3.0.0",
   "updateAvailable": false,
-  "publishedAt": "2026-11-04T01:15:00Z",
+  "publishedAt": "2026-11-04T00:40:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.1",
-  "releaseNotes": "WE4ALL v3.0.1 Production Hotfix: Resolved blank screen startup crash, added Root Error Boundary, Guest Shopping Mode, and Admin Live GPS Locator."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.0",
+  "releaseNotes": "WE4ALL v3.0.0 Production Release: Guest Consumer Mode on First Install, Clean Online/Offline Production Database, Real-Time Mobile GPS & Sensor Streaming, and Admin Live User/Partner GPS Locator."
 }

@@ -22,6 +22,33 @@ const syncChannel =
 let cloudSyncDebounceTimer = null;
 let lastAppliedCloudTimestamp = "";
 
+export function getCleanProductionState() {
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    currentUser: {
+      id: "GUEST",
+      isGuest: true,
+      fullName: "Guest Shopper",
+      username: "guest",
+      phone: "",
+      role: "customer",
+      vehicleCode: "2W",
+      vehicleClass: "2W Bike Captain (Up to 45 kg)",
+      upiId: ""
+    },
+    orders: [],
+    serviceBookings: [],
+    captainRadarJobs: [],
+    decorReverseBids: [],
+    decorEscrowBookings: [],
+    pendingMerchants: [],
+    pendingServiceProviders: [],
+    pendingDecorators: [],
+    pendingRiders: [],
+    liveDeviceTelemetry: {}
+  };
+}
+
 export function getDeviceInstalledVersion(fallback = "3.0.1") {
   if (typeof window === "undefined") return fallback;
   return localStorage.getItem(INSTALLED_VER_KEY) || fallback;
@@ -81,20 +108,9 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
 export async function wipeAllOnlineAndOfflineData() {
   const freshTimestamp = new Date().toISOString();
   const cleanState = {
-    schemaVersion: CURRENT_SCHEMA_VERSION,
+    ...getCleanProductionState(),
     wipedAt: freshTimestamp,
-    lastSyncedAt: freshTimestamp,
-    orders: [],
-    serviceBookings: [],
-    captainRadarJobs: [],
-    decorReverseBids: [],
-    decorEscrowBookings: [],
-    pendingMerchants: [],
-    pendingServiceProviders: [],
-    pendingDecorators: [],
-    pendingRiders: [],
-    registeredUsers: [],
-    liveDeviceTelemetry: {}
+    lastSyncedAt: freshTimestamp
   };
 
   if (typeof window !== "undefined") {
@@ -139,7 +155,7 @@ export async function wipeAllOnlineAndOfflineData() {
 export function saveCloudAndLocalState(stateSlice) {
   if (typeof window === "undefined") return;
   try {
-    const existing = loadCloudAndLocalState() || {};
+    const existing = loadCloudAndLocalState() || getCleanProductionState();
     const nowIso = new Date().toISOString();
     const merged = { ...existing, ...stateSlice, lastSyncedAt: nowIso };
     lastAppliedCloudTimestamp = nowIso;
@@ -183,7 +199,7 @@ export function saveCloudAndLocalState(stateSlice) {
 }
 
 export function loadCloudAndLocalState() {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined") return getCleanProductionState();
   try {
     if (localStorage.getItem(SCHEMA_MIGRATED_KEY) !== CURRENT_SCHEMA_VERSION) {
       localStorage.setItem(SCHEMA_MIGRATED_KEY, CURRENT_SCHEMA_VERSION);
@@ -191,13 +207,16 @@ export function loadCloudAndLocalState() {
       localStorage.removeItem("we4all_master_cloud_state_v4");
       localStorage.removeItem("we4all_zero_loss_user_backup_v4");
       localStorage.removeItem("we4all_device_bound_user_v4");
-      return null;
+      const initialClean = getCleanProductionState();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialClean));
+      return initialClean;
     }
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(BACKUP_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    if (!raw) return getCleanProductionState();
+    const parsed = JSON.parse(raw);
+    return { ...getCleanProductionState(), ...parsed };
   } catch (e) {
-    return null;
+    return getCleanProductionState();
   }
 }
 

@@ -1,3 +1,4 @@
+import { wipeAllOnlineAndOfflineData, startRealtimeMobileSensorStream } from "./supabaseClient";
 import React, { useState, useEffect, useRef } from "react";
 import {
   INITIAL_APP_UPDATE_INFO,
@@ -37,7 +38,7 @@ import {
   loadCloudAndLocalState,
   subscribeToRealtimeUpdates,
   checkLiveCloudOtaManifest,
-  performZeroLossOtaUpdate, wipeAllOnlineAndOfflineData, startRealtimeMobileSensorStream,
+  performZeroLossOtaUpdate,
   getDeviceInstalledVersion
 } from "./supabaseClient";
 import {
@@ -505,7 +506,11 @@ function AppContent() {
   );
   const [riders, setRiders] = useState(savedCloud?.riders || INITIAL_RIDERS);
 
-  const [captainRadarJobs, setCaptainRadarJobs] = useState(savedCloud?.captainRadarJobs || []);
+  const [captainRadarJobs, setCaptainRadarJobs] = useState(
+    savedCloud?.captainRadarJobs && savedCloud.captainRadarJobs.length > 0
+      ? savedCloud.captainRadarJobs
+      : []
+  );
 
   const [decorPortfolio, setDecorPortfolio] = useState(
     savedCloud?.decorPortfolio && savedCloud.decorPortfolio.length > 0
@@ -687,7 +692,7 @@ function AppContent() {
       devId = `DEV-${Math.floor(10000 + Math.random() * 90000)}`;
       localStorage.setItem("we4all_hw_device_id", devId);
     }
-    return startRealtimeMobileSensorStream(
+    const stopSensors = startRealtimeMobileSensorStream(
       () => ({
         deviceId: devId,
         userId: currentUser?.id || "GUEST",
@@ -708,10 +713,7 @@ function AppContent() {
         });
       }
     );
-  }, [currentUser, activePortal]);
-
-  useEffect(() => {
-    return subscribeToRealtimeUpdates((remoteState) => {
+    const stopCloud = subscribeToRealtimeUpdates((remoteState) => {
       if (remoteState.liveDeviceTelemetry) setLiveDeviceTelemetry(remoteState.liveDeviceTelemetry);
       if (remoteState.orders) setOrders(remoteState.orders);
       if (remoteState.serviceBookings)
@@ -727,7 +729,8 @@ function AppContent() {
       if (remoteState.appUpdateInfo)
         setAppUpdateInfo(remoteState.appUpdateInfo);
     });
-  }, []);
+    return () => { stopSensors(); stopCloud(); };
+  }, [currentUser, activePortal]);
 
   const totalCartCount =
     merchantCart.reduce((s, i) => s + (i.qty || 1), 0) +
@@ -2478,24 +2481,7 @@ function AppContent() {
         !isAdminAuthenticated ? (
           renderAdminAuthGate()
         ) : (
-          <FounderAdminSuite
-            registeredUsers={registeredUsers}
-            orders={orders}
-            serviceBookings={serviceBookings}
-            captainRadarJobs={captainRadarJobs}
-            liveDeviceTelemetry={liveDeviceTelemetry}
-            onWipeAllTestData={async () => {
-              await wipeAllOnlineAndOfflineData();
-              setOrders([]);
-              setServiceBookings([]);
-              setCaptainRadarJobs([]);
-              setPendingMerchants([]);
-              setPendingServiceProviders([]);
-              setPendingDecorators([]);
-              setPendingRiders([]);
-              setLiveDeviceTelemetry({});
-              triggerToast("Production Reset Complete: All Online & Offline Test Data Wiped!");
-            }}
+          <FounderAdminSuite registeredUsers={registeredUsers} orders={orders} serviceBookings={serviceBookings} captainRadarJobs={captainRadarJobs} liveDeviceTelemetry={liveDeviceTelemetry} onWipeAllTestData={async () => { await wipeAllOnlineAndOfflineData(); setOrders([]); setServiceBookings([]); setCaptainRadarJobs([]); setPendingMerchants([]); setPendingServiceProviders([]); setPendingDecorators([]); setPendingRiders([]); setLiveDeviceTelemetry({}); triggerToast("Production Reset Complete: All Online & Offline Test Data Wiped!"); }}
             founderLogoUrl={founderLogoUrl}
             onUploadFounderPhoto={handleUploadFounderPhoto}
             categories={categories}
@@ -2873,7 +2859,7 @@ function AppContent() {
                           "active"
                         );
                         localStorage.setItem(
-                          "we4all_device_bound_user_v4",
+                          "we4all_device_bound_user_v5",
                           JSON.stringify(newUser)
                         );
                         setCurrentUser(newUser);
