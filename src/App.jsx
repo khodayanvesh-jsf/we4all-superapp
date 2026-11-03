@@ -37,7 +37,7 @@ import {
   loadCloudAndLocalState,
   subscribeToRealtimeUpdates,
   checkLiveCloudOtaManifest,
-  performZeroLossOtaUpdate,
+  performZeroLossOtaUpdate, wipeAllOnlineAndOfflineData, startRealtimeMobileSensorStream,
   getDeviceInstalledVersion
 } from "./supabaseClient";
 import {
@@ -55,11 +55,12 @@ function cleanLabel(str = "") {
     .trim();
 }
 
-function FounderLogoBadge({ logoUrl }) {
+function FounderLogoBadge({ logoUrl, onClick }) {
   return (
     <div
-      title="WE4ALL Official Emblem"
-      className="relative w-9 h-9 rounded-full border-2 border-amber-400 ring-2 ring-emerald-500/50 bg-gradient-to-b from-[#07261e] to-[#04120e] flex flex-col items-center justify-center overflow-hidden shadow-lg shrink-0 select-none"
+      onClick={onClick}
+      title="Tap to Open Founder Admin Login"
+      className="relative w-9 h-9 rounded-full border-2 border-amber-400 ring-2 ring-emerald-500/50 bg-gradient-to-b from-[#07261e] to-[#04120e] flex flex-col items-center justify-center overflow-hidden shadow-lg shrink-0 select-none cursor-pointer"
     >
       {logoUrl ? (
         <img src={logoUrl} alt="WE4ALL" className="w-full h-full object-cover" />
@@ -348,7 +349,7 @@ function AppContent() {
       appUpdateInfo?.latestAvailableVersion ||
       "3.0.4";
     localStorage.setItem("we4all_installed_ota_ver_v4", targetVer);
-    performZeroLossOtaUpdate(
+    performZeroLossOtaUpdate, wipeAllOnlineAndOfflineData, startRealtimeMobileSensorStream(
       targetVer,
       appUpdateInfo?.releaseNotes,
       (stage) => setOtaProgress(stage),
@@ -505,11 +506,7 @@ function AppContent() {
   );
   const [riders, setRiders] = useState(savedCloud?.riders || INITIAL_RIDERS);
 
-  const [captainRadarJobs, setCaptainRadarJobs] = useState(
-    savedCloud?.captainRadarJobs && savedCloud.captainRadarJobs.length > 0
-      ? savedCloud.captainRadarJobs
-      : []
-  );
+  const [captainRadarJobs, setCaptainRadarJobs] = useState(savedCloud?.captainRadarJobs || []);
 
   const [decorPortfolio, setDecorPortfolio] = useState(
     savedCloud?.decorPortfolio && savedCloud.decorPortfolio.length > 0
@@ -685,8 +682,40 @@ function AppContent() {
     serviceBookings
   ]);
 
+    useEffect(() => {
+    let devId = localStorage.getItem("we4all_hw_device_id");
+    if (!devId) {
+      devId = `DEV-${Math.floor(10000 + Math.random() * 90000)}`;
+      localStorage.setItem("we4all_hw_device_id", devId);
+    }
+    return startRealtimeMobileSensorStream(
+      () => ({
+        deviceId: devId,
+        userId: currentUser?.id || "GUEST",
+        fullName: currentUser?.fullName || "Guest Shopper",
+        phone: currentUser?.phone || "Guest",
+        role: currentUser?.role || "customer",
+        portal: activePortal,
+        vehicleCode: currentUser?.vehicleCode || "2W",
+        upiId: currentUser?.upiId || "",
+        address: activeAddressObj?.fullAddress || "Adilabad Town"
+      }),
+      (ping) => {
+        setMyLivePing(ping);
+        setLiveDeviceTelemetry((prev) => {
+          const next = { ...(prev || {}), [ping.deviceId]: ping };
+          saveCloudAndLocalState({ liveDeviceTelemetry: next });
+          return next;
+        });
+      }
+    );
+  }, [currentUser, activePortal]);
+
   useEffect(() => {
     return subscribeToRealtimeUpdates((remoteState) => {
+      if (remoteState.liveDeviceTelemetry) setLiveDeviceTelemetry(remoteState.liveDeviceTelemetry);
+      if (remoteState.decorReverseBids) setDecorReverseBids(remoteState.decorReverseBids);
+      if (remoteState.decorEscrowBookings) setDecorEscrowBookings(remoteState.decorEscrowBookings);
       if (remoteState.orders) setOrders(remoteState.orders);
       if (remoteState.serviceBookings)
         setServiceBookings(remoteState.serviceBookings);
@@ -2453,6 +2482,25 @@ function AppContent() {
           renderAdminAuthGate()
         ) : (
           <FounderAdminSuite
+            registeredUsers={registeredUsers}
+            orders={orders}
+            serviceBookings={serviceBookings}
+            captainRadarJobs={captainRadarJobs}
+            liveDeviceTelemetry={liveDeviceTelemetry}
+            onWipeAllTestData={async () => {
+              await wipeAllOnlineAndOfflineData();
+              setOrders([]);
+              setServiceBookings([]);
+              setCaptainRadarJobs([]);
+              setDecorReverseBids([]);
+              setDecorEscrowBookings([]);
+              setPendingMerchants([]);
+              setPendingServiceProviders([]);
+              setPendingDecorators([]);
+              setPendingRiders([]);
+              setLiveDeviceTelemetry({});
+              triggerToast("Production Reset Complete: All Online & Offline Test Data Wiped!");
+            }}
             founderLogoUrl={founderLogoUrl}
             onUploadFounderPhoto={handleUploadFounderPhoto}
             categories={categories}

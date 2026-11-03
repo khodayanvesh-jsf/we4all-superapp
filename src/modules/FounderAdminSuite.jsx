@@ -2,11 +2,6 @@ import React, { useState } from "react";
 
 export default function FounderAdminSuite({
   founderLogoUrl,
-  onUploadFounderPhoto,
-  categories = [],
-  setCategories = () => {},
-  geoAds = [],
-  setGeoAds = () => {},
   merchants = [],
   setMerchants = () => {},
   serviceProviders = [],
@@ -15,6 +10,12 @@ export default function FounderAdminSuite({
   setDecorators = () => {},
   riders = [],
   setRiders = () => {},
+  registeredUsers = [],
+  orders = [],
+  serviceBookings = [],
+  captainRadarJobs = [],
+  decorPortfolio = [],
+  setDecorPortfolio = () => {},
   pendingMerchants = [],
   setPendingMerchants = () => {},
   pendingServiceProviders = [],
@@ -23,899 +24,669 @@ export default function FounderAdminSuite({
   setPendingDecorators = () => {},
   pendingRiders = [],
   setPendingRiders = () => {},
-  orders = [],
-  serviceBookings = [],
-  customPortals = [],
-  setCustomPortals = () => {},
-  monetizationConfig = {},
-  setMonetizationConfig = () => {},
-  appUpdateInfo = {},
-  setAppUpdateInfo = () => {},
-  onBroadcastOtaPushNotification = () => {},
-  onLaunchMultiPhoneView = () => {},
-  onTeleportToScreen = () => {},
-  onExitAdminToApp = () => {},
-  onTriggerToast = () => {}
+  liveDeviceTelemetry = {},
+  onWipeAllTestData,
+  splitScreens = [],
+  onLaunchMultiPhoneView,
+  onTeleportToScreen,
+  onExitAdminToApp,
+  onTriggerToast
 }) {
-  const [adminTab, setAdminTab] = useState("command_center");
-  const [surgeActive, setSurgeActive] = useState(false);
-  const [surgeBonusRs, setSurgeBonusRs] = useState(15);
+  const [founderTab, setFounderTab] = useState("live_locator");
+  const [locatorSearch, setLocatorSearch] = useState("");
+  const [locatorRoleFilter, setLocatorRoleFilter] = useState("ALL");
+  const [selectedInspectEntity, setSelectedInspectEntity] = useState(null);
 
-  // 5-Point Mandatory KYC & T&C Checklist State per Pending Partner ID
-  const [kycChecksMap, setKycChecksMap] = useState({});
+  const [approvalQueueSubTab, setApprovalQueueSubTab] = useState("captains");
+  const [checklistByPartner, setChecklistByPartner] = useState({});
 
-  // No-Code Dynamic Portal Builder State
-  const [newPortalForm, setNewPortalForm] = useState({
-    id: "",
-    title: "",
-    badge: "Partner",
-    icon: "",
-    description: "",
-    tab1Label: "1. Live Queue",
-    tab2Label: "2. Catalog",
-    tab3Label: "3. + Add Item",
-    tab4Label: "4. Ledger",
-    sampleItemTitle: "",
-    sampleItemPrice: 299
-  });
-
-  // Category Creator State
-  const [newCatForm, setNewCatForm] = useState({ name: "", icon: "" });
-
-  // OTA Broadcast State
-  const [otaVersionInput, setOtaVersionInput] = useState("3.0.0");
-  const [otaNotesInput, setOtaNotesInput] = useState(
-    "WE4ALL v3.0.0: Dual Mobile + Web Consoles for all Portals, No-Code Dynamic Portal Builder, 5-Point KYC Checklist & Captain OTP Sync."
-  );
-
-  const toggleKycCheck = (partnerKey, checkIdx) => {
-    const curr = kycChecksMap[partnerKey] || [false, false, false, false, false];
-    const next = curr.map((v, i) => (i === checkIdx ? !v : v));
-    setKycChecksMap({ ...kycChecksMap, [partnerKey]: next });
-  };
-
-  const isAll5Checked = (partnerKey) => {
-    const curr = kycChecksMap[partnerKey] || [false, false, false, false, false];
-    return curr.every(Boolean);
-  };
-
-  const checkAll5AtOnce = (partnerKey) => {
-    setKycChecksMap({
-      ...kycChecksMap,
-      [partnerKey]: [true, true, true, true, true]
-    });
-  };
-
-  // Export Partner Payouts CSV
-  const handleExportPayoutsCsv = () => {
-    const rows = [
-      "OrderID,Customer,PartnerOrShop,Vehicle,TotalAmount,Status",
-      ...(orders || []).map(
-        (o) =>
-          `${o.id},"${o.customerName}","${o.shopName}",${o.requiredVehicleCode || "2W"},${o.grandTotal},${o.status}`
-      )
-    ].join("\n");
-    const blob = new Blob([rows], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "WE4ALL_Partner_Payout_Settlement.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-    onTriggerToast("Downloaded Partner Payout CSV Sheet!");
-  };
-
-  // Create New Portal Without Coding
-  const handleCreateNoCodePortal = () => {
-    if (!newPortalForm.title.trim()) {
-      onTriggerToast("Please enter a Portal Title (e.g., 6. Pharmacy & Tele-Clinic).");
-      return;
-    }
-    const slug =
-      newPortalForm.id.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_") ||
-      `portal_${Date.now()}`;
-    const createdPortal = {
-      id: slug,
-      title: newPortalForm.title.trim(),
-      badge: newPortalForm.badge.trim() || "Partner",
-      icon: newPortalForm.icon || "",
-      description:
-        newPortalForm.description.trim() ||
-        `Official ${newPortalForm.title.trim()} Mobile & Web Console`,
-      isPublished: true,
-      tabs: [
-        { id: "home", icon: "", label: newPortalForm.tab1Label || "1. Queue" },
-        { id: "catalog", icon: "", label: newPortalForm.tab2Label || "2. Catalog" },
-        { id: "add_new", icon: "", label: newPortalForm.tab3Label || "3. + Add" },
-        { id: "orders", icon: "", label: newPortalForm.tab4Label || "4. Ledger" },
-        { id: "account", icon: "", label: "Account" }
-      ],
-      items: [
-        {
-          id: `ITEM-${Date.now()}`,
-          title:
-            newPortalForm.sampleItemTitle.trim() ||
-            `${newPortalForm.title.trim()} Standard Package`,
-          category: newPortalForm.badge,
-          price: Number(newPortalForm.sampleItemPrice) || 299,
-          unit: "Per Order / Visit",
-          stockOrSlots: 30
-        }
-      ],
-      bookings: []
+  const toggleCheckItem = (partnerId, key) => {
+    const current = checklistByPartner[partnerId] || {
+      kycDocVerified: false,
+      tradeSkillVerified: false,
+      bankUpiVerified: false,
+      tcAcceptedVerified: false,
+      signatureVerified: false
     };
-    setCustomPortals([...customPortals, createdPortal]);
-    setNewPortalForm({
-      ...newPortalForm,
-      id: "",
-      title: "",
-      description: "",
-      sampleItemTitle: ""
+    setChecklistByPartner({
+      ...checklistByPartner,
+      [partnerId]: { ...current, [key]: !current[key] }
     });
-    onTriggerToast(
-      `No-Code Portal "${createdPortal.title}" created & published live to all Mobile and Web Consoles!`
-    );
+  };
+
+  const checkAllForPartner = (partnerId) => {
+    setChecklistByPartner({
+      ...checklistByPartner,
+      [partnerId]: {
+        kycDocVerified: true,
+        tradeSkillVerified: true,
+        bankUpiVerified: true,
+        tcAcceptedVerified: true,
+        signatureVerified: true
+      }
+    });
   };
 
   const totalPendingCount =
-    pendingMerchants.length +
-    pendingServiceProviders.length +
-    pendingDecorators.length +
-    pendingRiders.length;
+    (pendingRiders?.length || 0) +
+    (pendingDecorators?.length || 0) +
+    (pendingServiceProviders?.length || 0) +
+    (pendingMerchants?.length || 0);
 
-  return (
-    <div className="min-h-screen bg-[#04090e] text-white p-3 md:p-6 space-y-4 text-xs">
-      {/* TOP FOUNDER EXECUTIVE HEADER */}
-      <div className="bg-slate-900 border-2 border-amber-400 rounded-3xl p-4 flex flex-wrap justify-between items-center gap-3 shadow-2xl">
-        <div className="flex items-center gap-3">
-          <img
-            src={founderLogoUrl || "/logo.png"}
-            alt="WE4ALL"
-            className="w-12 h-12 rounded-full border-2 border-amber-400 object-cover"
-          />
+  // Build Unified Directory of ALL Live Devices + Registered Users + Partners for Admin Locator (Req 6)
+  const liveTelemetryList = Object.values(liveDeviceTelemetry || {});
+  const unifiedDirectory = [
+    ...liveTelemetryList.map((ping) => ({
+      id: `LIVE_${ping.deviceId}`,
+      name: ping.fullName || "Active Device User",
+      role: ping.portal || ping.role || "customer",
+      phone: ping.phone || "Live Session",
+      upiId: ping.upiId || "-",
+      address: ping.address || "Adilabad Town",
+      lat: ping.lat || 19.6641,
+      lng: ping.lng || 78.5320,
+      accuracyMeters: ping.accuracyMeters || 8,
+      speedKmh: ping.speedKmh || 0,
+      batteryPct: ping.batteryPct ?? 100,
+      networkType: ping.networkType || "4G/WIFI",
+      lastActiveAt: ping.lastActiveAt || "Live Now",
+      isLiveStream: true,
+      rawRecord: ping
+    })),
+    ...registeredUsers.map((u) => ({
+      id: `USR_${u.id}`,
+      name: u.fullName,
+      role: u.role || "customer",
+      phone: u.phone,
+      upiId: u.upiId || "-",
+      address: u.area || "Adilabad Town",
+      lat: u.lat || 19.6655,
+      lng: u.lng || 78.5335,
+      accuracyMeters: 10,
+      speedKmh: 0,
+      batteryPct: 95,
+      networkType: "4G",
+      lastActiveAt: u.acceptedAt || "Registered",
+      isLiveStream: false,
+      rawRecord: u
+    })),
+    ...merchants.map((m) => ({
+      id: `MER_${m.id}`,
+      name: m.businessName || m.name,
+      role: "merchant",
+      phone: m.phone || "9848011100",
+      upiId: m.upiId || "merchant@ybl",
+      address: m.area || "Main Bazar, Adilabad",
+      lat: m.lat || 19.6672,
+      lng: m.lng || 78.5318,
+      accuracyMeters: 5,
+      speedKmh: 0,
+      batteryPct: 100,
+      networkType: "WIFI",
+      lastActiveAt: "Store Active",
+      isLiveStream: false,
+      rawRecord: m
+    })),
+    ...serviceProviders.map((sp) => ({
+      id: `SRV_${sp.id}`,
+      name: sp.providerName || sp.maskedId,
+      role: "service_provider",
+      phone: sp.phone || "9848022334",
+      upiId: sp.upiId || "servicepro@ybl",
+      address: sp.area || "Subhash Nagar, Adilabad",
+      lat: sp.lat || 19.6631,
+      lng: sp.lng || 78.5342,
+      accuracyMeters: 10,
+      speedKmh: 0,
+      batteryPct: 88,
+      networkType: "4G",
+      lastActiveAt: "On-Duty Slots",
+      isLiveStream: false,
+      rawRecord: sp
+    })),
+    ...decorators.map((d) => ({
+      id: `DEC_${d.id}`,
+      name: d.businessName || d.name,
+      role: "decorator",
+      phone: d.phone || "9848044556",
+      upiId: d.upiId || "decorator@ybl",
+      address: d.area || "Bypass Road, Adilabad",
+      lat: d.lat || 19.6701,
+      lng: d.lng || 78.5290,
+      accuracyMeters: 10,
+      speedKmh: 0,
+      batteryPct: 92,
+      networkType: "WIFI",
+      lastActiveAt: "Hall/Decor Active",
+      isLiveStream: false,
+      rawRecord: d
+    })),
+    ...riders.map((r) => ({
+      id: `CAP_${r.id}`,
+      name: r.name || r.captainName,
+      role: "rider",
+      phone: r.phone || "9848055112",
+      upiId: r.upiId || "captain@ybl",
+      address: "Live Patrol Route, Adilabad",
+      lat: r.lat || 19.6648,
+      lng: r.lng || 78.5328,
+      accuracyMeters: 6,
+      speedKmh: 24,
+      batteryPct: 84,
+      networkType: "5G",
+      lastActiveAt: "GPS Radar Online",
+      isLiveStream: false,
+      rawRecord: r
+    }))
+  ];
+
+  const filteredDirectory = unifiedDirectory.filter((entry) => {
+    if (locatorRoleFilter !== "ALL" && entry.role !== locatorRoleFilter) return false;
+    if (!locatorSearch.trim()) return true;
+    const q = locatorSearch.toLowerCase();
+    return (
+      String(entry.name || "").toLowerCase().includes(q) ||
+      String(entry.phone || "").toLowerCase().includes(q) ||
+      String(entry.role || "").toLowerCase().includes(q) ||
+      String(entry.address || "").toLowerCase().includes(q)
+    );
+  });
+
+  const ADMIN_TABS = [
+    {
+      id: "live_locator",
+      label: "1. Live GPS Locator & User Data Inspector",
+      badge: `${unifiedDirectory.length} Tracked`
+    },
+    {
+      id: "approvals",
+      label: "2. Partner & Captain 5-Point Checklists",
+      badge: `${totalPendingCount} Pending`
+    },
+    {
+      id: "data_reset",
+      label: "3. Production Data Wipe (Online + Offline)",
+      badge: "Clean DB"
+    },
+    { id: "flow_tester", label: "4. 1-Click Portal Flow Tester", badge: "5 Portals" },
+    { id: "testing", label: "5. 5-Phone Live Sandbox", badge: `${splitScreens.length} Phones` }
+  ];
+
+  const renderPartnerApprovalCard = (partner, partnerType) => {
+    const chk = checklistByPartner[partner.id] || {};
+    const allFiveChecked =
+      chk.kycDocVerified &&
+      chk.tradeSkillVerified &&
+      chk.bankUpiVerified &&
+      chk.tcAcceptedVerified &&
+      chk.signatureVerified;
+
+    const displayName =
+      partner.captainName || partner.providerName || partner.businessName;
+
+    return (
+      <div
+        key={partner.id}
+        className="bg-slate-950 p-3.5 rounded-2xl border border-teal-400/50 space-y-3"
+      >
+        <div className="flex flex-wrap justify-between items-start gap-2 border-b border-slate-800 pb-2">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm md:text-base font-black text-amber-400">
-                WE4ALL FOUNDER MASTER WEB CONSOLE (v3.0.0)
-              </h1>
-              <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-[9px] font-black px-2 py-0.5 rounded">
-                SUPABASE REALTIME ACTIVE
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-300">
-              Manage All 5 Core Portals + {customPortals.length} Dynamic No-Code Portals Across Mobile &amp; Web Consoles
+            <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded uppercase">
+              Pending Admin Verification ({partnerType.toUpperCase()})
+            </span>
+            <h4 className="text-sm font-black text-white mt-1">{displayName}</h4>
+            <p className="text-[10px] text-slate-300">
+              Mobile: <strong>+91 {partner.phone}</strong> | UPI:{" "}
+              <strong className="text-emerald-300">{partner.upiId}</strong>
             </p>
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={onLaunchMultiPhoneView}
-            className="bg-indigo-500 text-white font-black px-3 py-2 rounded-xl cursor-pointer shadow"
+            onClick={() => checkAllForPartner(partner.id)}
+            className="bg-slate-800 border border-emerald-400/50 text-emerald-300 px-2.5 py-1 rounded-xl text-[10px] font-black cursor-pointer"
           >
-             5-Phone Split Simulator
-          </button>
-          <button
-            type="button"
-            onClick={handleExportPayoutsCsv}
-            className="bg-teal-400 text-slate-950 font-black px-3 py-2 rounded-xl cursor-pointer shadow"
-          >
-             Export Payouts CSV
-          </button>
-          <button
-            type="button"
-            onClick={onExitAdminToApp}
-            className="bg-emerald-400 text-slate-950 font-black px-3 py-2 rounded-xl cursor-pointer shadow"
-          >
-            Open App / Web Consoles &rarr;
+            &#x2713; Check All 5 Items
           </button>
         </div>
-      </div>
 
-      {/* 6 ADMIN NAVIGATION TABS */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
-        {[
-          { id: "command_center", label: "1. Command & Heatmap" },
-          { id: "kyc_approvals", label: `2. KYC Checklist (${totalPendingCount})` },
-          { id: "portal_builder", label: `3. + No-Code Portals (${customPortals.length})` },
-          { id: "categories_ads", label: "4. Categories & Ads" },
-          { id: "monetization", label: "5. Fees & Consort" },
-          { id: "ota_broadcaster", label: "6. Push OTA Update" }
-        ].map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setAdminTab(t.id)}
-            className={`py-2.5 px-2 rounded-xl font-black text-[11px] cursor-pointer transition ${
-              adminTab === t.id
-                ? "bg-amber-400 text-slate-950 shadow"
-                : "bg-slate-950 text-slate-300 hover:text-white"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ================================================================== */}
-      {/* ADMIN TAB 1: LIVE TOWN COMMAND CENTER, HEATMAP & PORTAL TELEPORT   */}
-      {/* ================================================================== */}
-      {adminTab === "command_center" && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/40">
-              <p className="text-[10px] text-slate-400">Live Merchants</p>
-              <p className="text-xl font-black text-emerald-400">{merchants.length}</p>
-            </div>
-            <div className="bg-slate-900 p-3.5 rounded-2xl border border-indigo-500/40">
-              <p className="text-[10px] text-slate-400">1-Hr Service Pros</p>
-              <p className="text-xl font-black text-indigo-400">{serviceProviders.length}</p>
-            </div>
-            <div className="bg-slate-900 p-3.5 rounded-2xl border border-amber-500/40">
-              <p className="text-[10px] text-slate-400">Decorators &amp; Halls</p>
-              <p className="text-xl font-black text-amber-400">{decorators.length}</p>
-            </div>
-            <div className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40">
-              <p className="text-[10px] text-slate-400">2W/3W/4W Captains</p>
-              <p className="text-xl font-black text-teal-300">{riders.length}</p>
-            </div>
-            <div className="bg-slate-900 p-3.5 rounded-2xl border border-rose-500/40">
-              <p className="text-[10px] text-slate-400">Total Portals Active</p>
-              <p className="text-xl font-black text-rose-400">{5 + customPortals.length}</p>
-            </div>
-          </div>
-
-          {/* 1-Click Teleport to Any Mobile or Web Console */}
-          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-2.5">
-            <h3 className="font-black text-amber-400 text-xs">
-              1-Click Teleport to Any Portal (Supports Both Mobile View &amp; Widescreen Web Console):
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-              <button
-                type="button"
-                onClick={() => onTeleportToScreen("portal_customer")}
-                className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 p-2.5 rounded-xl font-black cursor-pointer"
-              >
-                1. Customer Console
-              </button>
-              <button
-                type="button"
-                onClick={() => onTeleportToScreen("portal_merchant")}
-                className="bg-amber-500/20 border border-amber-400 text-amber-300 p-2.5 rounded-xl font-black cursor-pointer"
-              >
-                2. Merchant Console
-              </button>
-              <button
-                type="button"
-                onClick={() => onTeleportToScreen("portal_service")}
-                className="bg-indigo-500/20 border border-indigo-400 text-indigo-300 p-2.5 rounded-xl font-black cursor-pointer"
-              >
-                3. Service Pro Console
-              </button>
-              <button
-                type="button"
-                onClick={() => onTeleportToScreen("portal_decorator")}
-                className="bg-rose-500/20 border border-rose-400 text-rose-300 p-2.5 rounded-xl font-black cursor-pointer"
-              >
-                4. Decorator Console
-              </button>
-              <button
-                type="button"
-                onClick={() => onTeleportToScreen("portal_rider")}
-                className="bg-teal-500/20 border border-teal-400 text-teal-300 p-2.5 rounded-xl font-black cursor-pointer"
-              >
-                5. Captain Console
-              </button>
-              {customPortals.map((cp) => (
-                <button
-                  key={cp.id}
-                  type="button"
-                  onClick={() => onTeleportToScreen(cp.id)}
-                  className="bg-purple-500/20 border border-purple-400 text-purple-200 p-2.5 rounded-xl font-black cursor-pointer"
-                >
-                  {cp.icon} {cp.title}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Colony Demand Heatmap & Weather/Festival Captain Surge */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="bg-slate-900 p-4 rounded-2xl border border-teal-500/40 space-y-2">
-              <h4 className="font-black text-teal-300">
-                Adilabad Colony Demand vs. Vehicle Supply Heatmap
-              </h4>
-              {[
-                { zone: "Subhash Nagar & Main Bazar", orders: 18, captains: "9 (2W) | 3 (3W)" },
-                { zone: "Collectorate Chowk & Station Rd", orders: 14, captains: "7 (2W) | 2 (3W)" },
-                { zone: "Dasnapur & Bypass Industrial", orders: 9, captains: "3 (3W) | 4 (4W Heavy)" }
-              ].map((z, idx) => (
-                <div
-                  key={idx}
-                  className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
-                >
-                  <div>
-                    <p className="font-bold text-white">{z.zone}</p>
-                    <p className="text-[10px] text-slate-400">Active Supply: {z.captains}</p>
-                  </div>
-                  <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-lg font-black">
-                    {z.orders} Live Orders
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-slate-900 p-4 rounded-2xl border border-amber-500/40 space-y-3">
-              <h4 className="font-black text-amber-400">
-                Weather / Festival Captain Surge Bonus Controller
-              </h4>
-              <p className="text-[11px] text-slate-300">
-                Pass 100% of rain or festival surge bonus directly to 2W/3W/4W Delivery Captains to keep acceptance rates at 99%.
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={surgeBonusRs}
-                  onChange={(e) => setSurgeBonusRs(Number(e.target.value) || 0)}
-                  className="w-24 bg-slate-950 border border-amber-400 rounded-xl p-2 text-white font-black"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSurgeActive(!surgeActive);
-                    onTriggerToast(
-                      `Captain Surge Bonus (Rs.${surgeBonusRs}/order) is now ${
-                        !surgeActive ? "ACTIVE" : "OFF"
-                      }!`
-                    );
-                  }}
-                  className={`flex-1 py-2.5 rounded-xl font-black cursor-pointer ${
-                    surgeActive ? "bg-emerald-400 text-slate-950" : "bg-slate-800 text-slate-300"
-                  }`}
-                >
-                  {surgeActive
-                    ? `Surge Active (+Rs.${surgeBonusRs}/Trip) - Click to Disable`
-                    : `Activate +Rs.${surgeBonusRs} Captain Surge Bonus`}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================== */}
-      {/* ADMIN TAB 2: 5-POINT PARTNER KYC & DIGITAL SIGNATURE APPROVAL VAULT*/}
-      {/* ================================================================== */}
-      {adminTab === "kyc_approvals" && (
-        <div className="space-y-3">
-          <div className="bg-slate-900 p-4 rounded-2xl border border-amber-500/40">
-            <h3 className="font-black text-amber-400 text-sm">
-              Mandatory 5-Point KYC, T&amp;C &amp; Digital Signature Verification Vault
-            </h3>
-            <p className="text-[11px] text-slate-300">
-              All 5 compliance checkpoints must be verified before a Merchant, Service Provider, Decorator, or Captain is published live to the public Customer Super-App.
-            </p>
-          </div>
-
-          {totalPendingCount === 0 && (
-            <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center space-y-2">
-              <p className="font-bold text-emerald-400 text-sm">
-                All Partner Registrations Are Verified &amp; Published Live!
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setPendingMerchants([
-                    {
-                      id: Date.now(),
-                      businessName: "Annapurna Wholesale Supermart",
-                      fullName: "Annapurna Wholesale Supermart",
-                      phone: "9848099112",
-                      upiId: "annapurnamart@ybl",
-                      kycDocName: "GST_FSSAI_Certificate.pdf",
-                      digitalSignatureText: "Srinivas Goud (Digitally Signed)",
-                      acceptedAt: new Date().toLocaleString(),
-                      status: "Pending_Admin_Approval"
-                    },
-                    ...pendingMerchants
-                  ]);
-                  onTriggerToast("Simulated a Pending Supermart Registration for Admin Review!");
-                }}
-                className="bg-amber-400 text-slate-950 font-black px-4 py-2 rounded-xl cursor-pointer"
-              >
-                + Simulate Pending Partner Registration to Test Checklist
-              </button>
-            </div>
-          )}
-
+        <div className="space-y-1.5">
           {[
-            ...pendingMerchants.map((m) => ({ ...m, _pType: "merchant", _title: m.businessName || m.fullName })),
-            ...pendingServiceProviders.map((s) => ({ ...s, _pType: "service_provider", _title: s.providerName || s.fullName })),
-            ...pendingDecorators.map((d) => ({ ...d, _pType: "decorator", _title: d.businessName || d.fullName })),
-            ...pendingRiders.map((r) => ({ ...r, _pType: "rider", _title: r.captainName || r.fullName }))
-          ].map((partner) => {
-            const pKey = `${partner._pType}_${partner.id}`;
-            const checks = kycChecksMap[pKey] || [false, false, false, false, false];
-            const readyToPublish = isAll5Checked(pKey);
-            const checklistLabels = [
-              "1. Mobile OTP & Identity Proof Verified",
-              "2. Business / Trade / Vehicle RC & DL Document Inspected",
-              "3. Instant Settlement UPI ID & Bank IFSC Verified",
-              "4. Platform Consort Rules & Commission Slab Accepted",
-              "5. Legal Digital Signature & Timestamp Authenticated"
-            ];
-
+            { key: "kycDocVerified", label: "1. KYC Document & Trade / DL / RC Proof Verified" },
+            { key: "tradeSkillVerified", label: "2. Category, Rate Card & Vehicle Class Verified" },
+            { key: "bankUpiVerified", label: "3. Bank Account & Instant UPI Settlement ID Verified" },
+            { key: "tcAcceptedVerified", label: "4. WE4ALL Platform Terms & Conditions Accepted" },
+            { key: "signatureVerified", label: "5. Digital Signature / Camera Signature Authenticated" }
+          ].map((item) => {
+            const checked = Boolean(chk[item.key]);
             return (
               <div
-                key={pKey}
-                className="bg-slate-900 p-4 rounded-2xl border-2 border-amber-400/60 space-y-3"
+                key={item.key}
+                onClick={() => toggleCheckItem(partner.id, item.key)}
+                className={`p-2 rounded-xl border flex items-center justify-between cursor-pointer ${
+                  checked
+                    ? "bg-emerald-950/40 border-emerald-400 text-emerald-200"
+                    : "bg-slate-900 border-slate-800 text-slate-400"
+                }`}
               >
-                <div className="flex flex-wrap justify-between items-start gap-2">
-                  <div>
-                    <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px] uppercase">
-                      PENDING {partner._pType.replace("_", " ")}
-                    </span>
-                    <h4 className="font-black text-white text-sm mt-1">
-                      {partner._title} ({partner.phone})
-                    </h4>
-                    <p className="text-[10px] text-slate-300">
-                      UPI: {partner.upiId || "verified@ybl"} | Doc: {partner.kycDocName || "KYC_Verified.pdf"} | Signed: &ldquo;{partner.digitalSignatureText || partner._title}&rdquo;
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => checkAll5AtOnce(pKey)}
-                    className="bg-slate-800 border border-emerald-400 text-emerald-300 px-3 py-1 rounded-xl text-[10px] font-black cursor-pointer"
-                  >
-                    &#x2713; Tick All 5 Checkpoints
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-1.5 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                  {checklistLabels.map((lbl, idx) => (
-                    <label
-                      key={idx}
-                      className="flex items-start gap-1.5 p-1.5 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checks[idx]}
-                        onChange={() => toggleKycCheck(pKey, idx)}
-                        className="mt-0.5 accent-emerald-400"
-                      />
-                      <span className="text-[10px] text-slate-200 font-bold leading-tight">
-                        {lbl}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  disabled={!readyToPublish}
-                  onClick={() => {
-                    if (partner._pType === "merchant") {
-                      setMerchants([
-                        { ...partner, status: "Approved", isPublished: true },
-                        ...merchants
-                      ]);
-                      setPendingMerchants(pendingMerchants.filter((x) => x.id !== partner.id));
-                    } else if (partner._pType === "service_provider") {
-                      setServiceProviders([
-                        { ...partner, maskedId: partner._title, isPublished: true },
-                        ...serviceProviders
-                      ]);
-                      setPendingServiceProviders(
-                        pendingServiceProviders.filter((x) => x.id !== partner.id)
-                      );
-                    } else if (partner._pType === "decorator") {
-                      setDecorators([
-                        { ...partner, status: "Approved", isPublished: true },
-                        ...decorators
-                      ]);
-                      setPendingDecorators(pendingDecorators.filter((x) => x.id !== partner.id));
-                    } else if (partner._pType === "rider") {
-                      setRiders([
-                        { ...partner, name: partner._title, status: "Approved" },
-                        ...riders
-                      ]);
-                      setPendingRiders(pendingRiders.filter((x) => x.id !== partner.id));
-                    }
-                    onTriggerToast(
-                      `Approved & Published "${partner._title}" Live to Public Market!`
-                    );
-                  }}
-                  className={`w-full py-2.5 rounded-xl font-black transition ${
-                    readyToPublish
-                      ? "bg-emerald-400 text-slate-950 cursor-pointer shadow-lg"
-                      : "bg-slate-800 text-slate-500 cursor-not-allowed"
+                <span className="font-bold text-[11px]">{item.label}</span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[9px] font-black ${
+                    checked ? "bg-emerald-400 text-slate-950" : "bg-slate-800 text-amber-300"
                   }`}
                 >
-                  {readyToPublish
-                    ? `Approve & Publish "${partner._title}" Live to Public Market `
-                    : "Tick All 5 KYC & T&C Checkboxes Above to Unlock Approval"}
-                </button>
+                  {checked ? "CHECKED \u2713" : "CLICK TO CHECK"}
+                </span>
               </div>
             );
           })}
         </div>
-      )}
 
-      {/* ================================================================== */}
-      {/* ADMIN TAB 3: NO-CODE DYNAMIC PORTAL BUILDER (ADD PORTALS ANYTIME!) */}
-      {/* ================================================================== */}
-      {adminTab === "portal_builder" && (
-        <div className="space-y-4">
-          <div className="bg-slate-900 p-4 rounded-2xl border-2 border-emerald-400 space-y-3">
-            <div>
-              <span className="bg-emerald-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px]">
-                ZERO-CODING ARCHITECTURE
-              </span>
-              <h3 className="font-black text-emerald-400 text-sm mt-1">
-                No-Code Dynamic Portal Builder (Add New Portals Instantly)
-              </h3>
-              <p className="text-[11px] text-slate-300">
-                Want to launch a 6th, 7th, or 8th portal (e.g., Pharmacy &amp; Tele-Clinic, Agriculture &amp; Mandi, Real Estate &amp; Rentals, Catering)? Fill in the details below and click <strong>Create &amp; Publish Portal Live</strong>—it immediately adds the new portal to the Role Selector, Mobile Console, and Widescreen Web Console with zero coding!
-              </p>
-            </div>
+        <button
+          type="button"
+          disabled={!allFiveChecked}
+          onClick={() => {
+            const approvedObj = {
+              ...partner,
+              name: displayName,
+              status: "Approved",
+              isPublished: true,
+              isPublishedToPublic: true,
+              approvedAt: new Date().toLocaleString()
+            };
+            if (partnerType === "captain") {
+              setRiders([approvedObj, ...riders]);
+              setPendingRiders(pendingRiders.filter((x) => x.id !== partner.id));
+            } else if (partnerType === "decorator") {
+              setDecorators([approvedObj, ...decorators]);
+              setPendingDecorators(pendingDecorators.filter((x) => x.id !== partner.id));
+            } else if (partnerType === "service_provider") {
+              setServiceProviders([approvedObj, ...serviceProviders]);
+              setPendingServiceProviders(
+                pendingServiceProviders.filter((x) => x.id !== partner.id)
+              );
+            } else {
+              setMerchants([approvedObj, ...merchants]);
+              setPendingMerchants(pendingMerchants.filter((x) => x.id !== partner.id));
+            }
+            onTriggerToast(`Approved & Published "${displayName}" LIVE to Public Market!`);
+          }}
+          className={`w-full font-black py-2.5 rounded-xl text-xs ${
+            allFiveChecked
+              ? "bg-emerald-400 text-slate-950 cursor-pointer shadow-lg"
+              : "bg-slate-800 text-slate-500 cursor-not-allowed"
+          }`}
+        >
+          {allFiveChecked
+            ? `\u2713 Approve & Publish ${displayName} Live to Market`
+            : "Complete All 5 Checklist Items Above to Approve"}
+        </button>
+      </div>
+    );
+  };
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <input
-                type="text"
-                placeholder="Portal Title (e.g. 6. Pharmacy & Clinic)"
-                value={newPortalForm.title}
-                onChange={(e) => setNewPortalForm({ ...newPortalForm, title: e.target.value })}
-                className="bg-slate-950 border border-emerald-400 rounded-xl p-2 text-white font-bold md:col-span-2"
-              />
-              <input
-                type="text"
-                placeholder="Short Badge (e.g. Health / Mandi)"
-                value={newPortalForm.badge}
-                onChange={(e) => setNewPortalForm({ ...newPortalForm, badge: e.target.value })}
-                className="bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-              />
-              <input
-                type="text"
-                placeholder="Icon Emoji (e.g.  or )"
-                value={newPortalForm.icon}
-                onChange={(e) => setNewPortalForm({ ...newPortalForm, icon: e.target.value })}
-                className="bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-              />
-            </div>
-
-            <input
-              type="text"
-              placeholder="Portal Description (e.g. Book doctor consultations, lab tests & 15-min medicine delivery)"
-              value={newPortalForm.description}
-              onChange={(e) => setNewPortalForm({ ...newPortalForm, description: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-            />
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <input
-                type="text"
-                placeholder="Tab 1 Label (1. Queue)"
-                value={newPortalForm.tab1Label}
-                onChange={(e) => setNewPortalForm({ ...newPortalForm, tab1Label: e.target.value })}
-                className="bg-slate-950 border border-slate-700 rounded-xl p-2 text-amber-300 font-bold"
-              />
-              <input
-                type="text"
-                placeholder="Tab 2 Label (2. Catalog)"
-                value={newPortalForm.tab2Label}
-                onChange={(e) => setNewPortalForm({ ...newPortalForm, tab2Label: e.target.value })}
-                className="bg-slate-950 border border-slate-700 rounded-xl p-2 text-emerald-300 font-bold"
-              />
-              <input
-                type="text"
-                placeholder="Tab 3 Label (3. + Add)"
-                value={newPortalForm.tab3Label}
-                onChange={(e) => setNewPortalForm({ ...newPortalForm, tab3Label: e.target.value })}
-                className="bg-slate-950 border border-slate-700 rounded-xl p-2 text-teal-300 font-bold"
-              />
-              <input
-                type="text"
-                placeholder="Tab 4 Label (4. Ledger)"
-                value={newPortalForm.tab4Label}
-                onChange={(e) => setNewPortalForm({ ...newPortalForm, tab4Label: e.target.value })}
-                className="bg-slate-950 border border-slate-700 rounded-xl p-2 text-indigo-300 font-bold"
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleCreateNoCodePortal}
-                className="flex-1 bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow-lg"
-              >
-                + Create &amp; Publish New Portal Live (Zero Coding) &rarr;
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewPortalForm({
-                    id: "agri_mandi",
-                    title: "6. Agriculture & Kisan Mandi",
-                    badge: "Kisan Mandi",
-                    icon: "",
-                    description: "Direct farmer-to-consumer cotton, soya, seeds, fertilizers & tractor rental portal",
-                    tab1Label: "1. Mandi Bids",
-                    tab2Label: "2. Crop Stock",
-                    tab3Label: "3. + List Crop",
-                    tab4Label: "4. Kisan Ledger",
-                    sampleItemTitle: "Organic Sharbati Wheat / Cotton Bale",
-                    sampleItemPrice: 2450
-                  });
-                  onTriggerToast("Loaded Preset: 6. Agriculture & Kisan Mandi! Click Create to publish.");
-                }}
-                className="bg-amber-400/20 border border-amber-400 text-amber-300 font-black px-3 py-2.5 rounded-xl cursor-pointer"
-              >
-                Load Preset: 6. Kisan Mandi
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewPortalForm({
-                    id: "health_clinic",
-                    title: "7. Doctor & Diagnostics Hub",
-                    badge: "MediHub",
-                    icon: "",
-                    description: "1-Hr home lab sample collection, clinic token booking & prescription delivery",
-                    tab1Label: "1. Patient Queue",
-                    tab2Label: "2. Lab Tests",
-                    tab3Label: "3. + Add Test",
-                    tab4Label: "4. Clinic Bills",
-                    sampleItemTitle: "Full Body Blood Profile (Home Sample)",
-                    sampleItemPrice: 499
-                  });
-                  onTriggerToast("Loaded Preset: 7. Doctor & Diagnostics Hub! Click Create to publish.");
-                }}
-                className="bg-teal-400/20 border border-teal-400 text-teal-200 font-black px-3 py-2.5 rounded-xl cursor-pointer"
-              >
-                Load Preset: 7. MediHub
-              </button>
-            </div>
-          </div>
-
-          {/* List of Active Dynamic Portals */}
-          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-2.5">
-            <h4 className="font-black text-amber-400">
-              Active Admin-Created Dynamic Portals ({customPortals.length})
-            </h4>
-            {customPortals.length === 0 ? (
-              <p className="text-slate-400">
-                No custom portals added yet. Use the builder or presets above to launch Portal #6 in one click!
-              </p>
+  return (
+    <div className="min-h-screen bg-[#04090e] text-slate-100 flex flex-col font-sans text-xs">
+      <header className="bg-slate-900 border-b border-emerald-500/40 px-5 py-3 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full border-2 border-amber-400 bg-emerald-950 flex items-center justify-center text-[8px] font-black text-amber-300 overflow-hidden">
+            {founderLogoUrl ? (
+              <img src={founderLogoUrl} alt="WE4ALL" className="w-full h-full object-cover" />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                {customPortals.map((cp) => (
-                  <div
-                    key={cp.id}
-                    className="bg-slate-950 p-3 rounded-2xl border border-emerald-500/40 flex justify-between items-center gap-2"
-                  >
-                    <div>
-                      <p className="font-black text-emerald-400 text-xs">
-                        {cp.icon} {cp.title} ({cp.badge})
-                      </p>
-                      <p className="text-[10px] text-slate-400">{cp.description}</p>
-                      <p className="text-[9px] text-amber-300 mt-0.5">
-                        Tabs: {(cp.tabs || []).map((t) => t.label).join(" | ")}
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => onTeleportToScreen(cp.id)}
-                        className="bg-emerald-400 text-slate-950 font-black px-3 py-1 rounded-lg text-[10px] cursor-pointer"
-                      >
-                        Open Portal &rarr;
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomPortals(customPortals.filter((x) => x.id !== cp.id));
-                          onTriggerToast(`Removed dynamic portal ${cp.title}`);
-                        }}
-                        className="bg-rose-950 text-rose-300 border border-rose-500/40 px-3 py-1 rounded-lg text-[9px] font-bold cursor-pointer"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              "WE4ALL"
             )}
           </div>
+          <div>
+            <h1 className="text-sm font-black text-white">
+              WE4ALL Founder Master Admin Suite (v3.0.0 Production)
+            </h1>
+            <p className="text-[10px] text-emerald-400">
+              Real-Time User & Partner GPS Locator, Full Data Inspector & Production Control
+            </p>
+          </div>
         </div>
-      )}
+        <button
+          type="button"
+          onClick={onExitAdminToApp}
+          className="bg-amber-400 text-slate-950 font-black px-3.5 py-1.5 rounded-xl cursor-pointer"
+        >
+          Exit to Consumer App
+        </button>
+      </header>
 
-      {/* ================================================================== */}
-      {/* ADMIN TAB 4: DYNAMIC CATEGORIES & GEO-TARGETED ADS                 */}
-      {/* ================================================================== */}
-      {adminTab === "categories_ads" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-slate-900 p-4 rounded-2xl border border-emerald-500/40 space-y-3">
-            <h4 className="font-black text-emerald-400">
-              Dynamic Storefront Category Manager ({categories.length})
-            </h4>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="New Category Name (e.g. Organic Honey)"
-                value={newCatForm.name}
-                onChange={(e) => setNewCatForm({ ...newCatForm, name: e.target.value })}
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-              />
-              <input
-                type="text"
-                placeholder="Icon"
-                value={newCatForm.icon}
-                onChange={(e) => setNewCatForm({ ...newCatForm, icon: e.target.value })}
-                className="w-16 bg-slate-950 border border-slate-700 rounded-xl p-2 text-center text-white"
-              />
+      <div className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-4 gap-5">
+        <aside className="space-y-1.5">
+          {ADMIN_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setFounderTab(tab.id)}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold border cursor-pointer ${
+                founderTab === tab.id
+                  ? "bg-emerald-500/15 border-emerald-400 text-emerald-300"
+                  : "bg-slate-900/80 border-slate-800 text-slate-400"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">
+                {tab.badge}
+              </span>
+            </button>
+          ))}
+        </aside>
+
+        <main className="lg:col-span-3 space-y-4">
+          {/* ============================================================== */}
+          {/* TAB 1: LIVE GPS LOCATOR & FULL USER/PARTNER DATA INSPECTOR     */}
+          {/* ============================================================== */}
+          {founderTab === "live_locator" && (
+            <div className="space-y-4">
+              <div className="bg-slate-900 border-2 border-emerald-500/40 rounded-2xl p-4 space-y-3">
+                <div className="flex flex-wrap justify-between items-center gap-2">
+                  <div>
+                    <h3 className="font-black text-emerald-400 text-sm">
+                      \uD83D\uDCE1 Real-Time User & Partner GPS Locator & Full Data Inspector
+                    </h3>
+                    <p className="text-[11px] text-slate-300">
+                      Locate any Customer, Merchant, Service Provider, Decorator, or Captain in real time and inspect all data shared with WE4ALL.
+                    </p>
+                  </div>
+                  <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 px-2.5 py-1 rounded-xl text-[10px] font-black">
+                    Live GPS Stream Active ({liveTelemetryList.length} Live Devices)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={locatorSearch}
+                    onChange={(e) => setLocatorSearch(e.target.value)}
+                    placeholder="Search by Name, Mobile Number, Address, or Role..."
+                    className="md:col-span-2 bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
+                  />
+                  <select
+                    value={locatorRoleFilter}
+                    onChange={(e) => setLocatorRoleFilter(e.target.value)}
+                    className="bg-slate-950 border border-slate-700 rounded-xl p-2 text-amber-300 font-bold"
+                  >
+                    <option value="ALL">All Roles ({unifiedDirectory.length})</option>
+                    <option value="customer">1. Customers / Guests</option>
+                    <option value="merchant">2. Product Merchants</option>
+                    <option value="service_provider">3. Service Providers</option>
+                    <option value="decorator">4. Decorators & Halls</option>
+                    <option value="rider">5. Delivery Captains</option>
+                  </select>
+                </div>
+
+                {/* Selected Entity Full Data Inspector Drawer */}
+                {selectedInspectEntity && (
+                  <div className="bg-slate-950 border-2 border-amber-400 rounded-2xl p-4 space-y-2.5">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded uppercase">
+                          FULL PLATFORM DATA RECORD &bull; {selectedInspectEntity.role.toUpperCase()}
+                        </span>
+                        <h4 className="text-sm font-black text-white mt-1">
+                          {selectedInspectEntity.name} ({selectedInspectEntity.phone})
+                        </h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInspectEntity(null)}
+                        className="bg-slate-800 text-rose-300 px-2.5 py-1 rounded-lg font-black cursor-pointer"
+                      >
+                        Close Inspector
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+                      <div className="bg-slate-900 p-2 rounded-xl border border-slate-800">
+                        <p className="text-slate-400">Live GPS Coordinates</p>
+                        <p className="font-mono font-black text-emerald-400 mt-0.5">
+                          {selectedInspectEntity.lat}, {selectedInspectEntity.lng}
+                        </p>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded-xl border border-slate-800">
+                        <p className="text-slate-400">Speed & GPS Accuracy</p>
+                        <p className="font-black text-amber-300 mt-0.5">
+                          {selectedInspectEntity.speedKmh} km/h (&plusmn;{selectedInspectEntity.accuracyMeters}m)
+                        </p>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded-xl border border-slate-800">
+                        <p className="text-slate-400">Device Battery & Net</p>
+                        <p className="font-black text-teal-300 mt-0.5">
+                          {selectedInspectEntity.batteryPct}% &bull; {selectedInspectEntity.networkType}
+                        </p>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded-xl border border-slate-800">
+                        <p className="text-slate-400">UPI / Settlement ID</p>
+                        <p className="font-black text-white mt-0.5">
+                          {selectedInspectEntity.upiId}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 text-[10px] font-mono overflow-x-auto max-h-40">
+                      <p className="text-amber-300 font-sans font-bold mb-1">
+                        Complete Shared JSON Telemetry & KYC Data:
+                      </p>
+                      <pre>{JSON.stringify(selectedInspectEntity.rawRecord, null, 2)}</pre>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <a
+                        href={`https://www.google.com/maps?q=${selectedInspectEntity.lat},${selectedInspectEntity.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl text-[11px]"
+                      >
+                        \uD83D\uDCCD Open Exact Pin on Google Maps &rarr;
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Directory List */}
+                <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                  {filteredDirectory.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`p-3 rounded-2xl border flex flex-wrap justify-between items-center gap-2 ${
+                        item.isLiveStream
+                          ? "bg-emerald-950/30 border-emerald-400"
+                          : "bg-slate-950 border-slate-800"
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${
+                              item.isLiveStream
+                                ? "bg-emerald-400 text-slate-950"
+                                : "bg-slate-800 text-amber-300"
+                            }`}
+                          >
+                            {item.isLiveStream ? "\uD83D\uDFE2 LIVE DEVICE GPS" : item.role}
+                          </span>
+                          <h4 className="font-black text-white text-xs">{item.name}</h4>
+                          <span className="text-[10px] text-slate-400">({item.phone})</span>
+                        </div>
+                        <p className="text-[10px] text-slate-300">
+                          Location: <strong>{item.address}</strong> | Coords:{" "}
+                          <span className="font-mono text-emerald-300">
+                            {item.lat}, {item.lng}
+                          </span>{" "}
+                          (&plusmn;{item.accuracyMeters}m) | Battery: {item.batteryPct}% ({item.networkType})
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInspectEntity(item)}
+                          className="bg-indigo-500 text-white font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
+                        >
+                          Inspect All Data
+                        </button>
+                        <a
+                          href={`https://www.google.com/maps?q=${item.lat},${item.lng}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px]"
+                        >
+                          Locate on Map
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: PARTNER APPROVAL CHECKLISTS */}
+          {founderTab === "approvals" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-4 gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setApprovalQueueSubTab("captains")}
+                  className={`py-2 rounded-xl font-black cursor-pointer ${
+                    approvalQueueSubTab === "captains"
+                      ? "bg-teal-400 text-slate-950"
+                      : "text-slate-400"
+                  }`}
+                >
+                  5. Captains ({pendingRiders.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApprovalQueueSubTab("decorators_halls")}
+                  className={`py-2 rounded-xl font-black cursor-pointer ${
+                    approvalQueueSubTab === "decorators_halls"
+                      ? "bg-amber-400 text-slate-950"
+                      : "text-slate-400"
+                  }`}
+                >
+                  4. Decor/Halls ({pendingDecorators.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApprovalQueueSubTab("service_providers")}
+                  className={`py-2 rounded-xl font-black cursor-pointer ${
+                    approvalQueueSubTab === "service_providers"
+                      ? "bg-indigo-500 text-white"
+                      : "text-slate-400"
+                  }`}
+                >
+                  3. Services ({pendingServiceProviders.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApprovalQueueSubTab("merchants")}
+                  className={`py-2 rounded-xl font-black cursor-pointer ${
+                    approvalQueueSubTab === "merchants"
+                      ? "bg-emerald-400 text-slate-950"
+                      : "text-slate-400"
+                  }`}
+                >
+                  2. Merchants ({pendingMerchants.length})
+                </button>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+                {approvalQueueSubTab === "captains" &&
+                  (pendingRiders.length === 0 ? (
+                    <p className="text-slate-400 text-center py-4">
+                      No pending Delivery Captains in queue.
+                    </p>
+                  ) : (
+                    pendingRiders.map((r) => renderPartnerApprovalCard(r, "captain"))
+                  ))}
+                {approvalQueueSubTab === "decorators_halls" &&
+                  (pendingDecorators.length === 0 ? (
+                    <p className="text-slate-400 text-center py-4">
+                      No pending Decorators or Function Halls in queue.
+                    </p>
+                  ) : (
+                    pendingDecorators.map((d) => renderPartnerApprovalCard(d, "decorator"))
+                  ))}
+                {approvalQueueSubTab === "service_providers" &&
+                  (pendingServiceProviders.length === 0 ? (
+                    <p className="text-slate-400 text-center py-4">
+                      No pending Service Providers in queue.
+                    </p>
+                  ) : (
+                    pendingServiceProviders.map((sp) =>
+                      renderPartnerApprovalCard(sp, "service_provider")
+                    )
+                  ))}
+                {approvalQueueSubTab === "merchants" &&
+                  (pendingMerchants.length === 0 ? (
+                    <p className="text-slate-400 text-center py-4">
+                      No pending Product Merchants in queue.
+                    </p>
+                  ) : (
+                    pendingMerchants.map((m) => renderPartnerApprovalCard(m, "merchant"))
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: PRODUCTION DATA WIPE (ONLINE + OFFLINE) */}
+          {founderTab === "data_reset" && (
+            <div className="bg-slate-900 border-2 border-rose-500/60 rounded-2xl p-5 space-y-3">
+              <h3 className="font-black text-rose-400 text-sm">
+                Production Factory Reset: Empty All Test Data (Online Supabase + Offline Device)
+              </h3>
+              <p className="text-slate-300 text-xs">
+                Click below to permanently clear all test orders, test service bookings, test radar rides, test reverse bids, and pending test queues from both your live Supabase PostgreSQL database and local device storage.
+              </p>
               <button
                 type="button"
-                onClick={() => {
-                  if (!newCatForm.name.trim()) return;
-                  const nextCat = {
-                    id: `cat_${Date.now()}`,
-                    name: newCatForm.name.trim(),
-                    icon: newCatForm.icon || "",
-                    badge: "New"
-                  };
-                  setCategories([...categories, nextCat]);
-                  setNewCatForm({ name: "", icon: "" });
-                  onTriggerToast(`Added Category "${nextCat.name}" live!`);
-                }}
-                className="bg-emerald-400 text-slate-950 font-black px-3 rounded-xl cursor-pointer"
+                onClick={onWipeAllTestData}
+                className="w-full bg-rose-600 hover:bg-rose-500 text-white font-black py-3 rounded-xl cursor-pointer shadow-lg"
               >
-                + Add
+                \uD83E\uDDF9 Wipe All Test Data Now (Online Cloud + Offline Device)
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {categories.map((c) => (
-                <div
-                  key={c.id}
-                  className="bg-slate-950 p-2 rounded-xl border border-slate-800 flex justify-between items-center"
+          )}
+
+          {founderTab === "flow_tester" && (
+            <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 grid grid-cols-1 md:grid-cols-2 gap-2">
+              {[
+                { id: "cust_stores", title: "1. Consumer Portal (Guest Shopping Mode)" },
+                { id: "portal_merchant", title: "2. Portal 2: Product Merchant" },
+                { id: "portal_service", title: "3. Portal 3: Service Provider" },
+                { id: "portal_decorator", title: "4. Portal 4: Decorator & Halls" },
+                { id: "portal_rider", title: "5. Portal 5: Delivery Captain" },
+                { id: "auth_vault", title: "6. Security & Registration Vault" }
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => onTeleportToScreen(f.id)}
+                  className="p-3 bg-slate-950 border border-slate-800 hover:border-emerald-400 rounded-xl text-left font-bold text-emerald-300 cursor-pointer"
                 >
-                  <span>
-                    {c.icon} <strong>{c.name}</strong>
-                  </span>
-                  <span className="text-[9px] text-emerald-400 font-bold">ACTIVE</span>
-                </div>
+                  {f.title}
+                </button>
               ))}
             </div>
-          </div>
+          )}
 
-          <div className="bg-slate-900 p-4 rounded-2xl border border-amber-500/40 space-y-3">
-            <h4 className="font-black text-amber-400">
-              App Emblem &amp; Geo-Targeted Banner Manager
-            </h4>
-            <label className="block bg-slate-950 border border-amber-400/50 p-3 rounded-xl text-center cursor-pointer">
-              <span className="font-black text-amber-300 block">
-                 Upload New Official App Emblem / Logo
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={onUploadFounderPhoto}
-                className="hidden"
-              />
-            </label>
-            {(geoAds || []).map((ad, i) => (
-              <div
-                key={ad.id || i}
-                className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
+          {founderTab === "testing" && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex justify-between items-center">
+              <span>Launch all 5 Portals side-by-side:</span>
+              <button
+                type="button"
+                onClick={onLaunchMultiPhoneView}
+                className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl cursor-pointer"
               >
-                <div>
-                  <p className="font-bold text-white">{ad.title}</p>
-                  <p className="text-[10px] text-slate-400">{ad.subtitle}</p>
-                </div>
-                <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[9px] font-black">
-                  LIVE
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================== */}
-      {/* ADMIN TAB 5: MONETIZATION & CONSORT RULES                          */}
-      {/* ================================================================== */}
-      {adminTab === "monetization" && (
-        <div className="bg-slate-900 p-4 rounded-2xl border border-emerald-500/40 space-y-3">
-          <h4 className="font-black text-emerald-400 text-sm">
-            Platform Commission &amp; Consort Fee Controller
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-              <label className="text-[10px] text-slate-400 font-bold">
-                Global Platform Fee (Rs.):
-              </label>
-              <input
-                type="number"
-                value={monetizationConfig?.globalPlatformFee ?? 0}
-                onChange={(e) =>
-                  setMonetizationConfig({
-                    ...monetizationConfig,
-                    globalPlatformFee: Number(e.target.value) || 0
-                  })
-                }
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-black"
-              />
+                Launch 5-Phone View &rarr;
+              </button>
             </div>
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-              <label className="text-[10px] text-slate-400 font-bold">
-                1-Hr Service Escrow Surcharge (Rs.):
-              </label>
-              <input
-                type="number"
-                value={monetizationConfig?.serviceBookingSurcharge ?? 0}
-                onChange={(e) =>
-                  setMonetizationConfig({
-                    ...monetizationConfig,
-                    serviceBookingSurcharge: Number(e.target.value) || 0
-                  })
-                }
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-black"
-              />
-            </div>
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-              <label className="text-[10px] text-slate-400 font-bold">
-                Decor &amp; Hall Escrow Split Rule:
-              </label>
-              <div className="p-2 bg-slate-900 rounded-lg text-amber-300 font-black">
-                35% (&ge;5 Days) | 85% (&lt;5 Days)
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================== */}
-      {/* ADMIN TAB 6: OTA UPDATE PUSHER & COMPULSORY OS NOTIFICATION BAR    */}
-      {/* ================================================================== */}
-      {adminTab === "ota_broadcaster" && (
-        <div className="bg-slate-900 p-4 rounded-2xl border-2 border-amber-400 space-y-3">
-          <h4 className="font-black text-amber-400 text-sm">
-            Broadcast Live In-App OTA Update &amp; Compulsory Mobile OS Notification Shade Push
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <input
-              type="text"
-              value={otaVersionInput}
-              onChange={(e) => setOtaVersionInput(e.target.value)}
-              placeholder="Target Version (e.g. 3.0.0)"
-              className="bg-slate-950 border border-amber-400 rounded-xl p-2.5 text-white font-black"
-            />
-            <input
-              type="text"
-              value={otaNotesInput}
-              onChange={(e) => setOtaNotesInput(e.target.value)}
-              placeholder="Release Notes..."
-              className="bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white md:col-span-2"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              const nextInfo = {
-                ...(appUpdateInfo || {}),
-                currentVersion: appUpdateInfo?.currentVersion || "2.9.8",
-                latestAvailableVersion: otaVersionInput.trim() || "3.0.0",
-                updateAvailable: true,
-                releaseNotes: otaNotesInput.trim()
-              };
-              setAppUpdateInfo(nextInfo);
-              onBroadcastOtaPushNotification(nextInfo);
-            }}
-            className="w-full bg-emerald-400 text-slate-950 font-black py-3 rounded-xl cursor-pointer shadow-lg"
-          >
-            Broadcast OTA v{otaVersionInput} &amp; Push Compulsory OS Notification to All Devices &rarr;
-          </button>
-        </div>
-      )}
+          )}
+        </main>
+      </div>
     </div>
   );
 }

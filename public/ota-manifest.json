@@ -1,9 +1,9 @@
 {
-  "currentVersion": "2.9.8",
-  "latestAvailableVersion": "2.9.9",
-  "updateAvailable": true,
-  "publishedAt": "2026-11-04T00:25:00Z",
+  "currentVersion": "3.0.0",
+  "latestAvailableVersion": "3.0.0",
+  "updateAvailable": false,
+  "publishedAt": "2026-11-04T00:40:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=2.9.9",
-  "releaseNotes": "WE4ALL v2.9.9: Live Supabase PostgreSQL & we4all-media Storage Bucket Sync for Parcha, Portfolio, and KYC uploads."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.0.0",
+  "releaseNotes": "WE4ALL v3.0.0 Production Release: Guest Consumer Mode on First Install, Clean Online/Offline Production Database, Real-Time Mobile GPS & Sensor Streaming, and Admin Live User/Partner GPS Locator."
 }

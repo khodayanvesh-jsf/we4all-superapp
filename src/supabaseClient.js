@@ -1,9 +1,9 @@
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "2.9.9";
-const STORAGE_KEY = "we4all_master_cloud_state_v4";
-const BACKUP_KEY = "we4all_zero_loss_user_backup_v4";
-const INSTALLED_VER_KEY = "we4all_device_installed_version_v4";
-const SCHEMA_MIGRATED_KEY = "we4all_schema_migrated_v299";
+const CURRENT_SCHEMA_VERSION = "3.0.0";
+const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
+const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
+const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
+const SCHEMA_MIGRATED_KEY = "we4all_schema_migrated_v300_prod";
 const ZONE_MASTER_ID = "adilabad_master";
 
 const SUPABASE_URL =
@@ -16,18 +16,18 @@ export const isLiveSupabaseConfigured = Boolean(
 
 const syncChannel =
   typeof window !== "undefined" && "BroadcastChannel" in window
-    ? new BroadcastChannel("we4all_realtime_bus_v4")
+    ? new BroadcastChannel("we4all_realtime_bus_v5_prod")
     : null;
 
 let cloudSyncDebounceTimer = null;
 let lastAppliedCloudTimestamp = "";
 
-export function getDeviceInstalledVersion(fallback = "2.9.9") {
+export function getDeviceInstalledVersion(fallback = "3.0.0") {
   if (typeof window === "undefined") return fallback;
   return localStorage.getItem(INSTALLED_VER_KEY) || fallback;
 }
 
-// Direct REST Upload to Supabase Storage Bucket ("we4all-media")
+// Upload KYC Docs, Parcha Slips, Signatures & Portfolios to Supabase Storage ("we4all-media")
 export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploads") {
   if (!isLiveSupabaseConfigured) {
     return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
@@ -73,14 +73,72 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
     if (!res.ok) {
       return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
     }
-
     return `${SUPABASE_URL}/storage/v1/object/public/we4all-media/${objectPath}`;
   } catch (e) {
     return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
   }
 }
 
-// Save State Locally AND Push to Live Supabase PostgreSQL REST Table
+// REQ 4: Hard Wipe All Test Data Both Offline (localStorage/Cache) and Online (Supabase DB)
+export async function wipeAllOnlineAndOfflineData() {
+  const freshTimestamp = new Date().toISOString();
+  const cleanState = {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    wipedAt: freshTimestamp,
+    lastSyncedAt: freshTimestamp,
+    orders: [],
+    serviceBookings: [],
+    captainRadarJobs: [],
+    decorReverseBids: [],
+    decorEscrowBookings: [],
+    pendingMerchants: [],
+    pendingServiceProviders: [],
+    pendingDecorators: [],
+    pendingRiders: [],
+    registeredUsers: [],
+    liveDeviceTelemetry: {}
+  };
+
+  if (typeof window !== "undefined") {
+    // Clear all legacy v4 and current v5 keys
+    const keysToRemove = [
+      "we4all_master_cloud_state_v4",
+      "we4all_zero_loss_user_backup_v4",
+      "we4all_device_bound_user_v4",
+      "we4all_device_bound_user_v5",
+      STORAGE_KEY,
+      BACKUP_KEY
+    ];
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
+  }
+
+  if (isLiveSupabaseConfigured) {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/we4all_town_state?on_conflict=zone_id`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates"
+        },
+        body: JSON.stringify({
+          zone_id: ZONE_MASTER_ID,
+          state_payload: cleanState,
+          app_version: CURRENT_SCHEMA_VERSION,
+          updated_at: freshTimestamp
+        })
+      });
+    } catch (e) {}
+  }
+
+  if (syncChannel) {
+    syncChannel.postMessage({ type: "STATE_UPDATED", payload: cleanState });
+  }
+  return cleanState;
+}
+
 export function saveCloudAndLocalState(stateSlice) {
   if (typeof window === "undefined") return;
   try {
@@ -117,8 +175,7 @@ export function saveCloudAndLocalState(stateSlice) {
             body: JSON.stringify({
               zone_id: ZONE_MASTER_ID,
               state_payload: merged,
-              app_version:
-                merged?.appUpdateInfo?.latestAvailableVersion || CURRENT_SCHEMA_VERSION,
+              app_version: CURRENT_SCHEMA_VERSION,
               updated_at: nowIso
             })
           });
@@ -131,9 +188,13 @@ export function saveCloudAndLocalState(stateSlice) {
 export function loadCloudAndLocalState() {
   if (typeof window === "undefined") return null;
   try {
+    // One-time clean migration to v3.0.0 Production so old v4 test data is purged
     if (localStorage.getItem(SCHEMA_MIGRATED_KEY) !== CURRENT_SCHEMA_VERSION) {
       localStorage.setItem(SCHEMA_MIGRATED_KEY, CURRENT_SCHEMA_VERSION);
       localStorage.setItem(INSTALLED_VER_KEY, CURRENT_SCHEMA_VERSION);
+      localStorage.removeItem("we4all_master_cloud_state_v4");
+      localStorage.removeItem("we4all_zero_loss_user_backup_v4");
+      localStorage.removeItem("we4all_device_bound_user_v4");
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(BACKUP_KEY);
       return null;
@@ -146,7 +207,8 @@ export function loadCloudAndLocalState() {
   }
 }
 
-export async function checkLiveCloudOtaManifest(callback) {
+// REQ 3: Silent Auto-Update on Opening of App Every Time (Zero Manual UI Needed)
+export async function checkLiveCloudOtaManifest() {
   try {
     const res = await fetch(`${LIVE_CLOUD_ORIGIN}/ota-manifest.json?_cb=${Date.now()}`, {
       method: "GET",
@@ -154,22 +216,115 @@ export async function checkLiveCloudOtaManifest(callback) {
     });
     if (!res.ok) return null;
     const remoteOta = await res.json();
-    const installedVer = getDeviceInstalledVersion("2.9.9");
-    if (remoteOta?.latestAvailableVersion) {
-      const hasNewer = remoteOta.latestAvailableVersion !== installedVer;
-      const updatedInfo = {
-        ...remoteOta,
-        currentVersion: installedVer,
-        latestAvailableVersion: remoteOta.latestAvailableVersion,
-        updateAvailable: Boolean(hasNewer || remoteOta.updateAvailable)
-      };
-      if (callback) callback({ appUpdateInfo: updatedInfo });
-      return updatedInfo;
+    const installedVer = getDeviceInstalledVersion("3.0.0");
+    if (remoteOta?.latestAvailableVersion && remoteOta.latestAvailableVersion !== installedVer) {
+      localStorage.setItem(INSTALLED_VER_KEY, remoteOta.latestAvailableVersion);
+      if (typeof window !== "undefined" && "caches" in window) {
+        await caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n))));
+      }
+      window.location.reload();
     }
+    return remoteOta;
   } catch (e) {
     return null;
   }
-  return null;
+}
+
+// REQ 5 & 6: Real-Time Mobile Hardware Sensor & GPS Location Streamer
+export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetryPush) {
+  if (typeof window === "undefined") return () => {};
+
+  let watchId = null;
+  let currentCoords = {
+    lat: 19.6641,
+    lng: 78.5320,
+    accuracyMeters: 12,
+    speedKmh: 0,
+    heading: 0,
+    source: "Adilabad Town Default"
+  };
+  let batteryInfo = { levelPct: 100, charging: true };
+
+  if ("getBattery" in navigator) {
+    navigator
+      .getBattery()
+      .then((bat) => {
+        batteryInfo = {
+          levelPct: Math.round((bat.level || 1) * 100),
+          charging: Boolean(bat.charging)
+        };
+      })
+      .catch(() => {});
+  }
+
+  const pushPing = () => {
+    const identity = getIdentityCallback ? getIdentityCallback() : {};
+    const conn =
+      navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const networkType = conn?.effectiveType ? conn.effectiveType.toUpperCase() : "4G/WIFI";
+
+    const pingPacket = {
+      deviceId: identity.deviceId || "DEV-LOCAL",
+      userId: identity.userId || "GUEST",
+      fullName: identity.fullName || "Guest Consumer Shopper",
+      phone: identity.phone || "Unauthenticated Guest",
+      role: identity.role || "customer",
+      portal: identity.portal || "customer",
+      vehicleCode: identity.vehicleCode || "",
+      upiId: identity.upiId || "",
+      address: identity.address || "Adilabad Town",
+      lat: currentCoords.lat,
+      lng: currentCoords.lng,
+      accuracyMeters: currentCoords.accuracyMeters,
+      speedKmh: currentCoords.speedKmh,
+      locationSource: currentCoords.source,
+      batteryPct: batteryInfo.levelPct,
+      isCharging: batteryInfo.charging,
+      networkType,
+      online: navigator.onLine,
+      userAgent: navigator.userAgent.slice(0, 65),
+      lastActiveAt: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      }),
+      timestampIso: new Date().toISOString()
+    };
+
+    if (onTelemetryPush) onTelemetryPush(pingPacket);
+  };
+
+  if ("geolocation" in navigator) {
+    try {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          currentCoords = {
+            lat: Number(pos.coords.latitude.toFixed(6)),
+            lng: Number(pos.coords.longitude.toFixed(6)),
+            accuracyMeters: Math.round(pos.coords.accuracy || 5),
+            speedKmh: pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0,
+            heading: Math.round(pos.coords.heading || 0),
+            source: "Live Mobile GPS Hardware"
+          };
+          pushPing();
+        },
+        () => {
+          pushPing();
+        },
+        { enableHighAccuracy: true, maximumAge: 8000, timeout: 10000 }
+      );
+    } catch (e) {}
+  }
+
+  pushPing();
+  const heartbeat = setInterval(pushPing, 12000);
+
+  return () => {
+    if (watchId !== null && "geolocation" in navigator) {
+      navigator.geolocation.clearWatch(watchId);
+    }
+    clearInterval(heartbeat);
+  };
 }
 
 async function pullRemoteSupabaseState(applyIncomingPayload) {
@@ -216,6 +371,7 @@ export function subscribeToRealtimeUpdates(callback) {
   };
 
   pullRemoteSupabaseState(applyIncomingPayload);
+  checkLiveCloudOtaManifest();
 
   const handler = (event) => {
     if (event.data && event.data.type === "STATE_UPDATED") {
@@ -232,10 +388,8 @@ export function subscribeToRealtimeUpdates(callback) {
   if (syncChannel) syncChannel.addEventListener("message", handler);
   window.addEventListener("storage", storageHandler);
 
-  checkLiveCloudOtaManifest(callback);
   const cloudPollTimer = setInterval(() => {
     pullRemoteSupabaseState(applyIncomingPayload);
-    checkLiveCloudOtaManifest(callback);
   }, 3000);
 
   return () => {
@@ -246,42 +400,7 @@ export function subscribeToRealtimeUpdates(callback) {
 }
 
 export function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress, onComplete) {
-  const currentData = loadCloudAndLocalState() || {};
-  const updatedAppInfo = {
-    ...(currentData.appUpdateInfo || {}),
-    currentVersion: targetVersion,
-    latestAvailableVersion: targetVersion,
-    updateAvailable: false,
-    releaseNotes
-  };
-
-  localStorage.setItem(INSTALLED_VER_KEY, targetVersion);
-  localStorage.setItem(SCHEMA_MIGRATED_KEY, targetVersion);
-
-  if (typeof window !== "undefined" && "caches" in window) {
-    caches.keys().then((names) => names.forEach((n) => caches.delete(n))).catch(() => {});
-  }
-
-  let step = 0;
-  const stages = [
-    { pct: 25, msg: "1/4: Syncing State with Live Supabase PostgreSQL..." },
-    { pct: 60, msg: `2/4: Downloading WE4ALL v${targetVersion} Modules In-App...` },
-    { pct: 90, msg: "3/4: Applying Cloud Storage & Realtime Bridge..." },
-    { pct: 100, msg: `4/4: WE4ALL v${targetVersion} Installed! Restarting In-App...` }
-  ];
-
-  const interval = setInterval(() => {
-    if (step < stages.length) {
-      onProgress(stages[step]);
-      step++;
-    } else {
-      clearInterval(interval);
-      if (onComplete) onComplete(updatedAppInfo);
-      setTimeout(() => {
-        if (typeof window !== "undefined") {
-          window.location.reload();
-        }
-      }, 300);
-    }
-  }, 400);
+  localStorage.setItem(INSTALLED_VER_KEY, targetVersion || "3.0.0");
+  if (onComplete) onComplete({ currentVersion: targetVersion || "3.0.0" });
+  if (typeof window !== "undefined") window.location.reload();
 }

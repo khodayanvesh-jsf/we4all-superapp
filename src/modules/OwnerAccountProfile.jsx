@@ -1,307 +1,173 @@
-import React, { useState } from "react";
-import {
-  INDIAN_LANGUAGES,
-  GEO_SLANG_REGIONS,
-  getLangText,
-  getGeoSlangConfig
-} from "./i18n/indianLanguages";
+import React from "react";
 
 export default function OwnerAccountProfile({
   currentUser,
   setCurrentUser,
-  isAuthenticated = true,
-  onOpenAuthModal = () => {},
   activePortal,
   setActivePortal,
   activeAddressObj,
   accountSecurity,
   setAccountSecurity,
   onLockApp,
+  onOpenAdminGate,
+  onSignOutToGuest,
   brightTheme,
   setBrightTheme,
-  lang = "EN",
-  setLang = () => {},
-  geoRegion = "TELANGANA",
-  setGeoRegion = () => {},
-  appUpdateInfo,
-  onCheckForUpdate,
-  checkingUpdate,
-  onRunOtaUpdate,
-  otaProgress,
+  liveTelemetryPing,
   onTriggerToast
 }) {
-  const [editingBank, setEditingBank] = useState(false);
-  const [bankForm, setBankForm] = useState({
-    fullName: currentUser?.fullName || "Khoday Anvesh",
-    phone: currentUser?.phone || "9848011223",
-    upiId: currentUser?.upiId || "khodayanvesh@ybl",
-    bankName: currentUser?.bankName || "State Bank of India",
-    accountNumber: currentUser?.accountNumber || "30984451209",
-    ifscCode: currentUser?.ifscCode || "SBIN0000801"
-  });
-
-  const t = getLangText(lang);
-  const activeGeoSlang = getGeoSlangConfig(geoRegion);
-  const hasUpdate = Boolean(
-    appUpdateInfo?.updateAvailable ||
-      (appUpdateInfo?.latestAvailableVersion &&
-        appUpdateInfo?.currentVersion !== appUpdateInfo?.latestAvailableVersion)
-  );
+  const isGuest = !currentUser || currentUser.isGuest;
 
   return (
-    <div className="space-y-3 text-xs text-white">
-      {/* 1. DIRECT LOGIN / REGISTRATION HUB FOR MERCHANTS, PARTNERS & CONSUMERS */}
-      <div className="bg-slate-900 p-3.5 rounded-2xl border-2 border-emerald-400 space-y-2.5 shadow-xl">
+    <div className="space-y-3 text-xs">
+      {/* GUEST OR LOGGED-IN USER CARD */}
+      <div className="bg-slate-900 text-white p-4 rounded-2xl border border-emerald-500/40 space-y-3 shadow">
         <div className="flex justify-between items-start gap-2">
           <div>
-            <span className="bg-emerald-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded uppercase">
-              {isAuthenticated
-                ? `SIGNED IN (${activePortal.replace("_", " ").toUpperCase()})`
-                : "GUEST SHOPPING MODE"}
+            <span
+              className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${
+                isGuest
+                  ? "bg-amber-400 text-slate-950"
+                  : "bg-emerald-500/20 border border-emerald-400 text-emerald-300"
+              }`}
+            >
+              {isGuest ? "GUEST SHOPPING MODE (NOT LOGGED IN)" : `VERIFIED ${activePortal.toUpperCase()}`}
             </span>
-            <h3 className="font-black text-white text-sm mt-1">
-              {isAuthenticated
-                ? currentUser?.fullName || "Khoday Anvesh"
-                : "Welcome to WE4ALL Super-App"}
+            <h3 className="text-sm font-black text-white mt-1">
+              {isGuest ? "Welcome, Guest Shopper" : currentUser.fullName}
             </h3>
-            <p className="text-[10px] text-slate-300">
-              {isAuthenticated
-                ? `Mobile: +91 ${currentUser?.phone || "9848011223"} | UPI: ${
-                    currentUser?.upiId || "khodayanvesh@ybl"
-                  }`
-                : "Sign in as an existing Customer/Merchant/Partner or Sign Up for a new portal account."}
+            <p className="text-[10px] text-slate-400">
+              {isGuest
+                ? "Browse Local Stores freely. Sign in or register when you are ready to order or open a Partner Portal."
+                : `Mobile: +91 ${currentUser.phone} | UPI: ${currentUser.upiId || "Not Set"}`}
             </p>
           </div>
           <button
             type="button"
             onClick={() => setBrightTheme(!brightTheme)}
-            className="bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1.5 rounded-xl text-[10px] font-black cursor-pointer shrink-0"
+            className="bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1.5 rounded-xl text-[10px] font-bold cursor-pointer shrink-0"
           >
-            {brightTheme ? "Dark Mode" : "Bright Mode"}
+            {brightTheme ? "\uD83C\uDF19 Dark" : "\u2600\uFE0F Bright"}
           </button>
         </div>
 
-        {/* Direct Login OR New Sign-Up Buttons for Any Portal */}
-        <div className="grid grid-cols-2 gap-2 pt-1">
-          <button
-            type="button"
-            onClick={() => onOpenAuthModal("login")}
-            className="bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black py-2.5 px-3 rounded-xl text-[10px] cursor-pointer shadow"
-          >
-            Existing User / Partner &rarr; Login
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenAuthModal("signup")}
-            className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-2.5 px-3 rounded-xl text-[10px] cursor-pointer shadow"
-          >
-            New User / Partner &rarr; Sign Up
-          </button>
-        </div>
-
-        {/* Quick Portal Switcher for Logged-In Partners */}
-        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
-          <label className="block text-[10px] text-emerald-300 font-black">
-            Open Partner Portal / Switch Active Console:
-          </label>
-          <select
-            value={activePortal}
-            onChange={(e) => setActivePortal(e.target.value)}
-            className="w-full bg-slate-900 border border-emerald-500/50 rounded-xl p-2 text-white font-bold text-xs cursor-pointer"
-          >
-            <option value="customer">1. Consumer Super-App (Default Shopping)</option>
-            <option value="merchant">2. Product Merchant Portal (Kirana / Supermart)</option>
-            <option value="service_provider">3. 1-Hr Home Service Provider Portal</option>
-            <option value="decorator">4. Flower Decorator &amp; Function Halls</option>
-            <option value="rider">5. Delivery Captain Portal (2W / 3W / 4W)</option>
-            <option value="labour_portal">6. Local Labour &amp; Mistri Adda Portal</option>
-          </select>
-        </div>
-      </div>
-
-      {/* 2. LANGUAGE & GEO-LOCATION LOCAL SLANG CONTROLLER */}
-      <div className="bg-slate-900 p-3.5 rounded-2xl border-2 border-amber-400/70 space-y-2.5">
-        <div>
-          <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px]">
-            LOCAL LANGUAGE &amp; GEO-SLANG ENGINE
-          </span>
-          <h4 className="font-black text-amber-300 text-xs mt-1">
-            App Language &amp; Regional Local Slang Titles
-          </h4>
-        </div>
-
-        <div className="space-y-1">
-          <label className="block text-[10px] text-slate-300 font-bold">
-            1. Select Application Language (Default: English):
-          </label>
-          <div className="grid grid-cols-3 gap-1.5">
-            {INDIAN_LANGUAGES.map((l) => {
-              const selected = lang === l.code;
-              return (
-                <button
-                  key={l.code}
-                  type="button"
-                  onClick={() => {
-                    setLang(l.code);
-                    if (l.defaultGeo) setGeoRegion(l.defaultGeo);
-                    if (onTriggerToast) {
-                      onTriggerToast(
-                        `Language set to ${l.label} & local slang synced!`
-                      );
-                    }
-                  }}
-                  className={`p-2 rounded-xl border text-center cursor-pointer transition ${
-                    selected
-                      ? "bg-amber-400 text-slate-950 border-white font-black shadow"
-                      : "bg-slate-950 text-slate-300 border-slate-800"
-                  }`}
-                >
-                  <div className="text-[11px] font-black">{l.native}</div>
-                  <div className="text-[8px] opacity-80">{l.label}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="space-y-1 pt-1">
-          <label className="block text-[10px] text-emerald-300 font-bold">
-            2. Active Geo-Location Regional Slang (Categories &amp; Roles):
-          </label>
-          <select
-            value={geoRegion}
-            onChange={(e) => {
-              setGeoRegion(e.target.value);
-              const found = getGeoSlangConfig(e.target.value);
-              if (onTriggerToast) {
-                onTriggerToast(
-                  `Geo-Location Slang switched to ${found.stateName}!`
-                );
-              }
-            }}
-            className="w-full bg-slate-950 border border-emerald-400 rounded-xl p-2 text-emerald-300 font-bold text-[11px] cursor-pointer"
-          >
-            {GEO_SLANG_REGIONS.map((reg) => (
-              <option key={reg.id} value={reg.id}>
-                {reg.stateName} ({reg.standSlang})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1 text-[10px]">
-          <p className="font-black text-amber-300">
-            Active Local Slang in {activeGeoSlang.stateName}:
-          </p>
-          <p className="text-emerald-300">
-            <strong>Mason:</strong> {activeGeoSlang.labourRoles.mason_mistri}
-          </p>
-          <p className="text-teal-300">
-            <strong>Helper:</strong> {activeGeoSlang.labourRoles.daily_helper}
-          </p>
-          <p className="text-indigo-300">
-            <strong>Loader:</strong> {activeGeoSlang.labourRoles.hamali_loading}
-          </p>
-        </div>
-      </div>
-
-      {/* 3. IN-APP OTA SOFTWARE UPDATER */}
-      <div className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40 space-y-2">
-        <div className="flex justify-between items-center">
-          <div>
-            <h4 className="font-black text-teal-300 text-xs">
-              In-App Software Updater (Auto-Syncs on Startup)
-            </h4>
-            <p className="text-[10px] text-slate-400">
-              Installed: <strong>v{appUpdateInfo?.currentVersion || "3.0.4"}</strong> | Latest Cloud:{" "}
-              <strong className="text-emerald-400">
-                v{appUpdateInfo?.latestAvailableVersion || "3.0.4"}
-              </strong>
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onCheckForUpdate}
-            disabled={checkingUpdate}
-            className="bg-slate-800 border border-teal-400 text-teal-300 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
-          >
-            {checkingUpdate ? "Checking..." : "Check Update"}
-          </button>
-        </div>
-        {hasUpdate && (
-          <button
-            type="button"
-            onClick={onRunOtaUpdate}
-            className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer shadow"
-          >
-            Install Update v{appUpdateInfo?.latestAvailableVersion} Now
-          </button>
-        )}
-      </div>
-
-      {/* 4. BANK & UPI SETTLEMENT VAULT */}
-      <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 space-y-2">
-        <div className="flex justify-between items-center">
-          <h4 className="font-black text-slate-200 text-xs">
-            Bank &amp; Instant UPI Settlement Details
-          </h4>
-          <button
-            type="button"
-            onClick={() => setEditingBank(!editingBank)}
-            className="text-[10px] text-amber-300 underline font-bold cursor-pointer"
-          >
-            {editingBank ? "Close" : "Edit"}
-          </button>
-        </div>
-        {editingBank ? (
-          <div className="space-y-2">
-            <input
-              type="text"
-              value={bankForm.fullName}
-              onChange={(e) =>
-                setBankForm({ ...bankForm, fullName: e.target.value })
-              }
-              placeholder="Full Name"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-            />
-            <input
-              type="text"
-              value={bankForm.upiId}
-              onChange={(e) =>
-                setBankForm({ ...bankForm, upiId: e.target.value })
-              }
-              placeholder="UPI ID"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-            />
+        {isGuest ? (
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <button
               type="button"
-              onClick={() => {
-                setCurrentUser({ ...currentUser, ...bankForm });
-                setEditingBank(false);
-                if (onTriggerToast) onTriggerToast("Account & UPI details saved!");
-              }}
-              className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
+              onClick={onLockApp}
+              className="bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
             >
-              Save Details
+              Sign In / Register Account &rarr;
+            </button>
+            <button
+              type="button"
+              onClick={onOpenAdminGate}
+              className="bg-slate-800 border border-amber-400/50 text-amber-300 font-black py-2.5 rounded-xl cursor-pointer"
+            >
+              \uD83D\uDD10 Founder Admin Login
             </button>
           </div>
         ) : (
-          <p className="text-[10px] text-slate-400">
-            Bank: {currentUser?.bankName || "State Bank of India"} | IFSC:{" "}
-            {currentUser?.ifscCode || "SBIN0000801"}
-          </p>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onLockApp}
+              className="bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
+            >
+              Switch Role / KYC Vault
+            </button>
+            <button
+              type="button"
+              onClick={onSignOutToGuest}
+              className="bg-rose-600 text-white font-black py-2 rounded-xl cursor-pointer"
+            >
+              Sign Out to Guest Mode
+            </button>
+          </div>
         )}
       </div>
 
-      {isAuthenticated && (
-        <button
-          type="button"
-          onClick={onLockApp}
-          className="w-full bg-rose-600 hover:bg-rose-500 text-white font-black py-2.5 rounded-2xl cursor-pointer shadow"
-        >
-          {t.logoutBtn || "Sign Out / Logout"}
-        </button>
-      )}
+      {/* REAL-TIME MOBILE HARDWARE & GPS TELEMETRY STATUS (REQ 5) */}
+      <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-teal-500/40 space-y-2">
+        <div className="flex justify-between items-center">
+          <h4 className="font-black text-teal-300 text-xs">
+            \uD83D\uDCE1 Live Mobile Sensor & GPS Connection
+          </h4>
+          <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[9px] font-black">
+            REAL-TIME CONNECTED
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[10px]">
+          <div>
+            <p className="text-slate-400 text-[9px]">Live GPS Coordinates:</p>
+            <p className="font-mono font-bold text-emerald-400">
+              {liveTelemetryPing
+                ? `${liveTelemetryPing.lat}, ${liveTelemetryPing.lng}`
+                : "19.6641, 78.5320"}
+            </p>
+          </div>
+          <div>
+            <p className="text-slate-400 text-[9px]">Sensor Accuracy & Speed:</p>
+            <p className="font-bold text-amber-300">
+              &plusmn;{liveTelemetryPing?.accuracyMeters || 8}m &bull;{" "}
+              {liveTelemetryPing?.speedKmh || 0} km/h
+            </p>
+          </div>
+          <div>
+            <p className="text-slate-400 text-[9px]">Battery & Network:</p>
+            <p className="font-bold text-white">
+              \uD83D\uDD0B {liveTelemetryPing?.batteryPct ?? 100}% &bull;{" "}
+              {liveTelemetryPing?.networkType || "4G/WIFI"}
+            </p>
+          </div>
+          <div>
+            <p className="text-slate-400 text-[9px]">Delivery / Active Address:</p>
+            <p className="font-bold text-teal-200 truncate">
+              {activeAddressObj?.fullAddress || "Adilabad Town"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* QUICK PORTAL SWITCHER & FOUNDER ADMIN ACCESS */}
+      <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 space-y-2">
+        <h4 className="font-black text-amber-400 text-xs">
+          Switch Portal or Open Founder Admin Console
+        </h4>
+        <div className="grid grid-cols-2 gap-1.5">
+          {[
+            { id: "customer", label: "1. Consumer Shopping" },
+            { id: "merchant", label: "2. Product Merchant" },
+            { id: "service_provider", label: "3. Service Provider" },
+            { id: "decorator", label: "4. Decorator & Halls" },
+            { id: "rider", label: "5. Delivery Captain" }
+          ].map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                setActivePortal(p.id);
+                onTriggerToast(`Switched to ${p.label}`);
+              }}
+              className={`p-2 rounded-xl border text-left font-bold text-[10px] cursor-pointer ${
+                activePortal === p.id
+                  ? "bg-emerald-500/20 border-emerald-400 text-emerald-300"
+                  : "bg-slate-950 border-slate-800 text-slate-300"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={onOpenAdminGate}
+            className="p-2 rounded-xl border border-amber-400 bg-amber-400/15 text-amber-300 font-black text-[10px] text-left cursor-pointer"
+          >
+            \uD83D\uDD10 6. Founder Admin Console
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
