@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-export default function OwnerAccountProfile({
+function OriginalOwnerAccountProfile({
   currentUser,
   setCurrentUser,
   activePortal,
@@ -464,5 +464,60 @@ export default function OwnerAccountProfile({
         </div>
       </div>
     </div>
+  );
+}
+export default function OwnerAccountProfile(rawProps = {}) {
+  const safeCurrentUser = {
+    id: "guest_user",
+    fullName: "Guest Consumer Shopper",
+    phone: "9848011223",
+    role: rawProps.activePortal || "customer",
+    isGuest: !rawProps.currentUser || Boolean(rawProps.currentUser?.isGuest),
+    upiId: "khodayanvesh@ybl",
+    bankName: "State Bank of India (Adilabad Main)",
+    accountNumber: "30984451209",
+    ifscCode: "SBIN0000801",
+    ...(rawProps.currentUser || {})
+  };
+  const safeTelemetry = {
+    lat: 19.6641,
+    lng: 78.5320,
+    accuracyMeters: 10,
+    speedKmh: 0,
+    batteryPct: 100,
+    isCharging: true,
+    networkType: "5G/WIFI",
+    locationSource: "Adilabad Town GPS",
+    ...(rawProps.liveTelemetryPing || {})
+  };
+  const safeAddress = {
+    label: "Home",
+    fullAddress: "Subhash Nagar, Adilabad",
+    lat: 19.6641,
+    lng: 78.5320,
+    ...(rawProps.activeAddressObj || {})
+  };
+  const safeSecurity = {
+    pinEnabled: true,
+    biometricEnabled: true,
+    fastPin: "1990",
+    ...(rawProps.accountSecurity || {})
+  };
+  const safeUpdateInfo = {
+    currentVersion: "3.1.2",
+    latestAvailableVersion: "3.1.2",
+    updateAvailable: false,
+    releaseNotes: "WE4ALL Official Build",
+    ...(rawProps.appUpdateInfo || {})
+  };
+  return (
+    <OriginalOwnerAccountProfile
+      {...rawProps}
+      currentUser={safeCurrentUser}
+      liveTelemetryPing={safeTelemetry}
+      activeAddressObj={safeAddress}
+      accountSecurity={safeSecurity}
+      appUpdateInfo={safeUpdateInfo}
+    />
   );
 }
