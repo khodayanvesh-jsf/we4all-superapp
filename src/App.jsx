@@ -27,6 +27,7 @@ import OrdersHistoryAndInvoice from "./modules/OrdersHistoryAndInvoice";
 import OwnerAccountProfile from "./modules/OwnerAccountProfile";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
+import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
 import { verifyModulePipelineIntegrity } from "./modules/security/CodeSecurityGuard";
 import {
@@ -283,7 +284,9 @@ function AppContent() {
   const [activePortal, setActivePortal] = useState("customer");
   const [authenticatedPartnerRole, setAuthenticatedPartnerRole] = useState(null);
   const [personalShoppingFromPartner, setPersonalShoppingFromPartner] = useState(null);
-  const [footerTab, setFooterTab] = useState("home");
+  const [globalFooterTab, setGlobalFooterTab] = useState("home");
+  const footerTab = globalFooterTab;
+  const setFooterTab = setGlobalFooterTab;
 
   const [appUpdateInfo, setAppUpdateInfo] = useState(
     savedCloud?.appUpdateInfo || INITIAL_APP_UPDATE_INFO
@@ -405,7 +408,9 @@ function AppContent() {
       distanceKm: 1.8
     };
 
-  const [customerHomeSubTab, setCustomerHomeSubTab] = useState("stores");
+  const [globalCustomerSubTab, setGlobalCustomerSubTab] = useState("stores");
+  const customerHomeSubTab = globalCustomerSubTab;
+  const setCustomerHomeSubTab = setGlobalCustomerSubTab;
   const [selectedCategory, setSelectedCategory] = useState("daily_needs");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVariantMap, setSelectedVariantMap] = useState({});
