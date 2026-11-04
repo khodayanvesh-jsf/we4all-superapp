@@ -1325,9 +1325,9 @@ function AppContent() {
 
           {footerTab === "orders" && (
             <OrdersHistoryAndInvoice
-              orders={orders}
+              orders={orders || []}
               setOrders={setOrders}
-              serviceBookings={serviceBookings}
+              serviceBookings={serviceBookings || []}
               labourBookings={labourBookings}
               brightTheme={brightTheme}
               onOpenLiveMap={(ord) => {
@@ -1346,7 +1346,7 @@ function AppContent() {
               setAccountSecurity={setAccountSecurity}
               addressBook={addressBook}
               setAddressBook={setAddressBook}
-              registeredUsers={registeredUsers}
+              registeredUsers={registeredUsers || []}
               setRegisteredUsers={setRegisteredUsers}
               activePortal={activePortal}
               authenticatedPartnerRole={authenticatedPartnerRole}
@@ -1858,10 +1858,10 @@ function AppContent() {
               setMerchants={setMerchants}
               products={products}
               setProducts={setProducts}
-              orders={orders}
-              serviceBookings={serviceBookings}
+              orders={orders || []}
+              serviceBookings={serviceBookings || []}
               labourBookings={labourBookings}
-              registeredUsers={registeredUsers}
+              registeredUsers={registeredUsers || []}
               onBackToApp={() => setViewMode("mobile_app")}
               onTriggerToast={triggerToast}
             />
