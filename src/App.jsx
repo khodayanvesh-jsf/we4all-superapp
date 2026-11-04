@@ -350,6 +350,7 @@ function AppContent() {
   );
   const [registeredUsers, setRegisteredUsers] = useState(savedCloud?.registeredUsers || []);
   if (typeof window !== "undefined") { window.__WE4ALL_USERS = registeredUsers; }
+  if (typeof window !== "undefined") { window.__WE4ALL_USERS = registeredUsers; }
   const [pendingUpiPayment, setPendingUpiPayment] = useState(null);
   const [mobileToast, setMobileToast] = useState("");
 
