@@ -88,7 +88,6 @@ function calculateOrderLogistics(items = [], consumerDistanceKm = 1.8, heavyFee 
 
 function MobilePhoneShell({
   title,
-  badge,
   activePortal,
   footerTab,
   setFooterTab,
@@ -110,18 +109,20 @@ function MobilePhoneShell({
   const t = getLangText(lang);
   return (
     <div
-      className={`w-full max-w-[420px] mx-auto overflow-hidden flex flex-col min-h-screen sm:min-h-[850px] sm:max-h-[92vh] sm:my-2 sm:rounded-[40px] sm:border-[8px] relative transition-all shadow-2xl ${
-        brightTheme
+      className={
+        "w-full max-w-[420px] mx-auto overflow-hidden flex flex-col min-h-screen sm:min-h-[850px] sm:max-h-[92vh] sm:my-2 sm:rounded-[40px] sm:border-[8px] relative transition-all shadow-2xl " +
+        (brightTheme
           ? "bg-white text-slate-900 sm:border-emerald-700/80"
-          : "bg-[#071118] text-white sm:border-slate-800"
-      }`}
+          : "bg-[#071118] text-white sm:border-slate-800")
+      }
     >
       <div
-        className={`px-3 py-2 flex justify-between items-center text-[11px] border-b shrink-0 ${
-          brightTheme
+        className={
+          "px-3 py-2 flex justify-between items-center text-[11px] border-b shrink-0 " +
+          (brightTheme
             ? "bg-emerald-950 text-white border-emerald-800"
-            : "bg-slate-950 text-slate-100 border-emerald-950/60"
-        }`}
+            : "bg-slate-950 text-slate-100 border-emerald-950/60")
+        }
       >
         <span className="font-extrabold text-amber-400 tracking-wide flex items-center gap-1.5 truncate">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
@@ -159,7 +160,7 @@ function MobilePhoneShell({
             onClick={onReturnToPartnerDesk}
             className="bg-amber-400 text-slate-950 px-2.5 py-0.5 rounded-lg font-black cursor-pointer"
           >
-            &larr; Return to Partner Desk
+            Return to Partner Desk
           </button>
         </div>
       )}
@@ -169,7 +170,7 @@ function MobilePhoneShell({
           appUpdateInfo?.currentVersion !== appUpdateInfo?.latestAvailableVersion)) && (
         <div className="bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-400 text-slate-950 px-3 py-1.5 flex items-center justify-between gap-2 text-[10px] font-black shadow shrink-0">
           <div className="truncate">
-            📲 WE4ALL v{appUpdateInfo.latestAvailableVersion} OTA Ready!
+            WE4ALL v{appUpdateInfo.latestAvailableVersion} OTA Ready!
           </div>
           <button
             type="button"
@@ -182,11 +183,12 @@ function MobilePhoneShell({
       )}
 
       <div
-        className={`flex-1 overflow-y-auto p-3 space-y-3 pb-24 ${
-          brightTheme
+        className={
+          "flex-1 overflow-y-auto p-3 space-y-3 pb-24 " +
+          (brightTheme
             ? "bg-slate-50 text-slate-900"
-            : "bg-gradient-to-b from-[#071118] to-[#04090e] text-white"
-        }`}
+            : "bg-gradient-to-b from-[#071118] to-[#04090e] text-white")
+        }
       >
         {children}
       </div>
@@ -207,7 +209,7 @@ function MobilePhoneShell({
               </p>
             </div>
             <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-2 py-1 rounded-xl">
-              Live Map &rarr;
+              Live Map
             </span>
           </button>
         </div>
@@ -277,9 +279,9 @@ function AppContent() {
     reader.readAsDataURL(file);
   };
 
-  const [onboardingStep, setOnboardingStep] = useState("app");
-  const [selectedRole, setSelectedRole] = useState(savedCloud?.activePortal || "customer");
-  const [activePortal, setActivePortal] = useState(savedCloud?.activePortal || "customer");
+  // Strictly start in Customer mode; Partner portals require KYC + PIN login
+  const [activePortal, setActivePortal] = useState("customer");
+  const [authenticatedPartnerRole, setAuthenticatedPartnerRole] = useState(null);
   const [personalShoppingFromPartner, setPersonalShoppingFromPartner] = useState(null);
   const [footerTab, setFooterTab] = useState("home");
 
@@ -304,7 +306,7 @@ function AppContent() {
         ...(latest || {}),
         latestAvailableVersion: targetVer
       }));
-      triggerToast(`Verified WE4ALL v${targetVer} with Code Security Guard!`);
+      triggerToast("Verified WE4ALL v" + targetVer + " with Code Security Guard!");
     }, 500);
   };
 
@@ -318,7 +320,7 @@ function AppContent() {
       (updatedInfo) => {
         setAppUpdateInfo(updatedInfo);
         setOtaProgress(null);
-        triggerToast(`Updated to v${updatedInfo.currentVersion} with zero data loss!`);
+        triggerToast("Updated to v" + updatedInfo.currentVersion + " with zero data loss!");
       }
     );
   };
@@ -330,7 +332,6 @@ function AppContent() {
       fastPin: "1234"
     }
   );
-  const [pinUnlockInput, setPinUnlockInput] = useState("");
   const [currentUser, setCurrentUser] = useState(
     savedCloud?.currentUser || {
       id: "usr_clean",
@@ -345,36 +346,23 @@ function AppContent() {
     }
   );
   const [registeredUsers, setRegisteredUsers] = useState(savedCloud?.registeredUsers || []);
-  const [regForm, setRegForm] = useState({
-    role: "customer",
-    fullName: "",
-    phone: "",
-    upiId: "",
-    fastPin: "1234"
-  });
-
   const [pendingUpiPayment, setPendingUpiPayment] = useState(null);
-  const [isPrimeCustomer, setIsPrimeCustomer] = useState(true);
   const [mobileToast, setMobileToast] = useState("");
-  const [notificationBellOpen, setNotificationBellOpen] = useState(false);
-  const [notificationsList, setNotificationsList] = useState([]);
 
   const triggerToast = (msg) => {
     setMobileToast(msg);
-    setNotificationsList((prev) => [{ id: Date.now(), text: msg, time: "Just now" }, ...prev]);
     setTimeout(() => setMobileToast(""), 4200);
   };
 
   const [selectedZoneFilter, setSelectedZoneFilter] = useState("ALL_INDIA");
-  const [killedCategoriesByZone, setKilledCategoriesByZone] = useState({});
+  const [killedCategoriesByZone] = useState({});
   const [geoAds, setGeoAds] = useState(savedCloud?.geoAds || INITIAL_GEO_ADS);
   const [categories, setCategories] = useState(savedCloud?.categories || INITIAL_CATEGORIES);
-  const [serviceCategories] = useState(SERVICE_CATEGORIES);
   const [merchants, setMerchants] = useState(savedCloud?.merchants || INITIAL_MERCHANTS);
   const [serviceProviders, setServiceProviders] = useState(
     savedCloud?.serviceProviders || INITIAL_SERVICE_PROVIDERS
   );
-  const [decorators, setDecorators] = useState(savedCloud?.decorators || INITIAL_DECORATORS);
+  const [decorators] = useState(savedCloud?.decorators || INITIAL_DECORATORS);
   const [labourWorkers, setLabourWorkers] = useState(
     savedCloud?.labourWorkers || INITIAL_LABOUR_WORKERS
   );
@@ -382,13 +370,11 @@ function AppContent() {
   const [functionHalls, setFunctionHalls] = useState(
     savedCloud?.functionHalls || INITIAL_FUNCTION_HALLS
   );
-  const [riders, setRiders] = useState(savedCloud?.riders || INITIAL_RIDERS);
+  const [riders] = useState(savedCloud?.riders || INITIAL_RIDERS);
 
-  const [pendingMerchants, setPendingMerchants] = useState(savedCloud?.pendingMerchants || []);
-  const [pendingSubCategories, setPendingSubCategories] = useState(
-    savedCloud?.pendingSubCategories || []
-  );
-  const [rejectedItems, setRejectedItems] = useState(savedCloud?.rejectedItems || []);
+  const [pendingMerchants] = useState(savedCloud?.pendingMerchants || []);
+  const [pendingSubCategories] = useState(savedCloud?.pendingSubCategories || []);
+  const [rejectedItems] = useState(savedCloud?.rejectedItems || []);
   const [monetizationConfig, setMonetizationConfig] = useState(
     savedCloud?.monetizationConfig || {
       globalPlatformFee: 0,
@@ -397,7 +383,7 @@ function AppContent() {
     }
   );
 
-  const [splitScreens, setSplitScreens] = useState([
+  const [splitScreens] = useState([
     { id: 1, role: "customer" },
     { id: 2, role: "merchant" },
     { id: 3, role: "service_provider" },
@@ -411,16 +397,13 @@ function AppContent() {
       { id: "addr_default", label: "Primary", fullAddress: "Adilabad Town", distanceKm: 1.8, verified: true }
     ]
   );
-  const [selectedAddressId, setSelectedAddressId] = useState("addr_default");
-  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
-  const [newAddressForm, setNewAddressForm] = useState({
-    label: "Home",
-    fullAddress: "",
-    generatedOtp: "",
-    enteredOtp: ""
-  });
+  const [selectedAddressId] = useState("addr_default");
   const activeAddressObj =
-    addressBook.find((a) => a.id === selectedAddressId) || addressBook[0];
+    addressBook.find((a) => a.id === selectedAddressId) || addressBook[0] || {
+      label: "Primary",
+      fullAddress: "Adilabad Town",
+      distanceKm: 1.8
+    };
 
   const [customerHomeSubTab, setCustomerHomeSubTab] = useState("stores");
   const [selectedCategory, setSelectedCategory] = useState("daily_needs");
@@ -472,10 +455,8 @@ function AppContent() {
     pricePerDay: 45000
   });
 
-  const [providerInsideGeoFence, setProviderInsideGeoFence] = useState(true);
   const [providerHappyCodeInput, setProviderHappyCodeInput] = useState("");
   const [eventDate, setEventDate] = useState("2026-11-10");
-  const [hallScheduleDateInput, setHallScheduleDateInput] = useState("2026-11-10");
   const [captainOtpInput, setCaptainOtpInput] = useState("");
 
   useEffect(() => {
@@ -547,7 +528,6 @@ function AppContent() {
       if (remoteState.appUpdateInfo) setAppUpdateInfo(remoteState.appUpdateInfo);
     });
   }, []);
-
   const totalCartCount =
     merchantCart.reduce((s, i) => s + i.qty, 0) +
     serviceCart.length +
@@ -606,7 +586,7 @@ function AppContent() {
             productId: product.id,
             categoryId: product.categoryId,
             variantId: variant.id,
-            name: `${product.subCategoryBrand} (${variant.label})`,
+            name: product.subCategoryBrand + " (" + variant.label + ")",
             merchantId: activeOffer.merchantId,
             merchantName: activeOffer.merchantName || product.shopName,
             price: activeOffer.price || variant.price,
@@ -615,7 +595,7 @@ function AppContent() {
           }
         ];
     setMerchantCart(updated);
-    triggerToast(`Added ${product.subCategoryBrand} to Cart!`);
+    triggerToast("Added " + product.subCategoryBrand + " to Cart!");
   };
 
   const handlePlaceOrderForCheckout = () => {
@@ -632,7 +612,7 @@ function AppContent() {
     const grandTotal = Number((itemsTotal + deliveryFee + silentFee + gst).toFixed(2));
 
     const newOrder = {
-      id: `VFL-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: "VFL-" + Math.floor(1000 + Math.random() * 9000),
       dateStr: new Date().toISOString().slice(0, 10),
       createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       periodTag: "TODAY",
@@ -658,7 +638,7 @@ function AppContent() {
     setPendingUpiPayment({
       type: "APPROVED_MERCHANT_ORDER",
       orderId: newOrder.id,
-      title: `Order #${newOrder.id}`,
+      title: "Order #" + newOrder.id,
       amount: newOrder.grandTotal
     });
   };
@@ -676,11 +656,11 @@ function AppContent() {
       setPendingUpiPayment(null);
       setFooterTab("orders");
       setLiveOrderDrawerOpen(true);
-      triggerToast(`Paid via ${chosenUpiAppName}! Order sent to Merchant Packing Queue.`);
+      triggerToast("Paid via " + chosenUpiAppName + "! Sent to Merchant Packing Queue.");
     } else if (pendingUpiPayment.type === "SERVICE_ESCROW") {
       const created = serviceCart.map((sc) => ({
         ...sc,
-        id: `SRV-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: "SRV-" + Math.floor(1000 + Math.random() * 9000),
         customerName: currentUser.fullName,
         escrowVisitingAmount: sc.visitingFee + (monetizationConfig.serviceBookingSurcharge || 0),
         paidViaApp: chosenUpiAppName,
@@ -692,151 +672,37 @@ function AppContent() {
       setServiceCart([]);
       setPendingUpiPayment(null);
       setFooterTab("orders");
-      triggerToast(`Paid via ${chosenUpiAppName}! Visiting Fee held in Escrow.`);
+      triggerToast("Paid via " + chosenUpiAppName + "! Visiting Fee held in Escrow.");
     }
   };
 
-  const renderAuthVault = () => (
-    <MobilePhoneShell
-      title="Security & KYC Vault"
-      badge="PIN / Biometric"
-      activePortal={activePortal}
-      footerTab={footerTab}
-      setFooterTab={setFooterTab}
-      totalCartCount={totalCartCount}
-      totalOrdersCount={orders.length}
-      onOpenAdminConsole={openFounderAdminGate}
-      brightTheme={brightTheme}
-      lang={lang}
-      setLang={setLang}
-      appUpdateInfo={appUpdateInfo}
-      onTriggerOtaUpdate={handleRunOtaUpdate}
-      showFooter={false}
-    >
-      <div className="space-y-3 text-xs">
-        <div className="bg-slate-900 text-white border border-emerald-500/40 rounded-2xl p-3.5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FounderLogoBadge logoUrl={founderLogoUrl} />
-              <div>
-                <h2 className="font-black text-amber-400 text-xs">WE4ALL SECURITY VAULT</h2>
-                <p className="text-[10px] text-slate-300">Select Role or Unlock with PIN</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={openFounderAdminGate}
-              className="bg-amber-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-            >
-              {t.adminBtn}
-            </button>
-          </div>
-
-          <select
-            value={selectedRole}
-            onChange={(e) => {
-              setSelectedRole(e.target.value);
-              setRegForm({ ...regForm, role: e.target.value });
-            }}
-            className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl p-2 text-white font-bold text-xs"
-          >
-            <option value="customer">1. Customer Super-App</option>
-            <option value="merchant">2. Product Merchant Portal</option>
-            <option value="service_provider">3. 1-Hr Service Provider Portal</option>
-            <option value="decorator">4. Event Decorator & Function Hall Portal</option>
-            <option value="rider">5. Delivery Captain Radar</option>
-            <option value="labour">6. Labour & Mistri Work-Site Adda</option>
-          </select>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActivePortal(selectedRole);
-              setFooterTab("home");
-              setOnboardingStep("app");
-              triggerToast("Biometric Verified!");
-            }}
-            className="w-full bg-emerald-500 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
-          >
-            Unlock Selected Role via Biometric / Instant Access
-          </button>
-
-          <div className="flex gap-1.5">
-            <input
-              type="password"
-              maxLength={4}
-              value={pinUnlockInput}
-              onChange={(e) => setPinUnlockInput(e.target.value)}
-              placeholder="4-Digit PIN (1234)"
-              className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-center font-black tracking-widest text-amber-300"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (pinUnlockInput === (accountSecurity.fastPin || "1234")) {
-                  setActivePortal(selectedRole);
-                  setFooterTab("home");
-                  setOnboardingStep("app");
-                  setPinUnlockInput("");
-                  triggerToast("PIN Verified!");
-                } else {
-                  triggerToast("Invalid PIN! Default is 1234");
-                }
-              }}
-              className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl font-black cursor-pointer"
-            >
-              PIN Unlock
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-2xl p-3 space-y-2 text-slate-900">
-          <h3 className="font-black text-xs text-emerald-900">New User / Partner KYC Registration</h3>
-          <input
-            type="text"
-            value={regForm.fullName}
-            onChange={(e) => setRegForm({ ...regForm, fullName: e.target.value })}
-            placeholder="Full Legal Name / Business Name"
-            className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-          />
-          <input
-            type="tel"
-            value={regForm.phone}
-            onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })}
-            placeholder="10-Digit Mobile Number"
-            className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-          />
-          <input
-            type="text"
-            value={regForm.upiId}
-            onChange={(e) => setRegForm({ ...regForm, upiId: e.target.value })}
-            placeholder="Settlement UPI ID (e.g., name@ybl)"
-            className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (!regForm.fullName.trim()) return;
-              const newUser = {
-                id: `usr_${Date.now()}`,
-                ...regForm
-              };
-              setRegisteredUsers([newUser, ...registeredUsers]);
-              setCurrentUser({ ...currentUser, ...newUser });
-              setActivePortal(regForm.role);
-              setOnboardingStep("app");
-              triggerToast(`Registered & switched to ${regForm.role.toUpperCase()}!`);
-            }}
-            className="w-full bg-slate-900 text-amber-400 font-black py-2 rounded-xl cursor-pointer"
-          >
-            Complete KYC & Launch Portal
-          </button>
-        </div>
-      </div>
-    </MobilePhoneShell>
-  );
-
   const renderRolePortalContent = (portalRole) => {
+    // STRICT RBAC LOCK: Block any non-customer portal unless authenticated for that exact role (or in Founder Split Lab)
+    if (
+      portalRole !== "customer" &&
+      viewMode !== "multi_role_lab" &&
+      authenticatedPartnerRole !== portalRole
+    ) {
+      return (
+        <div className="p-4 bg-white text-slate-900 rounded-2xl border border-rose-300 space-y-3 text-xs text-center shadow">
+          <p className="font-black text-rose-700 text-sm">Partner Portal Locked</p>
+          <p className="text-[11px] text-slate-600">
+            Access to the {portalRole.toUpperCase()} desk requires a verified Partner Mobile Number + 4-Digit Secret PIN.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setActivePortal("customer");
+              setFooterTab("account");
+            }}
+            className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
+          >
+            Go to Partner KYC & Login Gate
+          </button>
+        </div>
+      );
+    }
+
     if (portalRole === "customer") {
       const visibleCategories = categories.filter(
         (c) => !(killedCategoriesByZone[selectedZoneFilter] || []).includes(c.id)
@@ -871,14 +737,14 @@ function AppContent() {
                   onClick={() => setBrightTheme(!brightTheme)}
                   className="bg-slate-900 text-amber-300 px-2 py-1 rounded-lg text-[9px] font-black cursor-pointer"
                 >
-                  {brightTheme ? "🌙" : "☀️"}
+                  {brightTheme ? "Dark" : "Bright"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOnboardingStep("auth")}
+                  onClick={() => setFooterTab("account")}
                   className="bg-amber-400 text-slate-950 px-2 py-1 rounded-lg text-[9px] font-black cursor-pointer"
                 >
-                  KYC / Role
+                  Partner KYC
                 </button>
               </div>
             </div>
@@ -915,21 +781,22 @@ function AppContent() {
             <>
               <div className="grid grid-cols-5 gap-1 bg-slate-200/80 p-1 rounded-xl text-[10px] font-black text-slate-800">
                 {[
-                  { id: "stores", label: "🛒 Stores" },
-                  { id: "services", label: "🛠️ 1-Hr Srv" },
-                  { id: "events", label: "🎪 Events" },
-                  { id: "taxi", label: "🚕 Rides" },
-                  { id: "labour", label: "👷 Mistri" }
+                  { id: "stores", label: "Stores" },
+                  { id: "services", label: "1-Hr Srv" },
+                  { id: "events", label: "Events" },
+                  { id: "taxi", label: "Rides" },
+                  { id: "labour", label: "Mistri" }
                 ].map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => setCustomerHomeSubTab(tab.id)}
-                    className={`py-1.5 rounded-lg text-center cursor-pointer ${
-                      customerHomeSubTab === tab.id
+                    className={
+                      "py-1.5 rounded-lg text-center cursor-pointer " +
+                      (customerHomeSubTab === tab.id
                         ? "bg-emerald-900 text-amber-300 shadow"
-                        : "hover:bg-white/60"
-                    }`}
+                        : "hover:bg-white/60")
+                    }
                   >
                     {tab.label}
                   </button>
@@ -942,11 +809,12 @@ function AppContent() {
                     <button
                       type="button"
                       onClick={() => setSelectedCategory("all")}
-                      className={`px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0 cursor-pointer ${
-                        selectedCategory === "all"
+                      className={
+                        "px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0 cursor-pointer " +
+                        (selectedCategory === "all"
                           ? "bg-amber-400 text-slate-950"
-                          : "bg-slate-800 text-white"
-                      }`}
+                          : "bg-slate-800 text-white")
+                      }
                     >
                       All Categories
                     </button>
@@ -955,11 +823,12 @@ function AppContent() {
                         key={cat.id}
                         type="button"
                         onClick={() => setSelectedCategory(cat.id)}
-                        className={`px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0 cursor-pointer ${
-                          selectedCategory === cat.id
+                        className={
+                          "px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0 cursor-pointer " +
+                          (selectedCategory === cat.id
                             ? "bg-amber-400 text-slate-950"
-                            : "bg-slate-800 text-white"
-                        }`}
+                            : "bg-slate-800 text-white")
+                        }
                       >
                         {cat.icon} {translateCategoryName(cat.id, cat.name, lang)}
                       </button>
@@ -972,14 +841,17 @@ function AppContent() {
                         Clean Production Server Catalog (0 Pre-Installed Items)
                       </p>
                       <p className="text-[10px] opacity-80">
-                        Switch to the Merchant Portal to publish live products, or add a test listing below.
+                        Verified Merchants can log in via Account &rarr; Partner KYC to publish live products.
                       </p>
                       <button
                         type="button"
-                        onClick={() => setActivePortal("merchant")}
+                        onClick={() => {
+                          setFooterTab("account");
+                          triggerToast("Log in or complete Merchant KYC to publish products.");
+                        }}
                         className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                       >
-                        Open Merchant Portal to Add Products &rarr;
+                        Merchant Partner Login / KYC
                       </button>
                     </div>
                   ) : (
@@ -1002,10 +874,10 @@ function AppContent() {
                             </div>
                             <div className="text-right">
                               <p className="font-black text-sm text-emerald-700">
-                                ₹{activeOffer.price || activeVar?.price}
+                                Rs.{activeOffer.price || activeVar?.price}
                               </p>
                               <p className="text-[9px] line-through text-slate-400">
-                                MRP ₹{activeVar?.mrp || (activeVar?.price || 100) + 25}
+                                MRP Rs.{activeVar?.mrp || (activeVar?.price || 100) + 25}
                               </p>
                             </div>
                           </div>
@@ -1023,7 +895,7 @@ function AppContent() {
                             >
                               {prod.variants.map((v) => (
                                 <option key={v.id} value={v.id}>
-                                  {v.label} - ₹{v.price}
+                                  {v.label} - Rs.{v.price}
                                 </option>
                               ))}
                             </select>
@@ -1066,7 +938,7 @@ function AppContent() {
                                   className="w-full flex justify-between items-center text-[10px] font-bold px-2 py-1 rounded bg-white border border-slate-200 cursor-pointer"
                                 >
                                   <span>{off.merchantName}</span>
-                                  <span className="text-emerald-700 font-black">₹{off.price}</span>
+                                  <span className="text-emerald-700 font-black">Rs.{off.price}</span>
                                 </button>
                               ))}
                             </div>
@@ -1104,10 +976,13 @@ function AppContent() {
                       <p className="font-black text-xs">No Active 1-Hr Service Providers Yet</p>
                       <button
                         type="button"
-                        onClick={() => setActivePortal("service_provider")}
+                        onClick={() => {
+                          setFooterTab("account");
+                          triggerToast("Complete Service Provider KYC in Account tab to list services.");
+                        }}
                         className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                       >
-                        Switch to Service Provider Portal to Register &rarr;
+                        Service Provider Login / KYC
                       </button>
                     </div>
                   ) : (
@@ -1120,7 +995,7 @@ function AppContent() {
                           <h4 className="font-black text-xs">{sp.providerName}</h4>
                           <p className="text-[10px] text-slate-600">{sp.specialization}</p>
                           <p className="text-[10px] font-black text-emerald-700">
-                            Visiting Escrow Fee: ₹{sp.visitingFee}
+                            Visiting Escrow Fee: Rs.{sp.visitingFee}
                           </p>
                         </div>
                         <button
@@ -1134,7 +1009,7 @@ function AppContent() {
                                 bookingSlot: serviceFilterSlot
                               }
                             ]);
-                            triggerToast(`Booked ${sp.providerName} into Service Cart!`);
+                            triggerToast("Booked " + sp.providerName + " into Service Cart!");
                           }}
                           className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                         >
@@ -1167,7 +1042,7 @@ function AppContent() {
                         <div>
                           <h4 className="font-black text-xs">{hall.name}</h4>
                           <p className="text-[10px] text-slate-600">
-                            {hall.capacity} • ₹{hall.pricePerDay}/day
+                            {hall.capacity} | Rs.{hall.pricePerDay}/day
                           </p>
                         </div>
                         <button
@@ -1178,13 +1053,14 @@ function AppContent() {
                               ...decorCart,
                               { id: hall.id, title: hall.name, eventDate, price: hall.pricePerDay }
                             ]);
-                            triggerToast(`Reserved ${hall.name} in Event Cart!`);
+                            triggerToast("Reserved " + hall.name + " in Event Cart!");
                           }}
-                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black ${
-                            isBooked
+                          className={
+                            "px-3 py-1.5 rounded-xl text-[10px] font-black " +
+                            (isBooked
                               ? "bg-rose-200 text-rose-800"
-                              : "bg-emerald-600 text-white cursor-pointer"
-                          }`}
+                              : "bg-emerald-600 text-white cursor-pointer")
+                          }
                         >
                           {isBooked ? "Date Booked" : "Reserve Hall"}
                         </button>
@@ -1201,7 +1077,7 @@ function AppContent() {
                           {mod.icon} {mod.name}
                         </h4>
                         <p className="text-[10px] text-emerald-700 font-bold">
-                          Starting ₹{mod.startingPrice}
+                          Starting Rs.{mod.startingPrice}
                         </p>
                       </div>
                       <button
@@ -1211,7 +1087,7 @@ function AppContent() {
                             ...decorCart,
                             { id: mod.id, title: mod.name, eventDate, price: mod.startingPrice }
                           ]);
-                          triggerToast(`Added ${mod.name} to Event Cart!`);
+                          triggerToast("Added " + mod.name + " to Event Cart!");
                         }}
                         className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                       >
@@ -1258,19 +1134,19 @@ function AppContent() {
                             setTaxiCart([
                               ...taxiCart,
                               {
-                                id: `RIDE-${Date.now()}`,
+                                id: "RIDE-" + Date.now(),
                                 vehicle: v.type,
                                 pickup: taxiBookingForm.pickupPin,
                                 drop: taxiBookingForm.dropPin,
                                 fare
                               }
                             ]);
-                            triggerToast(`${v.type} (₹${fare}) added to Ride Cart!`);
+                            triggerToast(v.type + " (Rs." + fare + ") added to Ride Cart!");
                           }}
                           className="p-2 rounded-xl border border-emerald-600 bg-emerald-50 text-center cursor-pointer"
                         >
                           <p className="font-black text-[10px]">{v.type}</p>
-                          <p className="font-black text-xs text-emerald-800">₹{fare}</p>
+                          <p className="font-black text-xs text-emerald-800">Rs.{fare}</p>
                         </button>
                       );
                     })}
@@ -1298,18 +1174,19 @@ function AppContent() {
             <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-3">
               <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-[9px] font-black">
                 {[
-                  { id: "merchant_cart", label: `Stores (${merchantCart.length})` },
-                  { id: "service_cart", label: `1-Hr (${serviceCart.length})` },
-                  { id: "decor_cart", label: `Events (${decorCart.length})` },
-                  { id: "taxi_cart", label: `Rides (${taxiCart.length})` }
+                  { id: "merchant_cart", label: "Stores (" + merchantCart.length + ")" },
+                  { id: "service_cart", label: "1-Hr (" + serviceCart.length + ")" },
+                  { id: "decor_cart", label: "Events (" + decorCart.length + ")" },
+                  { id: "taxi_cart", label: "Rides (" + taxiCart.length + ")" }
                 ].map((ct) => (
                   <button
                     key={ct.id}
                     type="button"
                     onClick={() => setActiveCartViewTab(ct.id)}
-                    className={`py-1.5 rounded-lg cursor-pointer ${
-                      activeCartViewTab === ct.id ? "bg-emerald-900 text-amber-300" : ""
-                    }`}
+                    className={
+                      "py-1.5 rounded-lg cursor-pointer " +
+                      (activeCartViewTab === ct.id ? "bg-emerald-900 text-amber-300" : "")
+                    }
                   >
                     {ct.label}
                   </button>
@@ -1332,11 +1209,11 @@ function AppContent() {
                           <div>
                             <p className="font-black text-xs">{item.name}</p>
                             <p className="text-[10px] text-slate-500">
-                              {item.merchantName} • ₹{item.price} x {item.qty}
+                              {item.merchantName} | Rs.{item.price} x {item.qty}
                             </p>
                           </div>
                           <p className="font-black text-xs text-emerald-700">
-                            ₹{item.price * item.qty}
+                            Rs.{item.price * item.qty}
                           </p>
                         </div>
                       ))}
@@ -1365,7 +1242,7 @@ function AppContent() {
                           <span>
                             {sc.providerName} ({sc.bookingSlot})
                           </span>
-                          <span className="font-black">₹{sc.visitingFee}</span>
+                          <span className="font-black">Rs.{sc.visitingFee}</span>
                         </div>
                       ))}
                       <button
@@ -1394,7 +1271,7 @@ function AppContent() {
                       <span>
                         {d.title} ({d.eventDate})
                       </span>
-                      <span className="font-black">₹{d.price}</span>
+                      <span className="font-black">Rs.{d.price}</span>
                     </div>
                   ))}
                   {decorCart.length > 0 && (
@@ -1417,9 +1294,9 @@ function AppContent() {
                   {taxiCart.map((r, i) => (
                     <div key={i} className="flex justify-between border-b pb-1">
                       <span>
-                        {r.vehicle}: {r.pickup} &rarr; {r.drop}
+                        {r.vehicle}: {r.pickup} to {r.drop}
                       </span>
-                      <span className="font-black">₹{r.fare}</span>
+                      <span className="font-black">Rs.{r.fare}</span>
                     </div>
                   ))}
                   {taxiCart.length > 0 && (
@@ -1462,8 +1339,23 @@ function AppContent() {
               setAccountSecurity={setAccountSecurity}
               addressBook={addressBook}
               setAddressBook={setAddressBook}
-              isPrimeCustomer={isPrimeCustomer}
-              setIsPrimeCustomer={setIsPrimeCustomer}
+              registeredUsers={registeredUsers}
+              setRegisteredUsers={setRegisteredUsers}
+              activePortal={activePortal}
+              authenticatedPartnerRole={authenticatedPartnerRole}
+              onPartnerAuthenticated={(role, partnerObj) => {
+                setAuthenticatedPartnerRole(role);
+                setCurrentUser({ ...currentUser, ...partnerObj });
+                setActivePortal(role);
+                setFooterTab("home");
+                triggerToast("Verified & Unlocked " + role.toUpperCase() + " Portal!");
+              }}
+              onLogoutPartner={() => {
+                setAuthenticatedPartnerRole(null);
+                setActivePortal("customer");
+                setFooterTab("home");
+                triggerToast("Partner session locked. Returned to Customer Super-App.");
+              }}
               appUpdateInfo={appUpdateInfo}
               onCheckForUpdate={handleManualCheckForUpdate}
               checkingUpdate={checkingUpdate}
@@ -1475,11 +1367,7 @@ function AppContent() {
               onUploadApkIcon={handleUploadApkIcon}
               brightTheme={brightTheme}
               setBrightTheme={setBrightTheme}
-              onSwitchRole={(r) => {
-                setActivePortal(r);
-                setFooterTab("home");
-              }}
-              onOpenAuthVault={() => setOnboardingStep("auth")}
+              onOpenAdminConsole={openFounderAdminGate}
               onTriggerToast={triggerToast}
             />
           )}
@@ -1491,7 +1379,7 @@ function AppContent() {
       return (
         <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
           <div className="flex justify-between items-center">
-            <h2 className="font-black text-emerald-900 text-sm">🏪 Product Merchant Desk</h2>
+            <h2 className="font-black text-emerald-900 text-sm">Product Merchant Desk</h2>
             <button
               type="button"
               onClick={() => {
@@ -1544,14 +1432,14 @@ function AppContent() {
                 onChange={(e) =>
                   setNewMerchantProd({ ...newMerchantProd, price: e.target.value })
                 }
-                placeholder="Selling Price (₹)"
+                placeholder="Selling Price (Rs.)"
                 className="border rounded-xl p-1.5 text-xs"
               />
               <input
                 type="number"
                 value={newMerchantProd.mrp}
                 onChange={(e) => setNewMerchantProd({ ...newMerchantProd, mrp: e.target.value })}
-                placeholder="MRP (₹)"
+                placeholder="MRP (Rs.)"
                 className="border rounded-xl p-1.5 text-xs"
               />
             </div>
@@ -1561,13 +1449,13 @@ function AppContent() {
                 if (!newMerchantProd.subCategoryBrand || !newMerchantProd.price) return;
                 const priceNum = Number(newMerchantProd.price);
                 const created = {
-                  id: `prod_${Date.now()}`,
+                  id: "prod_" + Date.now(),
                   categoryId: newMerchantProd.categoryId,
                   subCategoryBrand: newMerchantProd.subCategoryBrand,
-                  shopName: newMerchantProd.shopName || "Adilabad Local Store",
+                  shopName: newMerchantProd.shopName || currentUser?.businessName || "Adilabad Store",
                   variants: [
                     {
-                      id: `v_${Date.now()}`,
+                      id: "v_" + Date.now(),
                       label: newMerchantProd.variantLabel || "Standard Pack",
                       price: priceNum,
                       mrp: Number(newMerchantProd.mrp || priceNum + 20),
@@ -1577,7 +1465,7 @@ function AppContent() {
                   merchantOffers: [
                     {
                       merchantId: Date.now(),
-                      merchantName: newMerchantProd.shopName || "Adilabad Local Store",
+                      merchantName: newMerchantProd.shopName || currentUser?.businessName || "Adilabad Store",
                       price: priceNum,
                       area: "Adilabad"
                     }
@@ -1604,7 +1492,7 @@ function AppContent() {
               <div key={o.id} className="p-2 border rounded-xl flex justify-between items-center">
                 <div>
                   <p className="font-black text-xs">
-                    #{o.id} • ₹{o.grandTotal}
+                    #{o.id} | Rs.{o.grandTotal}
                   </p>
                   <p className="text-[10px] text-slate-500">{o.status}</p>
                 </div>
@@ -1618,7 +1506,7 @@ function AppContent() {
                           : ord
                       )
                     );
-                    triggerToast(`Order #${o.id} handed over to Delivery Captain!`);
+                    triggerToast("Order #" + o.id + " handed over to Delivery Captain!");
                   }}
                   className="bg-amber-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
                 >
@@ -1634,7 +1522,7 @@ function AppContent() {
     if (portalRole === "service_provider") {
       return (
         <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <h2 className="font-black text-emerald-900 text-sm">🛠️ 1-Hr Service Provider Desk</h2>
+          <h2 className="font-black text-emerald-900 text-sm">1-Hr Service Provider Desk</h2>
           <input
             type="text"
             value={newSpForm.providerName}
@@ -1654,7 +1542,7 @@ function AppContent() {
             onClick={() => {
               if (!newSpForm.providerName) return;
               setServiceProviders([
-                { id: `sp_${Date.now()}`, ...newSpForm },
+                { id: "sp_" + Date.now(), ...newSpForm },
                 ...serviceProviders
               ]);
               setNewSpForm({ ...newSpForm, providerName: "", specialization: "" });
@@ -1670,14 +1558,14 @@ function AppContent() {
             {serviceBookings.map((sb) => (
               <div key={sb.id} className="p-2 border rounded-xl space-y-1.5">
                 <p className="font-black text-xs">
-                  {sb.id} • Escrow: ₹{sb.escrowVisitingAmount} ({sb.escrowStatus})
+                  {sb.id} | Escrow: Rs.{sb.escrowVisitingAmount} ({sb.escrowStatus})
                 </p>
                 <div className="flex gap-1.5">
                   <input
                     type="text"
                     value={providerHappyCodeInput}
                     onChange={(e) => setProviderHappyCodeInput(e.target.value)}
-                    placeholder={`Enter Customer Happy Code (${sb.happyCode})`}
+                    placeholder={"Enter Customer Happy Code (" + sb.happyCode + ")"}
                     className="flex-1 border rounded-lg px-2 py-1 text-[10px]"
                   />
                   <button
@@ -1717,7 +1605,7 @@ function AppContent() {
       return (
         <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
           <h2 className="font-black text-emerald-900 text-sm">
-            🎪 Function Hall & Event Decorator Desk
+            Function Hall & Event Decorator Desk
           </h2>
           <input
             type="text"
@@ -1731,7 +1619,7 @@ function AppContent() {
             onClick={() => {
               if (!newHallForm.name) return;
               setFunctionHalls([
-                { id: `hall_${Date.now()}`, ...newHallForm, bookedDates: [] },
+                { id: "hall_" + Date.now(), ...newHallForm, bookedDates: [] },
                 ...functionHalls
               ]);
               setNewHallForm({ ...newHallForm, name: "" });
@@ -1748,7 +1636,7 @@ function AppContent() {
     if (portalRole === "rider") {
       return (
         <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <h2 className="font-black text-emerald-900 text-sm">🛵 Delivery Captain Live Radar</h2>
+          <h2 className="font-black text-emerald-900 text-sm">Delivery Captain Live Radar</h2>
           {activeOrder ? (
             <div className="space-y-2">
               <LiveRouteMap order={activeOrder} brightTheme={brightTheme} />
@@ -1757,7 +1645,7 @@ function AppContent() {
                   type="text"
                   value={captainOtpInput}
                   onChange={(e) => setCaptainOtpInput(e.target.value)}
-                  placeholder={`Customer Delivery OTP (${activeOrder.secretOtp})`}
+                  placeholder={"Customer Delivery OTP (" + activeOrder.secretOtp + ")"}
                   className="flex-1 border rounded-xl px-2.5 py-1.5 text-xs"
                 />
                 <button
@@ -1770,7 +1658,7 @@ function AppContent() {
                         )
                       );
                       setCaptainOtpInput("");
-                      triggerToast(`Order #${activeOrder.id} Marked DELIVERED!`);
+                      triggerToast("Order #" + activeOrder.id + " Marked DELIVERED!");
                     } else {
                       triggerToast("Incorrect Customer OTP!");
                     }
@@ -1811,56 +1699,26 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-[#040b10] text-white">
-      <div className="bg-slate-950 border-b border-emerald-900/60 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[10px]">
-        <div className="flex items-center gap-2">
-          <span className="font-black text-amber-400">WE4ALL v{appUpdateInfo.currentVersion}</span>
-          <select
-            value={activePortal}
-            onChange={(e) => {
-              setActivePortal(e.target.value);
-              setOnboardingStep("app");
+      {/* Only show locked Partner Session banner when a verified Partner is actively inside their desk */}
+      {activePortal !== "customer" && viewMode === "mobile_app" && (
+        <div className="max-w-[420px] mx-auto bg-slate-950 border-b border-emerald-800 px-3 py-1.5 flex items-center justify-between text-[10px]">
+          <span className="font-black text-emerald-400">
+            Verified Partner Session: {activePortal.toUpperCase()}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthenticatedPartnerRole(null);
+              setActivePortal("customer");
+              setFooterTab("home");
+              triggerToast("Partner Desk Locked. Returned to Customer Super-App.");
             }}
-            className="bg-slate-900 text-emerald-300 border border-emerald-700 rounded-lg px-2 py-0.5 font-black"
+            className="bg-rose-600 text-white px-2.5 py-0.5 rounded font-black cursor-pointer"
           >
-            <option value="customer">Portal 1: Customer Super-App</option>
-            <option value="merchant">Portal 2: Merchant Desk</option>
-            <option value="service_provider">Portal 3: 1-Hr Service Provider</option>
-            <option value="decorator">Portal 4: Event & Function Hall</option>
-            <option value="rider">Portal 5: Delivery Captain Radar</option>
-            <option value="labour">Portal 6: Labour & Mistri Adda</option>
-          </select>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setViewMode("mobile_app")}
-            className={`px-2 py-0.5 rounded font-black cursor-pointer ${
-              viewMode === "mobile_app" ? "bg-emerald-500 text-slate-950" : "bg-slate-800"
-            }`}
-          >
-            📱 Single App
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("multi_role_lab")}
-            className={`px-2 py-0.5 rounded font-black cursor-pointer ${
-              viewMode === "multi_role_lab" ? "bg-emerald-500 text-slate-950" : "bg-slate-800"
-            }`}
-          >
-            🖥️ 6-Portal Split Lab
-          </button>
-          <button
-            type="button"
-            onClick={openFounderAdminGate}
-            className={`px-2 py-0.5 rounded font-black cursor-pointer ${
-              viewMode === "founder_web" ? "bg-amber-400 text-slate-950" : "bg-slate-800 text-amber-300"
-            }`}
-          >
-            🔐 Founder Admin
+            Lock & Exit Partner Desk
           </button>
         </div>
-      </div>
+      )}
 
       {mobileToast && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-50 bg-slate-950 text-amber-300 border-2 border-amber-400 px-4 py-2 rounded-2xl text-xs font-black shadow-2xl">
@@ -1871,9 +1729,18 @@ function AppContent() {
       {viewMode === "founder_web" ? (
         !isAdminAuthenticated ? (
           <div className="max-w-md mx-auto mt-12 bg-slate-900 border border-amber-400/50 rounded-3xl p-6 space-y-4">
-            <h2 className="font-black text-amber-400 text-base">
-              🔐 WE4ALL Founder Admin 2-Factor Gate
-            </h2>
+            <div className="flex justify-between items-center">
+              <h2 className="font-black text-amber-400 text-base">
+                WE4ALL Founder Admin 2-Factor Gate
+              </h2>
+              <button
+                type="button"
+                onClick={() => setViewMode("mobile_app")}
+                className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer"
+              >
+                Back to App
+              </button>
+            </div>
             {adminLoginError && (
               <p className="text-rose-400 text-xs font-bold">{adminLoginError}</p>
             )}
@@ -1912,7 +1779,7 @@ function AppContent() {
                   }}
                   className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
                 >
-                  Next: Verify Founder PIN &rarr;
+                  Next: Verify Founder PIN
                 </button>
               </div>
             ) : (
@@ -1943,24 +1810,33 @@ function AppContent() {
           </div>
         ) : (
           <div className="p-4 space-y-4">
-            <div className="flex justify-between items-center bg-slate-900 p-3 rounded-2xl border border-amber-400/40">
+            <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-900 p-3 rounded-2xl border border-amber-400/40">
               <span className="font-black text-amber-400 text-xs">
-                FOUNDER MASTER CONTROL • ZERO PRE-INSTALLED DATA MODE
+                FOUNDER MASTER CONTROL | ZERO PRE-INSTALLED DATA MODE
               </span>
-              <button
-                type="button"
-                onClick={async () => {
-                  const wiped = await wipeAllPreinstalledServerData();
-                  setProducts(wiped.products);
-                  setMerchants(wiped.merchants);
-                  setServiceProviders(wiped.serviceProviders);
-                  setOrders(wiped.orders);
-                  triggerToast("All Server Transactional States Wiped 100% Clean!");
-                }}
-                className="bg-rose-600 text-white px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer"
-              >
-                🧹 Wipe Server Data Clean
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("multi_role_lab")}
+                  className="bg-emerald-500 text-slate-950 px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer"
+                >
+                  Open 6-Portal Split Lab (Founder Only)
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const wiped = await wipeAllPreinstalledServerData();
+                    setProducts(wiped.products);
+                    setMerchants(wiped.merchants);
+                    setServiceProviders(wiped.serviceProviders);
+                    setOrders(wiped.orders);
+                    triggerToast("All Server Transactional States Wiped 100% Clean!");
+                  }}
+                  className="bg-rose-600 text-white px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer"
+                >
+                  Wipe Server Data Clean
+                </button>
+              </div>
             </div>
             <FounderAdminSuite
               appUpdateInfo={appUpdateInfo}
@@ -1984,29 +1860,41 @@ function AppContent() {
             />
           </div>
         )
-      ) : viewMode === "multi_role_lab" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
-          {splitScreens.map((scr) => (
-            <MobilePhoneShell
-              key={scr.id}
-              title={scr.role.toUpperCase()}
-              activePortal={scr.role}
-              footerTab={footerTab}
-              setFooterTab={setFooterTab}
-              totalCartCount={totalCartCount}
-              totalOrdersCount={orders.length}
-              brightTheme={brightTheme}
-              lang={lang}
-              setLang={setLang}
-              appUpdateInfo={appUpdateInfo}
-              onTriggerOtaUpdate={handleRunOtaUpdate}
+      ) : viewMode === "multi_role_lab" && isAdminAuthenticated ? (
+        <div className="space-y-3 p-4">
+          <div className="flex justify-between items-center bg-slate-900 p-3 rounded-2xl border border-amber-400">
+            <span className="font-black text-amber-400 text-xs">
+              FOUNDER 6-PORTAL SIMULATOR LAB (AUTHENTICATED ADMIN ONLY)
+            </span>
+            <button
+              type="button"
+              onClick={() => setViewMode("mobile_app")}
+              className="bg-emerald-500 text-slate-950 px-3 py-1 rounded-xl text-xs font-black cursor-pointer"
             >
-              {renderRolePortalContent(scr.role)}
-            </MobilePhoneShell>
-          ))}
+              Exit Lab to Single Mobile App
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {splitScreens.map((scr) => (
+              <MobilePhoneShell
+                key={scr.id}
+                title={scr.role.toUpperCase()}
+                activePortal={scr.role}
+                footerTab={footerTab}
+                setFooterTab={setFooterTab}
+                totalCartCount={totalCartCount}
+                totalOrdersCount={orders.length}
+                brightTheme={brightTheme}
+                lang={lang}
+                setLang={setLang}
+                appUpdateInfo={appUpdateInfo}
+                onTriggerOtaUpdate={handleRunOtaUpdate}
+              >
+                {renderRolePortalContent(scr.role)}
+              </MobilePhoneShell>
+            ))}
+          </div>
         </div>
-      ) : onboardingStep !== "app" ? (
-        renderAuthVault()
       ) : (
         <MobilePhoneShell
           title={activePortal.toUpperCase()}
@@ -2038,14 +1926,14 @@ function AppContent() {
           <div className="bg-slate-900 border-2 border-amber-400 rounded-3xl p-4 w-full max-w-md space-y-3">
             <div className="flex justify-between items-center">
               <h3 className="font-black text-amber-400 text-xs">
-                LIVE ORDER #{activeOrder.id} • OTP: {activeOrder.secretOtp}
+                LIVE ORDER #{activeOrder.id} | OTP: {activeOrder.secretOtp}
               </h3>
               <button
                 type="button"
                 onClick={() => setLiveOrderDrawerOpen(false)}
                 className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer"
               >
-                ✕
+                Close
               </button>
             </div>
             <LiveRouteMap order={activeOrder} brightTheme={false} />
