@@ -518,7 +518,7 @@ function OriginalOwnerAccountProfile({
           )}
 
           {/* Live KYC Application Status Tracker */}
-          {myPartnerRegistrations.length > 0 && (
+          {(myPartnerRegistrations || []).length > 0 && (
             <div className="border-t border-slate-200 pt-2.5 space-y-1.5">
               <div className="flex justify-between items-center">
                 <p className="font-black text-[10px] text-slate-700">

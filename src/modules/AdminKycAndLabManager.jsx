@@ -41,7 +41,7 @@ export default function AdminKycAndLabManager({
   };
 
   const handleAddScreen = (defaultRole = "customer") => {
-    const nextNum = splitScreens.length + 1;
+    const nextNum = (splitScreens || []).length + 1;
     setSplitScreens([
       ...splitScreens,
       {
@@ -55,7 +55,7 @@ export default function AdminKycAndLabManager({
   };
 
   const handleRemoveScreen = (id) => {
-    if (splitScreens.length <= 1) {
+    if ((splitScreens || []).length <= 1) {
       onTriggerToast("At least 1 screen is required in the N-Portal Lab.");
       return;
     }
@@ -79,7 +79,7 @@ export default function AdminKycAndLabManager({
       subTab: "stores"
     }));
     setSplitScreens(built);
-    onTriggerToast(`Configured ${built.length}-Portal Independent Lab!`);
+    onTriggerToast(`Configured ${(built || []).length}-Portal Independent Lab!`);
   };
 
   return (
@@ -91,7 +91,7 @@ export default function AdminKycAndLabManager({
             <h3 className="font-black text-amber-400 text-sm flex items-center gap-2">
               🛡️ PARTNER KYC VERIFICATION & APPROVAL GATE
               <span className="bg-rose-600 text-white px-2 py-0.5 rounded-full text-[10px] font-black">
-                {pendingPartners.length} Pending
+                {(pendingPartners || []).length} Pending
               </span>
             </h3>
             <p className="text-[11px] text-slate-300">
@@ -100,7 +100,7 @@ export default function AdminKycAndLabManager({
           </div>
         </div>
 
-        {pendingPartners.length === 0 ? (
+        {(pendingPartners || []).length === 0 ? (
           <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-400 font-bold text-center">
             ✅ No pending Partner KYC applications waiting for approval.
           </div>
@@ -150,10 +150,10 @@ export default function AdminKycAndLabManager({
           </div>
         )}
 
-        {approvedPartners.length > 0 && (
+        {(approvedPartners || []).length > 0 && (
           <div className="pt-2 border-t border-slate-800 space-y-2">
             <h4 className="font-black text-emerald-400 text-xs">
-              ✅ Verified Live Partners ({approvedPartners.length})
+              ✅ Verified Live Partners ({(approvedPartners || []).length})
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               {approvedPartners.map((ap) => (
@@ -197,7 +197,7 @@ export default function AdminKycAndLabManager({
             onClick={onLaunchNPortalLab}
             className="bg-gradient-to-r from-amber-400 to-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl text-xs cursor-pointer shadow-lg"
           >
-            🚀 Launch {splitScreens.length}-Portal Lab Now &rarr;
+            🚀 Launch {(splitScreens || []).length}-Portal Lab Now &rarr;
           </button>
         </div>
 

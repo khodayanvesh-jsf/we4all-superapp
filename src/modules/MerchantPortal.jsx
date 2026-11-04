@@ -106,7 +106,7 @@ export default function MerchantPortal({
             </button>
           </div>
 
-          {orders.length === 0 ? (
+          {(orders || []).length === 0 ? (
             <p className="text-slate-400 text-center py-6 bg-slate-900 rounded-2xl border border-slate-800">
               No active store orders in queue. Place an order from the Customer App to test!
             </p>
@@ -210,7 +210,7 @@ export default function MerchantPortal({
       {footerTab === "stock" && (
         <div className="space-y-2">
           <h4 className="font-black text-emerald-400">
-            2. Physical Product Stock &amp; Inline Price Manual ({products.length} Items)
+            2. Physical Product Stock &amp; Inline Price Manual ({(products || []).length} Items)
           </h4>
           {products.map((prod, idx) => (
             <div
@@ -342,7 +342,7 @@ export default function MerchantPortal({
             Submit Brand for Admin Approval &rarr;
           </button>
 
-          {rejectedItems && rejectedItems.length > 0 && (
+          {rejectedItems && (rejectedItems || []).length > 0 && (
             <div className="bg-rose-950/60 border border-rose-500 p-2.5 rounded-xl text-rose-200 space-y-1">
               <p className="font-bold text-[10px]">
                 Rejected by Founder Admin (Needs Correction):
@@ -361,7 +361,7 @@ export default function MerchantPortal({
       {footerTab === "orders" && (
         <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 space-y-2">
           <h4 className="font-black text-emerald-400">
-            4. Merchant GST &amp; Settlement Ledger ({orders.length} Orders)
+            4. Merchant GST &amp; Settlement Ledger ({(orders || []).length} Orders)
           </h4>
           <p className="text-[11px] text-slate-300">
             Total Settled Volume:{" "}

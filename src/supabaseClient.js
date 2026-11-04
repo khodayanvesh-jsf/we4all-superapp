@@ -153,7 +153,7 @@ export function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress
   ];
 
   const interval = setInterval(() => {
-    if (step < stages.length) {
+    if (step < (stages || []).length) {
       onProgress(stages[step]);
       step++;
     } else {

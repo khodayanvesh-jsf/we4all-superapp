@@ -116,9 +116,9 @@ export default function LabourWorksitePortal({
       {/* 2-Step Muster Roll Bookings */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
         <h4 className="font-black text-emerald-400">
-          Active Work-Site Muster Roll Bookings ({labourBookings.length})
+          Active Work-Site Muster Roll Bookings ({(labourBookings || []).length})
         </h4>
-        {labourBookings.length === 0 ? (
+        {(labourBookings || []).length === 0 ? (
           <p className="text-[11px] text-slate-400 py-2">
             No active work-site bookings yet. Customers can hire workers from the Customer Portal.
           </p>

@@ -100,7 +100,7 @@ export default function DecoratorPortal({
         <div className="space-y-3">
           <div className="bg-slate-900 p-3.5 rounded-2xl border border-amber-500/40 space-y-2.5">
             <h4 className="font-black text-amber-400 text-xs">
-              2. Customer Decoration Requests & Competitive Bids ({decorBids.length})
+              2. Customer Decoration Requests & Competitive Bids ({(decorBids || []).length})
             </h4>
 
             <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">

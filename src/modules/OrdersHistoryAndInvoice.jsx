@@ -100,7 +100,7 @@ export default function OrdersHistoryAndInvoice({
     <div className="space-y-3 text-xs">
       <div className="flex justify-between items-center">
         <h3 className="font-black text-emerald-500 text-sm">
-          Orders History & PDF Tax Invoices ({orders.length + serviceBookings.length + labourBookings.length})
+          Orders History & PDF Tax Invoices ({(orders || []).length + (serviceBookings || []).length + (labourBookings || []).length})
         </h3>
       </div>
 
@@ -127,7 +127,7 @@ export default function OrdersHistoryAndInvoice({
         ))}
       </div>
 
-      {filteredOrders.length === 0 && serviceBookings.length === 0 && labourBookings.length === 0 && (
+      {(filteredOrders || []).length === 0 && (serviceBookings || []).length === 0 && (labourBookings || []).length === 0 && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400">
           No orders or bookings recorded yet. Place an order to generate live tracking and PDF invoices.
         </div>

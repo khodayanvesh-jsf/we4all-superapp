@@ -90,20 +90,20 @@ export default function FounderAdminSuite({
 
   const ADMIN_TABS = [
     { id: "telemetry", label: "1. Telemetry & Kill-Switches", badge: `Rs.${totalGmv}` },
-    { id: "geo_ads", label: "2. 3-Tier Geo/State/Brand Ads", badge: `${geoAds.length} Ads` },
+    { id: "geo_ads", label: "2. 3-Tier Geo/State/Brand Ads", badge: `${(geoAds || []).length} Ads` },
     {
       id: "approvals",
       label: "3. Approvals & KYC Queue",
-      badge: `${pendingMerchants.length + pendingSubCategories.length}`
+      badge: `${(pendingMerchants || []).length + (pendingSubCategories || []).length}`
     },
-    { id: "categories", label: "4. Dynamic Category/Portal Builder", badge: `${categories.length}` },
+    { id: "categories", label: "4. Dynamic Category/Portal Builder", badge: `${(categories || []).length}` },
     { id: "monetization", label: "5. Silent Monetization Engine", badge: "Backend" },
     {
       id: "ota_updates",
       label: "6. Push App Update (OTA & Alert)",
       badge: `v${appUpdateInfo?.latestAvailableVersion || "3.1.0"}`
     },
-    { id: "testing", label: "7. 6-Phone Live Sandbox", badge: `${splitScreens.length} Phones` },
+    { id: "testing", label: "7. 6-Phone Live Sandbox", badge: `${(splitScreens || []).length} Phones` },
     { id: "flow_tester", label: "8. 1-Click Screen Flow Tester", badge: "12 Flows" },
     { id: "database", label: "9. Classified Master DB Editor", badge: "Full CRUD" }
   ];
@@ -148,12 +148,12 @@ export default function FounderAdminSuite({
             </div>
             <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
               <p className="text-slate-400">Live Products</p>
-              <p className="text-xl font-black text-amber-400 mt-1">{products.length}</p>
+              <p className="text-xl font-black text-amber-400 mt-1">{(products || []).length}</p>
             </div>
             <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
               <p className="text-slate-400">Registered Users</p>
               <p className="text-xl font-black text-purple-400 mt-1">
-                {registeredUsers.length}
+                {(registeredUsers || []).length}
               </p>
             </div>
           </div>
@@ -332,9 +332,9 @@ export default function FounderAdminSuite({
         <div className="space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <h3 className="font-black text-emerald-400 text-sm">
-              Pending Partner KYC Queue ({pendingMerchants.length})
+              Pending Partner KYC Queue ({(pendingMerchants || []).length})
             </h3>
-            {pendingMerchants.length === 0 ? (
+            {(pendingMerchants || []).length === 0 ? (
               <p className="text-slate-400">No pending partner registrations.</p>
             ) : (
               pendingMerchants.map((m) => (
@@ -366,9 +366,9 @@ export default function FounderAdminSuite({
 
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <h3 className="font-black text-amber-400 text-sm">
-              Pending Brand Sub-Categories ({pendingSubCategories.length})
+              Pending Brand Sub-Categories ({(pendingSubCategories || []).length})
             </h3>
-            {pendingSubCategories.length === 0 ? (
+            {(pendingSubCategories || []).length === 0 ? (
               <p className="text-slate-400">No pending catalog submissions.</p>
             ) : (
               pendingSubCategories.map((item) => (
@@ -626,14 +626,14 @@ export default function FounderAdminSuite({
           </h3>
           <div className="flex flex-wrap gap-1.5">
             {[
-              { id: "merchants", label: `1. Merchants (${merchants.length})` },
-              { id: "users", label: `2. Users (${registeredUsers.length})` },
-              { id: "catalog", label: `3. Products (${products.length})` },
-              { id: "service_providers", label: `4. Service Providers (${serviceProviders.length})` },
-              { id: "decorators", label: `5. Decorators (${decorators.length})` },
-              { id: "labour", label: `6. Labour Adda (${labourWorkers.length})` },
-              { id: "halls", label: `7. Function Halls (${functionHalls.length})` },
-              { id: "orders", label: `8. Orders (${orders.length})` }
+              { id: "merchants", label: `1. Merchants (${(merchants || []).length})` },
+              { id: "users", label: `2. Users (${(registeredUsers || []).length})` },
+              { id: "catalog", label: `3. Products (${(products || []).length})` },
+              { id: "service_providers", label: `4. Service Providers (${(serviceProviders || []).length})` },
+              { id: "decorators", label: `5. Decorators (${(decorators || []).length})` },
+              { id: "labour", label: `6. Labour Adda (${(labourWorkers || []).length})` },
+              { id: "halls", label: `7. Function Halls (${(functionHalls || []).length})` },
+              { id: "orders", label: `8. Orders (${(orders || []).length})` }
             ].map((t) => (
               <button
                 key={t.id}

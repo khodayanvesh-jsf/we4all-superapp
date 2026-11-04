@@ -178,7 +178,7 @@ export default function RiderCaptainPortal({
           ? String(forceOtpValue).trim()
           : String(dropOtpInputs[trip.id] ?? "").trim();
 
-      if (rawInput.length === 0) {
+      if ((rawInput || []).length === 0) {
         onReportError(
           `4-Digit OTP Required for Order #${trip.id}`,
           `The OTP input box is empty. Customer/Merchant Doorstep OTP for #${trip.id} is "${expectedOtp}".`,
@@ -468,7 +468,7 @@ export default function RiderCaptainPortal({
             <div className="flex justify-between items-center">
               <div>
                 <h4 className="font-black text-teal-300 text-xs">
-                  1. {myVehicleRule.shortLabel} Radar ({myEligibleRadarJobs.length} Eligible Orders)
+                  1. {myVehicleRule.shortLabel} Radar ({(myEligibleRadarJobs || []).length} Eligible Orders)
                 </h4>
                 <p className="text-[10px] text-slate-400">
                   Showing orders allocated strictly to {myVehicleRule.label}
@@ -616,7 +616,7 @@ export default function RiderCaptainPortal({
           <div className="bg-slate-900 p-3 rounded-2xl border border-rose-500/40 space-y-2">
             <div className="flex justify-between items-center">
               <span className="font-black text-rose-300 text-[11px]">
-                 Other Vehicle Orders ({lockedOtherVehicleJobs.length} Locked - Zero Interference)
+                 Other Vehicle Orders ({(lockedOtherVehicleJobs || []).length} Locked - Zero Interference)
               </span>
               <button
                 type="button"
@@ -656,13 +656,13 @@ export default function RiderCaptainPortal({
         <div className="space-y-3">
           <div className="bg-slate-900 p-3 rounded-2xl border border-teal-500/40">
             <h4 className="font-black text-teal-300 text-xs">
-              2. Active {myVehicleRule.shortLabel} Route Map &amp; OTP Verification ({activeAcceptedTrips.length})
+              2. Active {myVehicleRule.shortLabel} Route Map &amp; OTP Verification ({(activeAcceptedTrips || []).length})
             </h4>
             <p className="text-[10px] text-slate-400">
               Live GPS route for {currentUser?.vehicleModel || myVehicleRule.shortLabel} ({currentUser?.rcPlate || "TS-01-EF-4599"})
             </p>
           </div>
-          {activeAcceptedTrips.length === 0 ? (
+          {(activeAcceptedTrips || []).length === 0 ? (
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center space-y-2">
               <p className="font-bold text-slate-300">
                 No pending {myVehicleRule.shortLabel} route deliveries right now.
@@ -786,7 +786,7 @@ export default function RiderCaptainPortal({
 
           <div className="bg-slate-900 p-3.5 rounded-2xl border border-amber-500/40 space-y-2.5">
             <h4 className="font-black text-amber-400 text-xs">
-              My {myVehicleRule.shortLabel} Bookings &amp; Payment Request Desk ({allMyVehicleBookings.length})
+              My {myVehicleRule.shortLabel} Bookings &amp; Payment Request Desk ({(allMyVehicleBookings || []).length})
             </h4>
             {allMyVehicleBookings.map((bk) => {
               const fare = Number(bk.captainPayout || bk.deliveryFee || 45);
@@ -888,7 +888,7 @@ export default function RiderCaptainPortal({
               className="w-full bg-slate-950 border border-slate-700 rounded-xl p-1.5 text-white font-bold text-[10px]"
             >
               <option value="ALL">
-                All {myVehicleRule.shortLabel} Trips ({allMyVehicleBookings.length})
+                All {myVehicleRule.shortLabel} Trips ({(allMyVehicleBookings || []).length})
               </option>
               <option value="TODAY">Today (Since 09:00 AM Duty)</option>
             </select>

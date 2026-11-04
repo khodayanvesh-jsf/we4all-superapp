@@ -220,7 +220,7 @@ export function MerchantPortal({
             merchantTab === 'orders' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
           }`}
         >
-          Orders ({orders.length})
+          Orders ({(orders || []).length})
         </button>
         <button
           onClick={() => setMerchantTab('stock')}
@@ -252,7 +252,7 @@ export function MerchantPortal({
               + Simulate Order
             </button>
           </div>
-          {orders.length === 0 ? (
+          {(orders || []).length === 0 ? (
             <p className="text-[11px] text-slate-400 text-center py-6">
               No active product orders right now. Standing by for customer checkout.
             </p>
@@ -442,7 +442,7 @@ export function MerchantPortal({
           >
             Submit to Founder Admin
           </button>
-          {rejectedItems.length > 0 && (
+          {(rejectedItems || []).length > 0 && (
             <div className="bg-rose-950/60 border border-rose-500 p-2 rounded-lg text-rose-200 text-[10px]">
               <p className="font-bold">⚠️ Rejected by Founder:</p>
               {rejectedItems.map((r) => (
@@ -546,7 +546,7 @@ export function ServiceProviderPortal({
             tab === 'bookings' ? 'bg-indigo-500 text-white' : 'text-slate-400'
           }`}
         >
-          Service Bookings ({serviceAppointments.length})
+          Service Bookings ({(serviceAppointments || []).length})
         </button>
         <button
           onClick={() => setTab('slots')}
@@ -560,7 +560,7 @@ export function ServiceProviderPortal({
 
       {tab === 'bookings' && (
         <div className="space-y-3 text-white text-xs">
-          {serviceAppointments.length === 0 ? (
+          {(serviceAppointments || []).length === 0 ? (
             <p className="text-slate-400 text-center py-6 text-[11px]">
               No active service bookings. Book a service from Customer Services tab.
             </p>
@@ -841,7 +841,7 @@ export function DecoratorAndHallPortal({
                   </span>
                 </div>
                 <div className="text-[9px] text-slate-400">
-                  Blocked Dates: {hall.bookedDates.length > 0 ? hall.bookedDates.join(', ') : 'None'}
+                  Blocked Dates: {(hall.bookedDates || []).length > 0 ? hall.bookedDates.join(', ') : 'None'}
                 </div>
                 <button
                   onClick={() => handleToggleHallDate(hall.id, calendarDateInput)}
@@ -890,7 +890,7 @@ export function DecoratorAndHallPortal({
                 setDecorBids([
                   {
                     id: `bid_${Date.now()}`,
-                    maskedVendor: `Verified Decorator #${decorBids.length + 1} (Masked)`,
+                    maskedVendor: `Verified Decorator #${(decorBids || []).length + 1} (Masked)`,
                     price: Number(myBidAmount),
                     features: myBidReason
                   },
@@ -1001,7 +1001,7 @@ export function DeliveryCaptainPortal({
 
       {/* Active Dispatch Queue & Live 3-Point GPS Map */}
       <div className="space-y-2.5 text-white">
-        {orders.length === 0 ? (
+        {(orders || []).length === 0 ? (
           <p className="text-[11px] text-slate-400 py-8 text-center">
             No active dispatches. Standing by in Adilabad.
           </p>
@@ -1157,12 +1157,12 @@ export function FounderAdminWebSuite({
         <aside className="space-y-2">
           {[
             { id: 'monetization', label: '💰 Monetization Engine', count: 'Silent Fees' },
-            { id: 'testing', label: '📱 Multi-Phone Sandbox', count: `${splitScreens.length} Phones` },
+            { id: 'testing', label: '📱 Multi-Phone Sandbox', count: `${(splitScreens || []).length} Phones` },
             { id: 'flow_tester', label: '🧭 1-Click Flow Tester', count: 'QA Switcher' },
             {
               id: 'approvals',
               label: '🛡️ Approvals & New Categories',
-              count: pendingMerchants.length + pendingSubCategories.length
+              count: (pendingMerchants || []).length + (pendingSubCategories || []).length
             },
             { id: 'database', label: '🗄️ Classified Master Database', count: '7 Tables' }
           ].map((tab) => (
@@ -1389,13 +1389,13 @@ export function FounderAdminWebSuite({
               </h2>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { id: 'merchants', label: `1. Merchants (${merchants.length})` },
-                  { id: 'service_providers', label: `2. Service Providers (${serviceProviders.length})` },
-                  { id: 'decorators', label: `3. Decorators (${decorators.length})` },
-                  { id: 'users', label: `4. Consumers (${registeredUsers.length})` },
-                  { id: 'catalog', label: `5. Stock Catalog (${products.length})` },
-                  { id: 'halls', label: `6. Function Halls (${functionHalls.length})` },
-                  { id: 'orders', label: `7. Orders & Bookings (${orders.length + serviceAppointments.length})` }
+                  { id: 'merchants', label: `1. Merchants (${(merchants || []).length})` },
+                  { id: 'service_providers', label: `2. Service Providers (${(serviceProviders || []).length})` },
+                  { id: 'decorators', label: `3. Decorators (${(decorators || []).length})` },
+                  { id: 'users', label: `4. Consumers (${(registeredUsers || []).length})` },
+                  { id: 'catalog', label: `5. Stock Catalog (${(products || []).length})` },
+                  { id: 'halls', label: `6. Function Halls (${(functionHalls || []).length})` },
+                  { id: 'orders', label: `7. Orders & Bookings (${(orders || []).length + (serviceAppointments || []).length})` }
                 ].map((t) => (
                   <button
                     key={t.id}

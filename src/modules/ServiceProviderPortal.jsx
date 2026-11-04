@@ -309,7 +309,7 @@ export default function ServiceProviderPortal({
             <div className="flex justify-between items-center">
               <div>
                 <h4 className="font-black text-indigo-300 text-xs">
-                  1. Scheduled Doorstep Visits ({serviceBookings.length})
+                  1. Scheduled Doorstep Visits ({(serviceBookings || []).length})
                 </h4>
                 <p className="text-[10px] text-slate-400">
                   Verify Geo-Fenced Happy Code to unlock Visiting Fee Escrow & bill spare parts
@@ -366,7 +366,7 @@ export default function ServiceProviderPortal({
             </div>
           </div>
 
-          {serviceBookings.length === 0 ? (
+          {(serviceBookings || []).length === 0 ? (
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center space-y-2">
               <p className="font-bold text-slate-300">No active customer visits in your queue.</p>
               <p className="text-[10px] text-slate-400">
@@ -605,7 +605,7 @@ export default function ServiceProviderPortal({
               <div className="bg-slate-950 border border-slate-800 p-2 rounded-xl">
                 <p className="text-slate-400 text-[9px]">Off-Duty Slots</p>
                 <p className="font-black text-rose-400 text-sm">
-                  {MASTER_ONE_HOUR_SLOTS.length - (activeProProfile.availableSlots || []).length}
+                  {(MASTER_ONE_HOUR_SLOTS || []).length - (activeProProfile.availableSlots || []).length}
                 </p>
               </div>
             </div>
@@ -918,7 +918,7 @@ export default function ServiceProviderPortal({
               <button
                 type="button"
                 onClick={() => {
-                  if (serviceBookings.length === 0) {
+                  if ((serviceBookings || []).length === 0) {
                     alert("No service bookings yet. Tap '+ Test Visit' in the Visits tab first!");
                     return;
                   }
@@ -1005,7 +1005,7 @@ export default function ServiceProviderPortal({
                   </div>
 
                   <div className="space-y-2 pt-1">
-                    {filtered.length === 0 ? (
+                    {(filtered || []).length === 0 ? (
                       <p className="text-center text-slate-400 py-4 text-[11px]">
                         No escrow bills found for this filter. Tap &ldquo;+ Test Visit&rdquo; in Tab 1 to generate a live booking!
                       </p>

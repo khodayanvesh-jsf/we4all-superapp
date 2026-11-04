@@ -372,13 +372,13 @@ export default function DynamicPortalEngine({
         <div className="space-y-2.5">
           <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex justify-between items-center">
             <h4 className="font-black text-amber-400">
-              {tabs[0]?.label || "1. Live Queue"} ({bookingsList.length})
+              {tabs[0]?.label || "1. Live Queue"} ({(bookingsList || []).length})
             </h4>
             <span className="text-[10px] text-slate-400">
               Real-Time Cloud Sync Active
             </span>
           </div>
-          {bookingsList.length === 0 ? (
+          {(bookingsList || []).length === 0 ? (
             <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center space-y-2">
               <p className="font-bold text-slate-300">
                 No active requests in {portalConfig.title} yet.
@@ -435,7 +435,7 @@ export default function DynamicPortalEngine({
         <div className="space-y-2.5">
           <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex justify-between items-center">
             <h4 className="font-black text-emerald-400">
-              {tabs[1]?.label || "2. Active Catalog"} ({itemsList.length})
+              {tabs[1]?.label || "2. Active Catalog"} ({(itemsList || []).length})
             </h4>
             <button
               type="button"

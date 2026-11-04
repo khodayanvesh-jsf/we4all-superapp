@@ -536,9 +536,9 @@ function AppContent() {
   }, []);
   const totalCartCount =
     merchantCart.reduce((s, i) => s + i.qty, 0) +
-    serviceCart.length +
-    decorCart.length +
-    taxiCart.length;
+    (serviceCart || []).length +
+    (decorCart || []).length +
+    (taxiCart || []).length;
 
   const activeOrder =
     orders.find((o) => o.id === activeOrderId && !o.status.includes("CANCELLED")) ||
@@ -553,7 +553,7 @@ function AppContent() {
 
   const getProductBestOffer = (product) => {
     const offers =
-      product.merchantOffers && product.merchantOffers.length > 0
+      product.merchantOffers && (product.merchantOffers || []).length > 0
         ? [...product.merchantOffers].sort((a, b) => a.price - b.price)
         : [
             {
@@ -605,7 +605,7 @@ function AppContent() {
   };
 
   const handlePlaceOrderForCheckout = () => {
-    if (merchantCart.length === 0) return;
+    if ((merchantCart || []).length === 0) return;
     const itemsTotal = merchantCart.reduce((s, i) => s + i.price * i.qty, 0);
     const { totalWeightGrams, totalRouteKm, vehicle, deliveryFee } = calculateOrderLogistics(
       merchantCart,
@@ -841,7 +841,7 @@ function AppContent() {
                     ))}
                   </div>
 
-                  {filteredProducts.length === 0 ? (
+                  {(filteredProducts || []).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
                       <p className="font-black text-xs">
                         Clean Production Server Catalog (0 Pre-Installed Items)
@@ -906,7 +906,7 @@ function AppContent() {
                               ))}
                             </select>
 
-                            {offers.length > 1 && (
+                            {(offers || []).length > 1 && (
                               <button
                                 type="button"
                                 onClick={() =>
@@ -916,7 +916,7 @@ function AppContent() {
                                 }
                                 className="text-[9px] font-black text-indigo-700 underline cursor-pointer"
                               >
-                                Compare {offers.length} Shops
+                                Compare {(offers || []).length} Shops
                               </button>
                             )}
 
@@ -977,7 +977,7 @@ function AppContent() {
                     </select>
                   </div>
 
-                  {serviceProviders.length === 0 ? (
+                  {(serviceProviders || []).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
                       <p className="font-black text-xs">No Active 1-Hr Service Providers Yet</p>
                       <button
@@ -1180,10 +1180,10 @@ function AppContent() {
             <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-3">
               <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-[9px] font-black">
                 {[
-                  { id: "merchant_cart", label: "Stores (" + merchantCart.length + ")" },
-                  { id: "service_cart", label: "1-Hr (" + serviceCart.length + ")" },
-                  { id: "decor_cart", label: "Events (" + decorCart.length + ")" },
-                  { id: "taxi_cart", label: "Rides (" + taxiCart.length + ")" }
+                  { id: "merchant_cart", label: "Stores (" + (merchantCart || []).length + ")" },
+                  { id: "service_cart", label: "1-Hr (" + (serviceCart || []).length + ")" },
+                  { id: "decor_cart", label: "Events (" + (decorCart || []).length + ")" },
+                  { id: "taxi_cart", label: "Rides (" + (taxiCart || []).length + ")" }
                 ].map((ct) => (
                   <button
                     key={ct.id}
@@ -1201,7 +1201,7 @@ function AppContent() {
 
               {activeCartViewTab === "merchant_cart" && (
                 <div className="space-y-2">
-                  {merchantCart.length === 0 ? (
+                  {(merchantCart || []).length === 0 ? (
                     <p className="text-center py-4 text-slate-500 font-bold">
                       Your store cart is empty.
                     </p>
@@ -1237,7 +1237,7 @@ function AppContent() {
 
               {activeCartViewTab === "service_cart" && (
                 <div className="space-y-2">
-                  {serviceCart.length === 0 ? (
+                  {(serviceCart || []).length === 0 ? (
                     <p className="text-center py-4 text-slate-500 font-bold">
                       No 1-Hr Service bookings in cart.
                     </p>
@@ -1280,7 +1280,7 @@ function AppContent() {
                       <span className="font-black">Rs.{d.price}</span>
                     </div>
                   ))}
-                  {decorCart.length > 0 && (
+                  {(decorCart || []).length > 0 && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1305,7 +1305,7 @@ function AppContent() {
                       <span className="font-black">Rs.{r.fare}</span>
                     </div>
                   ))}
-                  {taxiCart.length > 0 && (
+                  {(taxiCart || []).length > 0 && (
                     <button
                       type="button"
                       onClick={() => {
@@ -1493,7 +1493,7 @@ function AppContent() {
           </div>
 
           <div className="space-y-2 border-t pt-2">
-            <h3 className="font-black text-xs">Incoming Customer Orders ({orders.length})</h3>
+            <h3 className="font-black text-xs">Incoming Customer Orders ({(orders || []).length})</h3>
             {orders.map((o) => (
               <div key={o.id} className="p-2 border rounded-xl flex justify-between items-center">
                 <div>
@@ -1560,7 +1560,7 @@ function AppContent() {
           </button>
 
           <div className="space-y-2 border-t pt-2">
-            <h3 className="font-black text-xs">Escrow Bookings ({serviceBookings.length})</h3>
+            <h3 className="font-black text-xs">Escrow Bookings ({(serviceBookings || []).length})</h3>
             {serviceBookings.map((sb) => (
               <div key={sb.id} className="p-2 border rounded-xl space-y-1.5">
                 <p className="font-black text-xs">
@@ -1889,7 +1889,7 @@ function AppContent() {
                 footerTab={footerTab}
                 setFooterTab={setFooterTab}
                 totalCartCount={totalCartCount}
-                totalOrdersCount={orders.length}
+                totalOrdersCount={(orders || []).length}
                 brightTheme={brightTheme}
                 lang={lang}
                 setLang={setLang}
@@ -1908,7 +1908,7 @@ function AppContent() {
           footerTab={footerTab}
           setFooterTab={setFooterTab}
           totalCartCount={totalCartCount}
-          totalOrdersCount={orders.length}
+          totalOrdersCount={(orders || []).length}
           floatingLiveOrder={activeOrder}
           onOpenLiveOrderModal={() => setLiveOrderDrawerOpen(true)}
           onOpenAdminConsole={openFounderAdminGate}

@@ -97,7 +97,7 @@ export function VoiceAndQuickChipsBar({
 }
 
 export function StickyBottomCartPill({ merchantCart = [], onOpenCart }) {
-  if (!merchantCart || merchantCart.length === 0) return null;
+  if (!merchantCart || (merchantCart || []).length === 0) return null;
   const totalQty = merchantCart.reduce((s, i) => s + (i.qty || 1), 0);
   const totalPrice = merchantCart.reduce(
     (s, i) => s + Number(i.price || 0) * (i.qty || 1),

@@ -16,14 +16,14 @@ export default function GeoTargetedAdBanner({
     .sort((a, b) => (tierWeight[a.tier] || 9) - (tierWeight[b.tier] || 9));
 
   useEffect(() => {
-    if (sortedAds.length <= 1) return;
+    if ((sortedAds || []).length <= 1) return;
     const timer = setInterval(() => {
-      setActiveSlideIdx((prev) => (prev + 1) % sortedAds.length);
+      setActiveSlideIdx((prev) => (prev + 1) % (sortedAds || []).length);
     }, 4500);
     return () => clearInterval(timer);
-  }, [sortedAds.length, selectedTier]);
+  }, [(sortedAds || []).length, selectedTier]);
 
-  if (sortedAds.length === 0) {
+  if ((sortedAds || []).length === 0) {
     return (
       <div
         className={`rounded-2xl p-2.5 border text-[10px] flex items-center justify-between ${
@@ -42,7 +42,7 @@ export default function GeoTargetedAdBanner({
     );
   }
 
-  const currentAd = sortedAds[activeSlideIdx % Math.max(sortedAds.length, 1)] || sortedAds[0];
+  const currentAd = sortedAds[activeSlideIdx % Math.max((sortedAds || []).length, 1)] || sortedAds[0];
 
   return (
     <div
@@ -80,7 +80,7 @@ export default function GeoTargetedAdBanner({
           ))}
         </div>
         <span className="text-[9px] font-bold text-emerald-600">
-          {(activeSlideIdx % sortedAds.length) + 1}/{sortedAds.length}
+          {(activeSlideIdx % (sortedAds || []).length) + 1}/{(sortedAds || []).length}
         </span>
       </div>
 
