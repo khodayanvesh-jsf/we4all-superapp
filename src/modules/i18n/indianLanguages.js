@@ -60,9 +60,11 @@ export const TRANSLATIONS = {
   }
 };
 
-export const GEO_SLANG_REGIONS = {
+const RAW_GEO_SLANG_REGIONS = {
   TELANGANA: {
+    id: "TELANGANA",
     regionCode: "TELANGANA",
+    stateName: "Telangana (Adilabad / Nirmal / Hyderabad)",
     stateLabel: "Telangana (Adilabad / Nirmal / Hyderabad)",
     standSlang: "Labour Adda / Mestri Chowk | Morning 7:00 AM - 11:00 AM",
     workerSlang: "Adda Coolie / Mestri / Beldar",
@@ -71,7 +73,7 @@ export const GEO_SLANG_REGIONS = {
     bhattaSlang: "Chai-Pani & Tiffin Bhatta",
     halfDaySlang: "Poddu / Half-Shift (8 AM - 1 PM)",
     overtimeSlang: "Extra Ganta / Double Shift",
-    toolsSlang: "Gampa,Para,Thapi & Own Tools",
+    toolsSlang: "Gampa, Para, Thapi & Own Tools",
     labourRoleTitle: "Adda Coolie / Mestri & Worksite Hands",
     supervisorTitle: "Mestri / Site Munshi",
     dailyWageLabel: "Dehadi / Roju Coolie",
@@ -79,7 +81,9 @@ export const GEO_SLANG_REGIONS = {
     urgentBadge: "Pakka Local Mestri Verified"
   },
   MAHARASHTRA: {
+    id: "MAHARASHTRA",
     regionCode: "MAHARASHTRA",
+    stateName: "Maharashtra (Kinwat / Nanded / Nagpur)",
     stateLabel: "Maharashtra (Kinwat / Nanded / Nagpur)",
     standSlang: "Kamgar Naka / Majoor Adda | Morning 7:00 AM - 11:00 AM",
     workerSlang: "Naka Kamgar / Goundi Mestri / Bigari",
@@ -88,7 +92,7 @@ export const GEO_SLANG_REGIONS = {
     bhattaSlang: "Cutting Chai & Vada-Pav Bhatta",
     halfDaySlang: "Ardha Divas (Half-Day Shift)",
     overtimeSlang: "Overtime / Extra Taas",
-    toolsSlang: "Ghamela, फावडे (Phavde), Thapi",
+    toolsSlang: "Ghamela, Phavde, Thapi & Own Tools",
     labourRoleTitle: "Naka Kamgar & Goundi Mestri",
     supervisorTitle: "Mukadam / Mestri",
     dailyWageLabel: "Rozandari / Majuri",
@@ -96,7 +100,9 @@ export const GEO_SLANG_REGIONS = {
     urgentBadge: "Naka Kamgar Instant Dispatch"
   },
   KARNATAKA: {
+    id: "KARNATAKA",
     regionCode: "KARNATAKA",
+    stateName: "Karnataka (Bidar / Kalaburagi / Bengaluru)",
     stateLabel: "Karnataka (Bidar / Kalaburagi / Bengaluru)",
     standSlang: "Coolie Katte / Mestri Circle | Morning 7:00 AM - 11:00 AM",
     workerSlang: "Gare Kelasa / Mestri / Coolie Aalu",
@@ -113,7 +119,9 @@ export const GEO_SLANG_REGIONS = {
     urgentBadge: "Local Mestri Verified"
   },
   TAMIL_NADU: {
+    id: "TAMIL_NADU",
     regionCode: "TAMIL_NADU",
+    stateName: "Tamil Nadu (Chennai / Coimbatore / Madurai)",
     stateLabel: "Tamil Nadu (Chennai / Coimbatore / Madurai)",
     standSlang: "Thozhilalar Stand / Kalavasal | Morning 7:00 AM - 11:00 AM",
     workerSlang: "Kothanar / Periya Mestri / Chithal",
@@ -122,7 +130,7 @@ export const GEO_SLANG_REGIONS = {
     bhattaSlang: "Tea & Bajaar Allowance",
     halfDaySlang: "Arai Naal Shift",
     overtimeSlang: "Extra Mani Neram",
-    toolsSlang: "Manvetti,Chatti & Karandi",
+    toolsSlang: "Manvetti, Chatti & Karandi",
     labourRoleTitle: "Kothanar / Periya Mestri & Chithal",
     supervisorTitle: "Periya Mestri",
     dailyWageLabel: "Dina Kooli (Daily Wage)",
@@ -131,25 +139,40 @@ export const GEO_SLANG_REGIONS = {
   }
 };
 
+function wrapSafeRegionProxy(regionObj) {
+  const base = { ...RAW_GEO_SLANG_REGIONS.TELANGANA, ...(regionObj || {}) };
+  if (typeof Proxy === "undefined") return base;
+  return new Proxy(base, {
+    get(target, prop) {
+      if (prop in target && target[prop] !== undefined && target[prop] !== null) {
+        return target[prop];
+      }
+      if (typeof prop === "string") {
+        return `${target.stateName || "Telangana (Adilabad)"} | Verified Local`;
+      }
+      return target[prop];
+    }
+  });
+}
+
+export const GEO_SLANG_REGIONS = {
+  TELANGANA: wrapSafeRegionProxy(RAW_GEO_SLANG_REGIONS.TELANGANA),
+  MAHARASHTRA: wrapSafeRegionProxy(RAW_GEO_SLANG_REGIONS.MAHARASHTRA),
+  KARNATAKA: wrapSafeRegionProxy(RAW_GEO_SLANG_REGIONS.KARNATAKA),
+  TAMIL_NADU: wrapSafeRegionProxy(RAW_GEO_SLANG_REGIONS.TAMIL_NADU)
+};
+
+export const GEO_SLANG_DICTIONARY = GEO_SLANG_REGIONS;
+
 export function getGeoSlangConfig(regionKey = "TELANGANA") {
   const key = String(regionKey || "TELANGANA").toUpperCase();
   const matched =
-    GEO_SLANG_REGIONS[key] ||
-    Object.values(GEO_SLANG_REGIONS).find((r) =>
-      r.stateLabel.toUpperCase().includes(key)
+    RAW_GEO_SLANG_REGIONS[key] ||
+    Object.values(RAW_GEO_SLANG_REGIONS).find((r) =>
+      r.stateName.toUpperCase().includes(key)
     ) ||
-    GEO_SLANG_REGIONS.TELANGANA;
-  return {
-    ...GEO_SLANG_REGIONS.TELANGANA,
-    ...matched,
-    standSlang: String(
-      matched?.standSlang || "Labour Adda / Naka Stand | Morning 7:00 AM - 11:00 AM"
-    ),
-    workerSlang: String(matched?.workerSlang || "Adda Coolie / Mestri"),
-    contractorSlang: String(matched?.contractorSlang || "Mestri / Mukadam"),
-    wageSlang: String(matched?.wageSlang || "Dehadi / Daily Wage"),
-    bhattaSlang: String(matched?.bhattaSlang || "Chai-Pani Bhatta")
-  };
+    RAW_GEO_SLANG_REGIONS.TELANGANA;
+  return wrapSafeRegionProxy(matched);
 }
 
 export function getLangText(langCode) {

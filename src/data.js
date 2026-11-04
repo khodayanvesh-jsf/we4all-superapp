@@ -8,10 +8,10 @@ export const INITIAL_APP_UPDATE_INFO = {
 };
 
 export const GEO_ZONES = [
-  { id: "adilabad", name: "Adilabad Town HQ", state: "Telangana", radiusKm: 12, active: true },
-  { id: "nirmal", name: "Nirmal Hub", state: "Telangana", radiusKm: 10, active: true },
-  { id: "mancherial", name: "Mancherial Zone", state: "Telangana", radiusKm: 15, active: true },
-  { id: "armoor", name: "Armoor / Nizamabad", state: "Telangana", radiusKm: 12, active: true }
+  { id: "adilabad", name: "Adilabad Town HQ", state: "Telangana", stateName: "Telangana (Adilabad)", radiusKm: 12, active: true },
+  { id: "nirmal", name: "Nirmal Hub", state: "Telangana", stateName: "Telangana (Adilabad)", radiusKm: 10, active: true },
+  { id: "mancherial", name: "Mancherial Zone", state: "Telangana", stateName: "Telangana (Adilabad)", radiusKm: 15, active: true },
+  { id: "armoor", name: "Armoor / Nizamabad", state: "Telangana", stateName: "Telangana (Adilabad)", radiusKm: 12, active: true }
 ];
 
 export const INITIAL_GEO_ADS = [

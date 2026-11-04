@@ -1045,7 +1045,7 @@ function AppContent() {
       {
         id: "CAT_LABOUR",
         icon: "\uD83D\uDC77",
-        label: geoSlang.standSlang.split("(")[0].trim()
+        label: String(geoSlang?.standSlang || "Labour Adda | Morning 7:00 AM - 11:00 AM").split("(")[0].trim()
       },
       {
         id: "CAT_SERVICES",
@@ -1177,7 +1177,7 @@ function AppContent() {
               <span className="text-slate-300 block text-[8px]">
                 {t.deliverTo}{" "}
                 {isAuthenticated ? cleanLabel(currentUser.fullName) : "Guest"} (
-                {geoSlang.stateName.split(" ")[0]})
+                {String(geoSlang?.stateName || geoSlang?.stateLabel || geoSlang?.name || "Telangana (Adilabad)").split(" ")[0]})
               </span>
               <span className="text-amber-300 font-black text-[10px]">
                 {activeAddressObj.label}: {activeAddressObj.fullAddress}
@@ -1236,7 +1236,7 @@ function AppContent() {
                   Shop &amp; Book by Category (Tap Any Icon):
                 </span>
                 <span className="text-[9px] font-bold text-emerald-700">
-                  {geoSlang.stateName.split("(")[0]} Slang Active
+                  {String(geoSlang?.stateName || geoSlang?.stateLabel || geoSlang?.name || "Telangana (Adilabad)").split("(")[0]} Slang Active
                 </span>
               </div>
               <div className="grid grid-cols-5 gap-1.5">
