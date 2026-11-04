@@ -1,9 +1,9 @@
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "3.1.0";
+const CURRENT_SCHEMA_VERSION = "3.1.2";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
 const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
 const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
-const SCHEMA_MIGRATED_KEY = "we4all_schema_migrated_v310_prod";
+const SCHEMA_MIGRATED_KEY = "we4all_schema_migrated_v312_prod";
 const ZONE_MASTER_ID = "adilabad_master";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://bdmbziwazpuzbukazmug.supabase.co";

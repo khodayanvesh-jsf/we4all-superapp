@@ -1,9 +1,9 @@
 {
-  "currentVersion": "3.1.0",
-  "latestAvailableVersion": "3.1.0",
-  "updateAvailable": false,
-  "publishedAt": "2026-11-04T02:00:00Z",
+  "currentVersion": "3.1.2",
+  "latestAvailableVersion": "3.1.2",
+  "updateAvailable": true,
+  "publishedAt": "2026-11-04T07:45:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.1.0",
-  "releaseNotes": "WE4ALL v3.1.0 Final Master Release: All 6 Portals, Guest Consumer Mode, Multi-Shop Buy Box, Silent Prime Merge, 3-Page Decor Reverse Bidding, 1-Hr Service Slots & Happy Code Escrow, 3-Pt Captain Radar, 12 Indian Languages & Live GPS Admin Locator."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.1.2",
+  "releaseNotes": "WE4ALL v3.1.2 Production OTA: Resolved standSlang startup crash, restored all 48 modules, linked live Supabase & GPS Locator."
 }
