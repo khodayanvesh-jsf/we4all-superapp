@@ -3,6 +3,7 @@ import React, { useState } from "react";
 export default function OrdersHistoryAndInvoice({
   orders = [],
   serviceBookings = [],
+  labourBookings = [],
   onCancelOrder,
   onReturnOrder,
   onOpenLiveMap,
@@ -14,7 +15,7 @@ export default function OrdersHistoryAndInvoice({
   const handleDownloadPdfInvoice = (ord) => {
     const printWin = window.open("", "_blank", "width=720,height=850");
     if (!printWin) {
-      if (onTriggerToast) onTriggerToast("Allow pop-ups to save/print PDF Invoice.");
+      if (onTriggerToast) onTriggerToast("Allow pop-ups to save/print PDF Tax Invoice.");
       return;
     }
     const itemsHtml = (ord.items || [])
@@ -47,18 +48,18 @@ export default function OrdersHistoryAndInvoice({
       <body>
         <div class="header">
           <div>
-            <h2 style="margin:0;color:#059669;">WE4ALL VOCALFORLOCAL ADILABAD</h2>
-            <p style="margin:4px 0 0;font-size:12px;">Founder: Khoday Anvesh | Official Hyperlocal Tax Invoice</p>
+            <h2 style="margin:0;color:#059669;">WE4ALL VOCALFORLOCAL SUPER-APP</h2>
+            <p style="margin:4px 0 0;font-size:12px;">Founder: Khoday Anvesh | Official Hyperlocal GST Tax Invoice</p>
           </div>
           <div style="text-align:right;">
             <span class="badge">PAID VIA ${ord.paidViaApp || "UPI"}</span>
             <p style="margin:6px 0 0;font-size:12px;"><strong>Invoice #:</strong> INV-${ord.id}</p>
-            <p style="margin:2px 0 0;font-size:11px;"><strong>Date:</strong> ${ord.dateStr || "2026-10-28"} ${ord.createdAt || ""}</p>
+            <p style="margin:2px 0 0;font-size:11px;"><strong>Date:</strong> ${ord.dateStr || new Date().toISOString().slice(0, 10)} ${ord.createdAt || ""}</p>
           </div>
         </div>
         <div style="margin-top:14px;font-size:12px;line-height:1.5;">
-          <p><strong>Customer:</strong> ${ord.customerName || "Khoday Anvesh"} | <strong>Delivery Address:</strong> ${ord.address || "Subhash Nagar, Adilabad"}</p>
-          <p><strong>Fulfilled By:</strong> ${ord.shopName || "Verified Adilabad Partner"} | <strong>Status:</strong> ${ord.status}</p>
+          <p><strong>Customer:</strong> ${ord.customerName || "Verified Customer"} | <strong>Delivery Address:</strong> ${ord.address || "Adilabad"}</p>
+          <p><strong>Fulfilled By:</strong> ${ord.shopName || "Verified Partner"} | <strong>Status:</strong> ${ord.status}</p>
         </div>
         <table>
           <thead>
@@ -74,7 +75,7 @@ export default function OrdersHistoryAndInvoice({
         <div class="totals">
           <div>Items Subtotal: <strong>Rs.${ord.itemsTotal || ord.grandTotal}</strong></div>
           <div>Logistics / Delivery Fee: <strong>Rs.${ord.deliveryFee || 0}</strong></div>
-          <div>5% GST & Platform Governance: <strong>Rs.${ord.gst || 0}</strong></div>
+          <div>5% GST & Governance: <strong>Rs.${ord.gst || 0}</strong></div>
           <div style="font-size:16px;color:#059669;">Grand Total Paid: <strong>Rs.${ord.grandTotal}</strong></div>
         </div>
         <div class="footer">
@@ -99,7 +100,7 @@ export default function OrdersHistoryAndInvoice({
     <div className="space-y-3 text-xs">
       <div className="flex justify-between items-center">
         <h3 className="font-black text-emerald-500 text-sm">
-          Orders History & PDF Tax Invoices ({orders.length + serviceBookings.length})
+          Orders History & PDF Tax Invoices ({orders.length + serviceBookings.length + labourBookings.length})
         </h3>
       </div>
 
@@ -126,6 +127,12 @@ export default function OrdersHistoryAndInvoice({
         ))}
       </div>
 
+      {filteredOrders.length === 0 && serviceBookings.length === 0 && labourBookings.length === 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400">
+          No orders or bookings recorded yet. Place an order to generate live tracking and PDF invoices.
+        </div>
+      )}
+
       {filteredOrders.map((ord) => {
         const isExpanded = expandedOrderId === ord.id;
         return (
@@ -139,7 +146,7 @@ export default function OrdersHistoryAndInvoice({
                   #{ord.id} - {ord.shopName || ord.categoryName}
                 </p>
                 <p className="text-[10px] text-slate-400">
-                  {ord.dateStr || "2026-10-28"} {ord.createdAt} | Paid via {ord.paidViaApp || "UPI"}
+                  {ord.dateStr || "Today"} {ord.createdAt} | Paid via {ord.paidViaApp || "UPI"}
                 </p>
               </div>
               <span className="font-black text-amber-300 text-sm">Rs.{ord.grandTotal}</span>
@@ -175,11 +182,11 @@ export default function OrdersHistoryAndInvoice({
                     <span>Rs.{ord.itemsTotal}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Delivery & Logistics ({ord.vehicle || "2W"}):</span>
+                    <span>Logistics / Delivery ({ord.vehicle || "2W"}):</span>
                     <span>Rs.{ord.deliveryFee}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>5% GST & Platform Fee:</span>
+                    <span>5% GST & Governance:</span>
                     <span>Rs.{ord.gst}</span>
                   </div>
                   <div className="flex justify-between font-black text-white text-xs pt-1">

@@ -1,9 +1,10 @@
 {
-  "currentVersion": "3.1.2",
-  "latestAvailableVersion": "3.2.0",
-  "updateAvailable": true,
-  "publishedAt": "2026-11-04T08:15:00Z",
+  "currentVersion": "3.1.0",
+  "latestAvailableVersion": "3.1.0",
+  "updateAvailable": false,
+  "publishedAt": "2026-11-04T08:00:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.2.0",
-  "releaseNotes": "WE4ALL v3.2.0 Complete Release: All Portals Unified & Crash-Shielded, getGeoSlangConfig Restored, Heavy/Labor Merchant Billing, 35%|85% Decor Escrow, 1-Hr Service Slots, 3-Pt Captain Radar & Account-Only In-App Updater."
+  "adminWebUrl": "https://we-4-all-super-app.vercel.app/admin",
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
+  "releaseNotes": "WE4ALL v3.1.0 Production Release: Clean Zero-Preinstalled Server State, Full 12-Language UI Translation, 7 Separated Portals (including Labour Adda), Dedicated Web & Mobile Admin Suite (/admin), and Zero-Loss OTA."
 }

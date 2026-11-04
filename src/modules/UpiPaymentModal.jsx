@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 
 const UPI_APPS = [
-  { id: "phonepe", name: "PhonePe", badge: "Fastest in Adilabad", icon: "" },
-  { id: "gpay", name: "Google Pay (GPay)", badge: "Zero-MDR Instant", icon: "" },
-  { id: "paytm", name: "Paytm UPI", badge: "Instant Wallet/UPI", icon: "" },
-  { id: "bhim", name: "BHIM NPCI Official", badge: "Direct Bank UPI", icon: "" },
-  { id: "cred", name: "CRED Pay", badge: "Cashback UPI", icon: "" }
+  { id: "phonepe", name: "PhonePe", badge: "Fastest in Adilabad", icon: "\uD83D\uDFE3" },
+  { id: "gpay", name: "Google Pay (GPay)", badge: "Zero-MDR Instant", icon: "\uD83D\uDD35" },
+  { id: "paytm", name: "Paytm UPI", badge: "Instant Wallet/UPI", icon: "\uD83D\uDC99" },
+  { id: "bhim", name: "BHIM NPCI Official", badge: "Direct Bank UPI", icon: "\uD83D\uDFE0" },
+  { id: "cred", name: "CRED Pay", badge: "Cashback UPI", icon: "\u26AB" }
 ];
 
 export default function UpiPaymentModal({
@@ -62,7 +62,7 @@ export default function UpiPaymentModal({
           <div className="text-right">
             <p className="text-[10px] text-emerald-300 font-bold">Linked UPI ID</p>
             <p className="text-[11px] font-mono text-slate-200">
-              {userBankDetails?.upiId || "khodayanvesh@ybl"}
+              {userBankDetails?.upiId || "Not Set (Edit in Account)"}
             </p>
           </div>
         </div>

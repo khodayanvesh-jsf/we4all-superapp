@@ -2,16 +2,16 @@ import React, { useState, useEffect } from "react";
 
 export default function GeoTargetedAdBanner({
   adsList = [],
-  userTown = "Adilabad",
+  userZone = "Adilabad",
   userState = "Telangana",
-  brightTheme = false,
-  onOpenDealBox
+  brightTheme = true,
+  onSelectAdAction
 }) {
   const [selectedTier, setSelectedTier] = useState("ALL_PRIORITY");
   const [activeSlideIdx, setActiveSlideIdx] = useState(0);
 
   const tierWeight = { GEO_LOCAL: 1, STATE_LEVEL: 2, BRAND_NATIONAL: 3 };
-  const sortedAds = [...(adsList || [])]
+  const sortedAds = [...adsList]
     .filter((ad) => selectedTier === "ALL_PRIORITY" || ad.tier === selectedTier)
     .sort((a, b) => (tierWeight[a.tier] || 9) - (tierWeight[b.tier] || 9));
 
@@ -23,22 +23,40 @@ export default function GeoTargetedAdBanner({
     return () => clearInterval(timer);
   }, [sortedAds.length, selectedTier]);
 
-  const currentAd = sortedAds[activeSlideIdx % Math.max(1, sortedAds.length)] || sortedAds[0];
-  if (!currentAd) return null;
+  if (sortedAds.length === 0) {
+    return (
+      <div
+        className={`rounded-2xl p-2.5 border text-[10px] flex items-center justify-between ${
+          brightTheme
+            ? "bg-emerald-50/70 border-emerald-300 text-slate-700"
+            : "bg-slate-900 border-emerald-500/30 text-slate-300"
+        }`}
+      >
+        <span>
+          <strong className="text-emerald-600">Geo-Ad Engine Ready:</strong> 1st {userZone} GPS &rarr; 2nd {userState} &rarr; 3rd Brand Ads
+        </span>
+        <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[8px]">
+          0% Markup
+        </span>
+      </div>
+    );
+  }
+
+  const currentAd = sortedAds[activeSlideIdx % Math.max(sortedAds.length, 1)] || sortedAds[0];
 
   return (
     <div
       className={`rounded-2xl p-2.5 border transition-all space-y-2 ${
         brightTheme
-          ? "bg-gradient-to-r from-emerald-50 via-amber-50 to-teal-50 border-emerald-300 text-slate-900 shadow-sm"
-          : "bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 border-emerald-500/40 text-white"
+          ? "bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 border-emerald-400 text-slate-900 shadow-sm"
+          : "bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-900 border-emerald-500/40 text-white"
       }`}
     >
-      <div className="flex items-center justify-between gap-1">
-        <div className="flex gap-1 overflow-x-auto">
+      <div className="flex items-center justify-between gap-1 flex-wrap">
+        <div className="flex gap-1 flex-wrap">
           {[
-            { id: "ALL_PRIORITY", label: "1\u21922\u21923 Auto Geo" },
-            { id: "GEO_LOCAL", label: `1. ${userTown} Geo` },
+            { id: "ALL_PRIORITY", label: "Auto 1-2-3" },
+            { id: "GEO_LOCAL", label: `1. ${userZone} GPS` },
             { id: "STATE_LEVEL", label: `2. ${userState}` },
             { id: "BRAND_NATIONAL", label: "3. Brand Ads" }
           ].map((t) => (
@@ -49,51 +67,43 @@ export default function GeoTargetedAdBanner({
                 setSelectedTier(t.id);
                 setActiveSlideIdx(0);
               }}
-              className={`px-2 py-0.5 rounded-full text-[8px] font-black cursor-pointer shrink-0 ${
+              className={`px-2 py-0.5 rounded-full text-[9px] font-black cursor-pointer ${
                 selectedTier === t.id
-                  ? "bg-emerald-500 text-slate-950"
+                  ? "bg-emerald-600 text-white"
                   : brightTheme
                   ? "bg-white text-slate-700 border border-slate-300"
-                  : "bg-slate-900 text-slate-300 border border-slate-700"
+                  : "bg-slate-800 text-slate-300"
               }`}
             >
               {t.label}
             </button>
           ))}
         </div>
-        {onOpenDealBox && (
-          <button
-            type="button"
-            onClick={onOpenDealBox}
-            className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-lg text-[8px] cursor-pointer shrink-0 shadow"
-          >
-            \uD83C\uDF81 Deal Box
-          </button>
-        )}
+        <span className="text-[9px] font-bold text-emerald-600">
+          {(activeSlideIdx % sortedAds.length) + 1}/{sortedAds.length}
+        </span>
       </div>
 
       <div className="flex items-center justify-between gap-2.5">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="bg-amber-400 text-slate-950 text-[7px] font-black px-1.5 py-0.5 rounded uppercase">
-              {currentAd.tier === "GEO_LOCAL"
-                ? `1ST PRIORITY \u2022 ${currentAd.regionLabel}`
-                : currentAd.tier === "STATE_LEVEL"
-                ? `2ND PRIORITY \u2022 ${currentAd.regionLabel}`
-                : `3RD PRIORITY \u2022 ${currentAd.regionLabel}`}
-            </span>
-            <span className="text-[8px] font-bold text-emerald-400">
-              {(activeSlideIdx % sortedAds.length) + 1}/{sortedAds.length}
-            </span>
-          </div>
-          <p className="text-[11px] font-black truncate mt-0.5">{currentAd.title}</p>
-          <p className="text-[9px] opacity-85 truncate">{currentAd.subtitle}</p>
+          <span className="bg-amber-400 text-slate-950 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">
+            {currentAd.tier === "GEO_LOCAL"
+              ? `1ST PRIORITY: ${currentAd.regionLabel}`
+              : currentAd.tier === "STATE_LEVEL"
+              ? `2ND PRIORITY: ${currentAd.regionLabel}`
+              : `3RD PRIORITY: ${currentAd.regionLabel}`}
+          </span>
+          <p className="text-xs font-black truncate mt-1">{currentAd.title}</p>
+          <p className={`text-[10px] truncate ${brightTheme ? "text-slate-600" : "text-slate-300"}`}>
+            {currentAd.subtitle}
+          </p>
         </div>
         {currentAd.image && (
           <img
             src={currentAd.image}
             alt={currentAd.title}
-            className="w-12 h-12 rounded-xl object-cover border border-emerald-400/50 shrink-0"
+            onClick={() => onSelectAdAction && onSelectAdAction(currentAd)}
+            className="w-12 h-12 rounded-xl object-cover border border-emerald-400/50 shrink-0 cursor-pointer"
           />
         )}
       </div>

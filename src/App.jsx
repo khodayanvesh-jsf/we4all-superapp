@@ -1,73 +1,55 @@
-import { wipeAllOnlineAndOfflineData, startRealtimeMobileSensorStream } from "./supabaseClient";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   INITIAL_APP_UPDATE_INFO,
+  GEO_ZONES,
   INITIAL_GEO_ADS,
   INITIAL_CATEGORIES,
   SERVICE_CATEGORIES,
+  LABOUR_TRADE_CATEGORIES,
   INITIAL_MERCHANTS,
   INITIAL_SERVICE_PROVIDERS,
   INITIAL_DECORATORS,
   INITIAL_PRODUCTS,
   INITIAL_FUNCTION_HALLS,
-  INITIAL_RIDERS
+  DECORATION_SERVICE_MODULES,
+  INITIAL_RIDERS,
+  INITIAL_LABOUR_WORKERS
 } from "./data";
 import {
+  INDIAN_LANGUAGES,
   getLangText,
-  getGeoSlangConfig,
-  GEO_SLANG_REGIONS
+  translateCategoryName
 } from "./modules/i18n/indianLanguages";
 import GeoTargetedAdBanner from "./modules/ads/GeoTargetedAdBanner";
 import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
 import OrdersHistoryAndInvoice from "./modules/OrdersHistoryAndInvoice";
 import OwnerAccountProfile from "./modules/OwnerAccountProfile";
+import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
-import MerchantPortal from "./modules/MerchantPortal";
-import ServiceProviderPortal from "./modules/ServiceProviderPortal";
-import DecoratorPortal from "./modules/DecoratorPortal";
-import RiderCaptainPortal, { VEHICLE_CONSORT_RULES } from "./modules/RiderCaptainPortal";
-import LabourWorksitePortal, {
-  LABOUR_SKILL_CATEGORIES,
-  INITIAL_LABOUR_WORKERS
-} from "./modules/LabourWorksitePortal";
-import DynamicPortalEngine, { PortalPowerToolsBar } from "./modules/DynamicPortalEngine";
 import LiveRouteMap from "./modules/LiveRouteMap";
+import { verifyModulePipelineIntegrity } from "./modules/security/CodeSecurityGuard";
 import {
   saveCloudAndLocalState,
   loadCloudAndLocalState,
+  wipeAllPreinstalledServerData,
   subscribeToRealtimeUpdates,
   checkLiveCloudOtaManifest,
-  performZeroLossOtaUpdate,
-  getDeviceInstalledVersion
+  performZeroLossOtaUpdate
 } from "./supabaseClient";
-import {
-  linkMobileHardwareServicesSilently,
-  sendMobileOsTrayNotification,
-  verifyPhoneHardwareBiometric,
-  recordUserActivityTelemetry,
-  getPersonalizedRecommendations
-} from "./modules/native/MobileHardwareBridge";
-
-function cleanLabel(str = "") {
-  return String(str || "")
-    .replace(/\\u[0-9a-fA-F]{4}/g, "")
-    .replace(/^u[0-9a-fA-F]{3,4}\s*/i, "")
-    .trim();
-}
 
 function FounderLogoBadge({ logoUrl }) {
   return (
     <div
       title="WE4ALL Official Emblem"
-      className="relative w-9 h-9 rounded-full border-2 border-amber-400 ring-2 ring-emerald-500/50 bg-gradient-to-b from-[#07261e] to-[#04120e] flex flex-col items-center justify-center overflow-hidden shadow-lg shrink-0 select-none"
+      className="relative w-10 h-10 rounded-full border-2 border-amber-400 ring-2 ring-emerald-500/50 bg-gradient-to-b from-[#07261e] to-[#04120e] flex flex-col items-center justify-center overflow-hidden shadow-lg shrink-0 select-none"
     >
       {logoUrl ? (
         <img src={logoUrl} alt="WE4ALL" className="w-full h-full object-cover" />
       ) : (
         <div className="flex flex-col items-center justify-center text-center leading-none">
           <span className="text-[7px] font-black text-amber-400">WE4ALL</span>
-          <span className="text-[5px] font-extrabold text-emerald-300">FOUNDER</span>
+          <span className="text-[6px] font-extrabold text-emerald-300">FOUNDER</span>
           <span className="text-[5px] font-bold text-white">ANVESH</span>
         </div>
       )}
@@ -75,7 +57,35 @@ function FounderLogoBadge({ logoUrl }) {
   );
 }
 
-// Clean Amazon-Style Mobile & Web Shell (Zero Header Clutter)
+function calculateOrderLogistics(items = [], consumerDistanceKm = 1.8, heavyFee = 0, laborFee = 0) {
+  const totalWeightGrams = items.reduce(
+    (sum, it) => sum + (it.weightGrams || 1000) * (it.qty || 1),
+    0
+  );
+  const uniqueMerchantsCount = new Set(items.map((i) => i.merchantName)).size || 1;
+  const totalRouteKm = Number(
+    (consumerDistanceKm + Math.max(0, uniqueMerchantsCount - 1) * 1.1).toFixed(1)
+  );
+
+  let vehicle = "2W Bike Captain (Up to 45kg)";
+  let baseDelivery = 25;
+
+  if (totalWeightGrams <= 45000) {
+    if (totalRouteKm > 2.5) {
+      baseDelivery += Math.ceil((totalRouteKm - 2.5) * 5.5);
+    }
+  } else if (totalWeightGrams <= 300000) {
+    vehicle = "3W Cargo Auto (Up to 300kg)";
+    baseDelivery = 150 + Math.ceil(totalRouteKm * 18);
+  } else {
+    vehicle = "4W Mini-Truck Heavy Transport (>300kg)";
+    baseDelivery = 350 + Math.ceil(totalRouteKm * 25);
+  }
+
+  const deliveryFee = baseDelivery + Number(heavyFee || 0) + Number(laborFee || 0);
+  return { totalWeightGrams, totalRouteKm, vehicle, deliveryFee };
+}
+
 function MobilePhoneShell({
   title,
   badge,
@@ -86,55 +96,93 @@ function MobilePhoneShell({
   totalOrdersCount,
   floatingLiveOrder,
   onOpenLiveOrderModal,
+  onOpenAdminConsole,
   brightTheme,
   lang,
+  setLang,
+  appUpdateInfo,
+  onTriggerOtaUpdate,
   personalShoppingFromPartner,
   onReturnToPartnerDesk,
-  customPortalTabs = null,
   showFooter = true,
   children
 }) {
+  const t = getLangText(lang);
   return (
     <div
-      className={`w-full max-w-6xl mx-auto overflow-hidden flex flex-col min-h-screen relative transition-all ${
-        brightTheme ? "bg-white text-slate-900" : "bg-[#071118] text-white"
+      className={`w-full max-w-[420px] mx-auto overflow-hidden flex flex-col min-h-screen sm:min-h-[850px] sm:max-h-[92vh] sm:my-2 sm:rounded-[40px] sm:border-[8px] relative transition-all shadow-2xl ${
+        brightTheme
+          ? "bg-white text-slate-900 sm:border-emerald-700/80"
+          : "bg-[#071118] text-white sm:border-slate-800"
       }`}
     >
       <div
-        className={`px-3.5 py-2.5 flex justify-between items-center gap-2 text-xs border-b shrink-0 ${
+        className={`px-3 py-2 flex justify-between items-center text-[11px] border-b shrink-0 ${
           brightTheme
-            ? "bg-[#131921] text-white border-slate-800"
+            ? "bg-emerald-950 text-white border-emerald-800"
             : "bg-slate-950 text-slate-100 border-emerald-950/60"
         }`}
       >
-        <div className="flex items-center gap-2 truncate">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
-          <span className="font-black text-amber-400 tracking-wide truncate">
-            WE4ALL.in | {cleanLabel(title)}
-          </span>
-        </div>
-        <span className="bg-emerald-900/80 border border-emerald-500/40 text-emerald-200 px-2.5 py-0.5 rounded text-[10px] font-bold truncate shrink-0">
-          {cleanLabel(badge)}
+        <span className="font-extrabold text-amber-400 tracking-wide flex items-center gap-1.5 truncate">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          {t.appTitle} | {title}
         </span>
+        <div className="flex items-center gap-1">
+          <select
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+            className="bg-slate-900 text-amber-300 border border-slate-700 rounded-lg px-1.5 py-0.5 text-[10px] font-black outline-none cursor-pointer"
+          >
+            {INDIAN_LANGUAGES.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.code} - {l.native}
+              </option>
+            ))}
+          </select>
+          {onOpenAdminConsole && (
+            <button
+              type="button"
+              onClick={onOpenAdminConsole}
+              className="bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded text-[9px] font-black cursor-pointer"
+            >
+              {t.adminBtn}
+            </button>
+          )}
+        </div>
       </div>
 
       {personalShoppingFromPartner && (
         <div className="bg-indigo-600 text-white px-3 py-1.5 flex justify-between items-center text-[10px] font-black shrink-0">
-          <span>
-            Shopping Mode (From: {personalShoppingFromPartner.toUpperCase()})
-          </span>
+          <span>Shopping Mode (Partner: {personalShoppingFromPartner.toUpperCase()})</span>
           <button
             type="button"
             onClick={onReturnToPartnerDesk}
             className="bg-amber-400 text-slate-950 px-2.5 py-0.5 rounded-lg font-black cursor-pointer"
           >
-            Return to Partner Desk
+            &larr; Return to Partner Desk
+          </button>
+        </div>
+      )}
+
+      {(appUpdateInfo?.updateAvailable ||
+        (appUpdateInfo?.latestAvailableVersion &&
+          appUpdateInfo?.currentVersion !== appUpdateInfo?.latestAvailableVersion)) && (
+        <div className="bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-400 text-slate-950 px-3 py-1.5 flex items-center justify-between gap-2 text-[10px] font-black shadow shrink-0">
+          <div className="truncate">
+            📲 WE4ALL v{appUpdateInfo.latestAvailableVersion} OTA Ready!
+          </div>
+          <button
+            type="button"
+            onClick={onTriggerOtaUpdate}
+            className="bg-slate-950 text-amber-300 px-2.5 py-1 rounded-lg text-[9px] font-black shrink-0 cursor-pointer"
+          >
+            Update & Restart
           </button>
         </div>
       )}
 
       <div
-        className={`flex-1 overflow-y-auto p-3 md:p-5 space-y-3 pb-24 ${
+        className={`flex-1 overflow-y-auto p-3 space-y-3 pb-24 ${
           brightTheme
             ? "bg-slate-50 text-slate-900"
             : "bg-gradient-to-b from-[#071118] to-[#04090e] text-white"
@@ -143,8 +191,8 @@ function MobilePhoneShell({
         {children}
       </div>
 
-      {floatingLiveOrder && showFooter && activePortal === "customer" && (
-        <div className="sticky bottom-14 left-3 right-3 px-3 z-30">
+      {floatingLiveOrder && showFooter && (
+        <div className="absolute bottom-14 left-3 right-3 z-30">
           <button
             type="button"
             onClick={onOpenLiveOrderModal}
@@ -152,16 +200,14 @@ function MobilePhoneShell({
           >
             <div className="text-left">
               <p className="text-[10px] font-black leading-tight">
-                LIVE ORDER #{floatingLiveOrder.id}:{" "}
-                {floatingLiveOrder.status.replace(/_/g, " ")}
+                LIVE ORDER #{floatingLiveOrder.id}: {floatingLiveOrder.status.replace(/_/g, " ")}
               </p>
               <p className="text-[9px] font-bold text-amber-200">
-                Captain: {floatingLiveOrder.riderName} | Doorstep OTP:{" "}
-                {floatingLiveOrder.secretOtp}
+                Captain: {floatingLiveOrder.riderName} | Tap for Live Route Map & OTP
               </p>
             </div>
-            <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-2.5 py-1 rounded-xl">
-              Live Map
+            <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-2 py-1 rounded-xl">
+              Live Map &rarr;
             </span>
           </button>
         </div>
@@ -176,7 +222,6 @@ function MobilePhoneShell({
           totalOrdersCount={totalOrdersCount}
           brightTheme={brightTheme}
           lang={lang}
-          customPortalTabs={customPortalTabs}
         />
       )}
     </div>
@@ -188,44 +233,24 @@ function AppContent() {
   const isDirectAdminUrl =
     typeof window !== "undefined" &&
     (window.location.search.includes("admin=true") ||
-      window.location.pathname.includes("/admin"));
-  const [viewMode, setViewMode] = useState(
-    isDirectAdminUrl ? "founder_web" : "mobile_app"
-  );
+      window.location.pathname.toLowerCase().includes("/admin"));
 
+  const [viewMode, setViewMode] = useState(isDirectAdminUrl ? "founder_web" : "mobile_app");
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminAuthStep, setAdminAuthStep] = useState(1);
-  const [adminLoginForm, setAdminLoginForm] = useState({
-    username: "",
-    password: ""
-  });
+  const [adminLoginForm, setAdminLoginForm] = useState({ username: "", password: "" });
   const [adminPinInput, setAdminPinInput] = useState("");
   const [adminLoginError, setAdminLoginError] = useState("");
 
-  // Default English ("EN") on fresh install
-  const [lang, setLangState] = useState(() => {
-    return localStorage.getItem("we4all_app_lang_v4") || "EN";
-  });
-  const setLang = (nextLang) => {
-    localStorage.setItem("we4all_app_lang_v4", nextLang);
-    setLangState(nextLang);
-  };
-
-  // Geo-Location Regional Slang
-  const [geoRegion, setGeoRegionState] = useState(() => {
-    return localStorage.getItem("we4all_geo_region_v4") || "TELANGANA";
-  });
-  const setGeoRegion = (nextGeo) => {
-    localStorage.setItem("we4all_geo_region_v4", nextGeo);
-    setGeoRegionState(nextGeo);
-  };
-
+  const [lang, setLang] = useState(savedCloud?.lang || "EN");
   const t = getLangText(lang);
-  const geoSlang = getGeoSlangConfig(geoRegion);
   const [brightTheme, setBrightTheme] = useState(true);
 
   const [founderLogoUrl, setFounderLogoUrl] = useState(
-    () => localStorage.getItem("we4all_founder_original_photo") || "/logo.png"
+    () => localStorage.getItem("we4all_founder_original_photo") || ""
+  );
+  const [apkIconUrl, setApkIconUrl] = useState(
+    () => localStorage.getItem("we4all_apk_launcher_icon") || ""
   );
 
   const handleUploadFounderPhoto = (e) => {
@@ -240,388 +265,222 @@ function AppContent() {
     reader.readAsDataURL(file);
   };
 
-  // Universal Live Diagnostic Error Popup Modal
-  const [diagnosticErrorModal, setDiagnosticErrorModal] = useState(null);
-  const reportAppError = (
-    title,
-    details,
-    hint = "Verify input values or tap Auto-Fix below.",
-    autoFixCallback = null
-  ) => {
-    setDiagnosticErrorModal({
-      title: title || "Application Diagnostic Alert",
-      details: details || "An unexpected operation issue occurred.",
-      hint,
-      time: new Date().toLocaleTimeString(),
-      autoFixCallback
-    });
+  const handleUploadApkIcon = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setApkIconUrl(reader.result);
+      localStorage.setItem("we4all_apk_launcher_icon", reader.result);
+      triggerToast("APK Launcher Icon updated!");
+    };
+    reader.readAsDataURL(file);
   };
 
-  // ==========================================================================
-  // REQ 2, 6, 7 & 8: DEFAULT CONSUMER CONSOLE ON INSTALL + CHECKOUT AUTH GATE
-  // ==========================================================================
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem("we4all_persistent_session_v4") !== "logged_out";
-  });
-  // Always open directly into the Consumer Console ("customer") on install/startup!
-  const [activePortal, setActivePortal] = useState("customer");
-  const [personalShoppingFromPartner, setPersonalShoppingFromPartner] =
-    useState(null);
+  const [onboardingStep, setOnboardingStep] = useState("app");
+  const [selectedRole, setSelectedRole] = useState(savedCloud?.activePortal || "customer");
+  const [activePortal, setActivePortal] = useState(savedCloud?.activePortal || "customer");
+  const [personalShoppingFromPartner, setPersonalShoppingFromPartner] = useState(null);
   const [footerTab, setFooterTab] = useState("home");
 
-  // Checkout / Account Login & Sign-Up Modal State
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState("login"); // "login" | "signup"
-  const [pendingCheckoutCallback, setPendingCheckoutCallback] = useState(null);
-  const [regStep, setRegStep] = useState(1);
-  const [selectedRole, setSelectedRole] = useState("customer");
-  const [loginInput, setLoginInput] = useState({ phoneOrName: "", pin: "1990" });
-  const [regForm, setRegForm] = useState({
-    role: "customer",
-    vehicleCode: "2W",
-    vehicleModel: "Hero Splendor / Activa",
-    rcPlate: "",
-    phone: "",
-    generatedOtp: "",
-    fullName: "",
-    upiId: "",
-    tcAccepted: false,
-    digitalSignatureText: ""
-  });
-
-  const sigCanvasRef = useRef(null);
-  const [isDrawingSig, setIsDrawingSig] = useState(false);
-  const startSigDraw = (e) => {
-    const canvas = sigCanvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const ctx = canvas.getContext("2d");
-    ctx.strokeStyle = "#10b981";
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(clientX - rect.left, clientY - rect.top);
-    setIsDrawingSig(true);
-  };
-  const moveSigDraw = (e) => {
-    if (!isDrawingSig) return;
-    const canvas = sigCanvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const ctx = canvas.getContext("2d");
-    ctx.lineTo(clientX - rect.left, clientY - rect.top);
-    ctx.stroke();
-  };
-  const endSigDraw = () => setIsDrawingSig(false);
-
-  // ==========================================================================
-  // REQ 9: SILENT AUTOMATIC OTA UPDATE ON APP OPEN (ZERO APPROVAL NEEDED!)
-  // If cloud version !== installed version -> automatically updates & reloads!
-  // If cloud version === installed version -> skips and opens Consumer Console!
-  // ==========================================================================
-  const [appUpdateInfo, setAppUpdateInfo] = useState(() => {
-    const installedVer = getDeviceInstalledVersion("3.0.3");
-    return (
-      savedCloud?.appUpdateInfo || {
-        ...(INITIAL_APP_UPDATE_INFO || {}),
-        currentVersion: installedVer,
-        latestAvailableVersion: "3.0.4",
-        updateAvailable: installedVer !== "3.0.4",
-        releaseNotes:
-          "WE4ALL v3.0.4: Default Consumer Console on Install, Visual Category Icon Grid with Labour Cart Ordering, Checkout Login/Sign-Up Gate & Silent Auto-Update on App Open."
-      }
-    );
-  });
+  const [appUpdateInfo, setAppUpdateInfo] = useState(
+    savedCloud?.appUpdateInfo || INITIAL_APP_UPDATE_INFO
+  );
   const [otaProgress, setOtaProgress] = useState(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
-  const triggerToast = (msg) => {
-    sendMobileOsTrayNotification("WE4ALL Super-App", msg, `we4all-${Date.now()}`);
-  };
-
-  const handleRunOtaUpdate = (targetVerOverride = null) => {
-    const targetVer =
-      targetVerOverride ||
-      appUpdateInfo?.latestAvailableVersion ||
-      "3.0.4";
-    localStorage.setItem("we4all_installed_ota_ver_v4", targetVer);
-    performZeroLossOtaUpdate(
-      targetVer,
-      appUpdateInfo?.releaseNotes,
-      (stage) => setOtaProgress(stage),
-      (updatedInfo) => {
-        setAppUpdateInfo({
-          ...updatedInfo,
-          currentVersion: targetVer,
-          latestAvailableVersion: targetVer,
-          updateAvailable: false
-        });
-        setOtaProgress(null);
-      }
-    );
-  };
-
-  useEffect(() => {
-    linkMobileHardwareServicesSilently();
-    // Automatic Zero-Click Startup OTA Check
-    const runAutoStartupOta = async () => {
-      const installedVer =
-        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.3";
-      const remoteOta = await checkLiveCloudOtaManifest((payload) => {
-        if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
-      });
-      const latestVer =
-        remoteOta?.latestAvailableVersion ||
-        appUpdateInfo?.latestAvailableVersion ||
-        "3.0.4";
-
-      // If a newer version exists, automatically update immediately without asking for approval!
-      // If installedVer === latestVer, skip completely and stay in Consumer Console.
-      if (latestVer && latestVer !== installedVer) {
-        handleRunOtaUpdate(latestVer);
-      }
-    };
-    runAutoStartupOta();
-  }, []);
-
   const handleManualCheckForUpdate = async () => {
     setCheckingUpdate(true);
+    triggerToast("Checking WE4ALL Cloud Server for OTA updates...");
     const latest = await checkLiveCloudOtaManifest((payload) => {
       if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
     });
     setTimeout(() => {
       setCheckingUpdate(false);
-      const installedVer =
-        localStorage.getItem("we4all_installed_ota_ver_v4") || "3.0.4";
       const targetVer =
-        latest?.latestAvailableVersion ||
-        appUpdateInfo?.latestAvailableVersion ||
-        "3.0.4";
-      if (targetVer !== installedVer) {
-        handleRunOtaUpdate(targetVer);
-      } else {
-        triggerToast(`Already on latest version (v${installedVer})!`);
-      }
-    }, 400);
+        latest?.latestAvailableVersion || appUpdateInfo?.latestAvailableVersion || "3.1.0";
+      setAppUpdateInfo((prev) => ({
+        ...prev,
+        ...(latest || {}),
+        latestAvailableVersion: targetVer
+      }));
+      triggerToast(`Verified WE4ALL v${targetVer} with Code Security Guard!`);
+    }, 500);
   };
 
-  // Labour & Work-Site Portal States (Integrated into Consumer Console & Cart!)
-  const [labourWorkers, setLabourWorkers] = useState(
-    savedCloud?.labourWorkers && savedCloud.labourWorkers.length > 0
-      ? savedCloud.labourWorkers
-      : INITIAL_LABOUR_WORKERS
-  );
-  const [labourBookings, setLabourBookings] = useState(
-    savedCloud?.labourBookings || []
-  );
-  const [labourFilterSkill, setLabourFilterSkill] = useState("ALL");
-  const [labourShiftMap, setLabourShiftMap] = useState({});
-  const [labourCountMap, setLabourCountMap] = useState({});
-
-  const [customPortals, setCustomPortals] = useState(
-    savedCloud?.customPortals || [
-      {
-        id: "agri_mandi",
-        title: "7. Agriculture & Kisan Mandi",
-        badge: "Kisan Mandi",
-        icon: "MANDI",
-        description:
-          "Direct farmer-to-buyer cotton, soya, seeds, fertilizers & tractor booking market",
-        isPublished: true,
-        tabs: [
-          { id: "home", shortTag: "BID", label: "1. Mandi Bids" },
-          { id: "catalog", shortTag: "CRP", label: "2. Crop Stock" },
-          { id: "add_new", shortTag: "ADD", label: "3. + List Crop" },
-          { id: "orders", shortTag: "LDG", label: "4. Kisan Ledger" },
-          { id: "account", shortTag: "ACC", label: "Account" }
-        ],
-        items: [
-          {
-            id: "MANDI-101",
-            title: "Adilabad Fresh Cotton / Soya Quintal",
-            category: "Kisan Mandi",
-            price: 6850,
-            unit: "Per Quintal",
-            stockOrSlots: 45
-          }
-        ],
-        bookings: []
+  const handleRunOtaUpdate = () => {
+    const integrity = verifyModulePipelineIntegrity(savedCloud || {});
+    if (!integrity.valid) return;
+    performZeroLossOtaUpdate(
+      appUpdateInfo.latestAvailableVersion,
+      appUpdateInfo.releaseNotes,
+      (stage) => setOtaProgress(stage),
+      (updatedInfo) => {
+        setAppUpdateInfo(updatedInfo);
+        setOtaProgress(null);
+        triggerToast(`Updated to v${updatedInfo.currentVersion} with zero data loss!`);
       }
-    ]
-  );
+    );
+  };
 
   const [accountSecurity, setAccountSecurity] = useState(
     savedCloud?.accountSecurity || {
       pinEnabled: true,
       biometricEnabled: true,
-      fastPin: "1990"
+      fastPin: "1234"
     }
   );
-
+  const [pinUnlockInput, setPinUnlockInput] = useState("");
   const [currentUser, setCurrentUser] = useState(
     savedCloud?.currentUser || {
-      id: 1,
-      fullName: "Khoday Anvesh",
-      username: "anvesh_k",
-      phone: "9848011223",
+      id: "usr_clean",
+      fullName: "WE4ALL User",
+      phone: "",
       role: "customer",
-      vehicleCode: "2W",
-      vehicleClass: "2W Bike Captain (Up to 45 kg)",
-      vehicleModel: "Hero Splendor Plus 125cc",
-      dlNumber: "TS-01-2022009812",
-      rcPlate: "TS-01-EF-4599",
-      decoratorSubRole: "flower_decorator",
-      bankName: "State Bank of India",
-      accountNumber: "30984451209",
-      ifscCode: "SBIN0000801",
-      upiId: "khodayanvesh@ybl",
-      fastPin: "1990"
+      bankName: "",
+      accountNumber: "",
+      ifscCode: "",
+      upiId: "",
+      fastPin: "1234"
     }
   );
+  const [registeredUsers, setRegisteredUsers] = useState(savedCloud?.registeredUsers || []);
+  const [regForm, setRegForm] = useState({
+    role: "customer",
+    fullName: "",
+    phone: "",
+    upiId: "",
+    fastPin: "1234"
+  });
 
   const [pendingUpiPayment, setPendingUpiPayment] = useState(null);
+  const [isPrimeCustomer, setIsPrimeCustomer] = useState(true);
+  const [mobileToast, setMobileToast] = useState("");
+  const [notificationBellOpen, setNotificationBellOpen] = useState(false);
+  const [notificationsList, setNotificationsList] = useState([]);
+
+  const triggerToast = (msg) => {
+    setMobileToast(msg);
+    setNotificationsList((prev) => [{ id: Date.now(), text: msg, time: "Just now" }, ...prev]);
+    setTimeout(() => setMobileToast(""), 4200);
+  };
+
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState("ALL_INDIA");
+  const [killedCategoriesByZone, setKilledCategoriesByZone] = useState({});
   const [geoAds, setGeoAds] = useState(savedCloud?.geoAds || INITIAL_GEO_ADS);
-  const [categories, setCategories] = useState(
-    savedCloud?.categories || INITIAL_CATEGORIES
-  );
+  const [categories, setCategories] = useState(savedCloud?.categories || INITIAL_CATEGORIES);
   const [serviceCategories] = useState(SERVICE_CATEGORIES);
-  const [merchants, setMerchants] = useState(
-    savedCloud?.merchants || INITIAL_MERCHANTS
-  );
+  const [merchants, setMerchants] = useState(savedCloud?.merchants || INITIAL_MERCHANTS);
   const [serviceProviders, setServiceProviders] = useState(
     savedCloud?.serviceProviders || INITIAL_SERVICE_PROVIDERS
   );
-  const [decorators, setDecorators] = useState(
-    savedCloud?.decorators || INITIAL_DECORATORS
+  const [decorators, setDecorators] = useState(savedCloud?.decorators || INITIAL_DECORATORS);
+  const [labourWorkers, setLabourWorkers] = useState(
+    savedCloud?.labourWorkers || INITIAL_LABOUR_WORKERS
   );
-  const [products, setProducts] = useState(
-    savedCloud?.products || INITIAL_PRODUCTS
-  );
+  const [products, setProducts] = useState(savedCloud?.products || INITIAL_PRODUCTS);
   const [functionHalls, setFunctionHalls] = useState(
     savedCloud?.functionHalls || INITIAL_FUNCTION_HALLS
   );
   const [riders, setRiders] = useState(savedCloud?.riders || INITIAL_RIDERS);
 
-  const [captainRadarJobs, setCaptainRadarJobs] = useState(
-    savedCloud?.captainRadarJobs && savedCloud.captainRadarJobs.length > 0
-      ? savedCloud.captainRadarJobs
-      : []
-  );
-
-  const [decorPortfolio, setDecorPortfolio] = useState(
-    savedCloud?.decorPortfolio && savedCloud.decorPortfolio.length > 0
-      ? savedCloud.decorPortfolio
-      : [
-          {
-            id: "pf_101",
-            ownerId: 401,
-            ownerPhone: "9848044556",
-            merchantName: "Padmavathi Royal Flower Decorators",
-            subRole: "flower_decorator",
-            title: "Royal Imported Orchid & Dutch Rose Wedding Mandap",
-            decorType: "Wedding Mandap",
-            materialUsed: "Fresh Bangkok Orchids, Dutch Roses, Warm LED Truss",
-            albumName: "2026 Royal Muhurtham Collection",
-            dimensionsSize: "40 ft x 16 ft Stage",
-            baseEstimate: 26500,
-            image:
-              "https://images.unsplash.com/photo-1519741497674-611481863552?w=800&auto=format&fit=crop&q=85",
-            isApproved: true
-          }
-        ]
-  );
-
-  const [decorReverseBids, setDecorReverseBids] = useState(
-    savedCloud?.decorReverseBids || []
-  );
-  const [decorEscrowBookings, setDecorEscrowBookings] = useState(
-    savedCloud?.decorEscrowBookings || []
-  );
-  const [pendingMerchants, setPendingMerchants] = useState(
-    savedCloud?.pendingMerchants || []
-  );
-  const [pendingServiceProviders, setPendingServiceProviders] = useState(
-    savedCloud?.pendingServiceProviders || []
-  );
-  const [pendingDecorators, setPendingDecorators] = useState(
-    savedCloud?.pendingDecorators || []
-  );
-  const [pendingRiders, setPendingRiders] = useState(
-    savedCloud?.pendingRiders || []
-  );
+  const [pendingMerchants, setPendingMerchants] = useState(savedCloud?.pendingMerchants || []);
   const [pendingSubCategories, setPendingSubCategories] = useState(
     savedCloud?.pendingSubCategories || []
   );
+  const [rejectedItems, setRejectedItems] = useState(savedCloud?.rejectedItems || []);
   const [monetizationConfig, setMonetizationConfig] = useState(
     savedCloud?.monetizationConfig || {
       globalPlatformFee: 0,
-      serviceBookingSurcharge: 0
+      serviceBookingSurcharge: 0,
+      productSpecificFee: 0
     }
   );
 
-  const [splitScreens] = useState([
+  const [splitScreens, setSplitScreens] = useState([
     { id: 1, role: "customer" },
     { id: 2, role: "merchant" },
     { id: 3, role: "service_provider" },
     { id: 4, role: "decorator" },
     { id: 5, role: "rider" },
-    { id: 6, role: "labour_portal" }
+    { id: 6, role: "labour" }
   ]);
 
-  const [addressBook] = useState([
-    {
-      id: "addr_home",
-      label: "Home",
-      fullAddress: "Subhash Nagar, Adilabad",
-      distanceKm: 1.8,
-      verified: true
-    }
-  ]);
-  const activeAddressObj = addressBook[0];
+  const [addressBook, setAddressBook] = useState(
+    savedCloud?.addressBook || [
+      { id: "addr_default", label: "Primary", fullAddress: "Adilabad Town", distanceKm: 1.8, verified: true }
+    ]
+  );
+  const [selectedAddressId, setSelectedAddressId] = useState("addr_default");
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
+  const [newAddressForm, setNewAddressForm] = useState({
+    label: "Home",
+    fullAddress: "",
+    generatedOtp: "",
+    enteredOtp: ""
+  });
+  const activeAddressObj =
+    addressBook.find((a) => a.id === selectedAddressId) || addressBook[0];
 
-  // REQ 5: Category-Wise Icon Selection State (Defaults to "daily_needs" or any chosen Category Icon)
+  const [customerHomeSubTab, setCustomerHomeSubTab] = useState("stores");
   const [selectedCategory, setSelectedCategory] = useState("daily_needs");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedVariantMap, setSelectedVariantMap] = useState({});
   const [selectedMerchantByProduct, setSelectedMerchantByProduct] = useState({});
   const [expandedCompareProdId, setExpandedCompareProdId] = useState(null);
 
-  const [serviceFilterDate, setServiceFilterDate] = useState("2026-11-02");
-  const [serviceFilterSlot, setServiceFilterSlot] = useState(
-    "10:00 AM - 11:00 AM"
-  );
+  const [serviceFilterDate, setServiceFilterDate] = useState("2026-11-05");
+  const [serviceFilterSlot, setServiceFilterSlot] = useState("10:00 AM - 11:00 AM");
 
-  const [customerBookingForm, setCustomerBookingForm] = useState({
-    forWhom: "For Myself",
-    weightKg: 10,
-    chosenVehicleCode: "2W",
-    pickupPin: "Subhash Nagar, Adilabad",
-    dropPin: "Collectorate Chowk, Adilabad",
-    distanceKm: 2.8
-  });
-
-  // Unified Carts: Store Cart + Labour Cart + Service Cart + Decor Cart
-  const [merchantCart, setMerchantCart] = useState(
-    savedCloud?.merchantCart || []
-  );
-  const [labourCart, setLabourCart] = useState(savedCloud?.labourCart || []);
+  const [merchantCart, setMerchantCart] = useState(savedCloud?.merchantCart || []);
   const [serviceCart, setServiceCart] = useState(savedCloud?.serviceCart || []);
   const [decorCart, setDecorCart] = useState(savedCloud?.decorCart || []);
-  const [cartChosenVehicleCode, setCartChosenVehicleCode] = useState("2W");
+  const [taxiCart, setTaxiCart] = useState(savedCloud?.taxiCart || []);
+  const [activeCartViewTab, setActiveCartViewTab] = useState("merchant_cart");
+
+  const [taxiBookingForm, setTaxiBookingForm] = useState({
+    pickupPin: "Adilabad Bus Stand",
+    dropPin: "Collectorate Chowk, Adilabad",
+    distanceKm: 2.5
+  });
 
   const [orders, setOrders] = useState(savedCloud?.orders || []);
   const [activeOrderId, setActiveOrderId] = useState(null);
   const [liveOrderDrawerOpen, setLiveOrderDrawerOpen] = useState(false);
-  const [serviceBookings, setServiceBookings] = useState(
-    savedCloud?.serviceBookings || []
-  );
+  const [serviceBookings, setServiceBookings] = useState(savedCloud?.serviceBookings || []);
+  const [labourBookings, setLabourBookings] = useState(savedCloud?.labourBookings || []);
+
+  const [newMerchantProd, setNewMerchantProd] = useState({
+    categoryId: "daily_needs",
+    subCategoryBrand: "",
+    shopName: "",
+    variantLabel: "1 kg Pack",
+    price: "",
+    mrp: ""
+  });
+
+  const [newSpForm, setNewSpForm] = useState({
+    serviceCategoryId: "srv_plumbing",
+    providerName: "",
+    specialization: "",
+    visitingFee: 99
+  });
+
+  const [newHallForm, setNewHallForm] = useState({
+    name: "",
+    capacity: "800 Guests",
+    pricePerDay: 45000
+  });
+
+  const [providerInsideGeoFence, setProviderInsideGeoFence] = useState(true);
+  const [providerHappyCodeInput, setProviderHappyCodeInput] = useState("");
+  const [eventDate, setEventDate] = useState("2026-11-10");
+  const [hallScheduleDateInput, setHallScheduleDateInput] = useState("2026-11-10");
+  const [captainOtpInput, setCaptainOtpInput] = useState("");
 
   useEffect(() => {
     saveCloudAndLocalState({
+      lang,
       activePortal,
       appUpdateInfo,
       accountSecurity,
@@ -631,29 +490,26 @@ function AppContent() {
       merchants,
       serviceProviders,
       decorators,
-      riders,
-      captainRadarJobs,
-      pendingRiders,
-      decorPortfolio,
-      decorReverseBids,
-      decorEscrowBookings,
+      labourWorkers,
+      registeredUsers,
       products,
       functionHalls,
+      riders,
       pendingMerchants,
-      pendingServiceProviders,
-      pendingDecorators,
-      labourWorkers,
-      labourBookings,
-      customPortals,
+      pendingSubCategories,
+      rejectedItems,
       monetizationConfig,
+      addressBook,
       merchantCart,
-      labourCart,
       serviceCart,
       decorCart,
+      taxiCart,
       orders,
-      serviceBookings
+      serviceBookings,
+      labourBookings
     });
   }, [
+    lang,
     activePortal,
     appUpdateInfo,
     accountSecurity,
@@ -663,97 +519,50 @@ function AppContent() {
     merchants,
     serviceProviders,
     decorators,
-    riders,
-    captainRadarJobs,
-    pendingRiders,
-    decorPortfolio,
-    decorReverseBids,
-    decorEscrowBookings,
+    labourWorkers,
+    registeredUsers,
     products,
     functionHalls,
+    riders,
     pendingMerchants,
-    pendingServiceProviders,
-    pendingDecorators,
-    labourWorkers,
-    labourBookings,
-    customPortals,
+    pendingSubCategories,
+    rejectedItems,
     monetizationConfig,
+    addressBook,
     merchantCart,
-    labourCart,
     serviceCart,
     decorCart,
+    taxiCart,
     orders,
-    serviceBookings
+    serviceBookings,
+    labourBookings
   ]);
 
   useEffect(() => {
-    let devId = localStorage.getItem("we4all_hw_device_id");
-    if (!devId) {
-      devId = `DEV-${Math.floor(10000 + Math.random() * 90000)}`;
-      localStorage.setItem("we4all_hw_device_id", devId);
-    }
-    const stopSensors = startRealtimeMobileSensorStream(
-      () => ({
-        deviceId: devId,
-        userId: currentUser?.id || "GUEST",
-        fullName: currentUser?.fullName || "Guest Shopper",
-        phone: currentUser?.phone || "Guest",
-        role: currentUser?.role || "customer",
-        portal: activePortal,
-        vehicleCode: currentUser?.vehicleCode || "2W",
-        upiId: currentUser?.upiId || "",
-        address: "Adilabad Town, Telangana"
-      }),
-      (ping) => {
-        setMyLivePing(ping);
-        setLiveDeviceTelemetry((prev) => {
-          const next = { ...(prev || {}), [ping.deviceId]: ping };
-          saveCloudAndLocalState({ liveDeviceTelemetry: next });
-          return next;
-        });
-      }
-    );
-    const stopCloud = subscribeToRealtimeUpdates((remoteState) => {
-      if (remoteState.liveDeviceTelemetry) setLiveDeviceTelemetry(remoteState.liveDeviceTelemetry);
+    return subscribeToRealtimeUpdates((remoteState) => {
       if (remoteState.orders) setOrders(remoteState.orders);
-      if (remoteState.serviceBookings)
-        setServiceBookings(remoteState.serviceBookings);
-      if (remoteState.captainRadarJobs)
-        setCaptainRadarJobs(remoteState.captainRadarJobs);
-      if (remoteState.labourWorkers)
-        setLabourWorkers(remoteState.labourWorkers);
-      if (remoteState.labourBookings)
-        setLabourBookings(remoteState.labourBookings);
-      if (remoteState.customPortals)
-        setCustomPortals(remoteState.customPortals);
-      if (remoteState.appUpdateInfo)
-        setAppUpdateInfo(remoteState.appUpdateInfo);
+      if (remoteState.serviceBookings) setServiceBookings(remoteState.serviceBookings);
+      if (remoteState.labourBookings) setLabourBookings(remoteState.labourBookings);
+      if (remoteState.products) setProducts(remoteState.products);
+      if (remoteState.appUpdateInfo) setAppUpdateInfo(remoteState.appUpdateInfo);
     });
-    return () => { stopSensors(); stopCloud(); };
-  }, [currentUser, activePortal]);
+  }, []);
 
   const totalCartCount =
-    merchantCart.reduce((s, i) => s + (i.qty || 1), 0) +
-    labourCart.reduce((s, l) => s + (l.workersCount || 1), 0) +
+    merchantCart.reduce((s, i) => s + i.qty, 0) +
     serviceCart.length +
-    decorCart.length;
+    decorCart.length +
+    taxiCart.length;
 
   const activeOrder =
-    orders.find(
-      (o) => o.id === activeOrderId && !o.status?.includes("CANCELLED")
-    ) ||
+    orders.find((o) => o.id === activeOrderId && !o.status.includes("CANCELLED")) ||
     orders[0] ||
     null;
 
-  // Gate Helper: Requires Login / Sign-Up only at Order Checkout!
-  const requireAuthAtCheckout = (actionCallback) => {
-    if (isAuthenticated) {
-      actionCallback();
-    } else {
-      setPendingCheckoutCallback(() => actionCallback);
-      setAuthModalMode("login");
-      setAuthModalOpen(true);
-    }
+  const openFounderAdminGate = () => {
+    setIsAdminAuthenticated(false);
+    setAdminAuthStep(1);
+    setViewMode("founder_web");
   };
 
   const getProductBestOffer = (product) => {
@@ -762,30 +571,21 @@ function AppContent() {
         ? [...product.merchantOffers].sort((a, b) => a.price - b.price)
         : [
             {
-              merchantId: "m1",
-              merchantName: cleanLabel(product.shopName),
+              merchantId: 1,
+              merchantName: product.shopName,
               price: product.variants?.[0]?.price || 100,
-              area: "Adilabad",
-              rating: 4.9
+              area: "Adilabad"
             }
           ];
     const chosenId = selectedMerchantByProduct[product.id];
-    const activeOffer =
-      offers.find((o) => o.merchantId === chosenId) || offers[0];
-    return { offers, lowestOffer: offers[0], activeOffer };
+    const activeOffer = offers.find((o) => o.merchantId === chosenId) || offers[0];
+    return { offers, bestOffer: offers[0], activeOffer };
   };
 
   const handleAddToUnifiedMerchantCart = (product) => {
-    recordUserActivityTelemetry("PRODUCT_INTERACT", {
-      productId: product.id,
-      categoryId: product.categoryId
-    });
-    const chosenVarId =
-      selectedVariantMap[product.id] || product.variants[0].id;
-    const variant =
-      product.variants.find((v) => v.id === chosenVarId) || product.variants[0];
+    const chosenVarId = selectedVariantMap[product.id] || product.variants[0].id;
+    const variant = product.variants.find((v) => v.id === chosenVarId) || product.variants[0];
     const { activeOffer } = getProductBestOffer(product);
-    const cleanName = cleanLabel(product.subCategoryBrand);
     const existing = merchantCart.find(
       (i) =>
         i.productId === product.id &&
@@ -806,155 +606,61 @@ function AppContent() {
             productId: product.id,
             categoryId: product.categoryId,
             variantId: variant.id,
-            name: `${cleanName} (${variant.label})`,
+            name: `${product.subCategoryBrand} (${variant.label})`,
             merchantId: activeOffer.merchantId,
-            merchantName: cleanLabel(
-              activeOffer.merchantName || product.shopName
-            ),
+            merchantName: activeOffer.merchantName || product.shopName,
             price: activeOffer.price || variant.price,
             weightGrams: variant.weightGrams || 1000,
             qty: 1
           }
         ];
     setMerchantCart(updated);
-    triggerToast(`Added ${cleanName} to Cart!`);
+    triggerToast(`Added ${product.subCategoryBrand} to Cart!`);
   };
 
-  // Add Labour / Mistri to Consumer Cart!
-  const handleAddLabourToCart = (lw, localRoleTitle) => {
-    const chosenShift =
-      labourShiftMap[lw.id] || "Full-Day Shift (09:00 AM - 05:30 PM)";
-    const chosenWorkers =
-      labourCountMap[lw.id] ||
-      (lw.workerType === "MISTRI_TOLI" ? lw.toliCount || 4 : 1);
-    const isHalf = chosenShift.includes("Half-Day");
-    const unitRate = isHalf ? lw.halfDayWage : lw.fullDayWage;
-    const totalWage =
-      chosenWorkers === 1
-        ? unitRate
-        : unitRate +
-          Math.max(0, chosenWorkers - 1) *
-            (isHalf
-              ? Math.round((lw.helperDailyWage || 500) * 0.55)
-              : lw.helperDailyWage || 500);
-
-    const newLabourCartItem = {
-      cartItemId: `lab_cart_${Date.now()}`,
-      workerId: lw.id,
-      workerName: lw.workerName,
-      skillLabel: localRoleTitle,
-      shiftType: chosenShift,
-      workersCount: chosenWorkers,
-      toolsList: lw.toolsList,
-      addaLocation: lw.addaLocation,
-      totalDailyWage: totalWage,
-      siteAddress: activeAddressObj.fullAddress
-    };
-    setLabourCart([...labourCart, newLabourCartItem]);
-    triggerToast(
-      `Added ${lw.workerName} (${chosenWorkers} Workers - Rs.${totalWage}) to Cart!`
-    );
-  };
-
-  const executeMerchantOrderCheckout = (
-    enforcedVehCode,
-    deliveryFee,
-    totalWeightKg
-  ) => {
+  const handlePlaceOrderForCheckout = () => {
     if (merchantCart.length === 0) return;
-    const vRule =
-      VEHICLE_CONSORT_RULES[enforcedVehCode] || VEHICLE_CONSORT_RULES["2W"];
     const itemsTotal = merchantCart.reduce((s, i) => s + i.price * i.qty, 0);
-    const gst = Number(((itemsTotal + deliveryFee) * 0.05).toFixed(2));
-    const grandTotal = Number((itemsTotal + deliveryFee + gst).toFixed(2));
-    const shopNames = Array.from(
-      new Set(merchantCart.map((i) => i.merchantName))
-    ).join(" + ");
-    const generatedOtp = String(Math.floor(1000 + Math.random() * 9000));
+    const { totalWeightGrams, totalRouteKm, vehicle, deliveryFee } = calculateOrderLogistics(
+      merchantCart,
+      activeAddressObj.distanceKm,
+      0,
+      0
+    );
+    const silentFee = Number(monetizationConfig.globalPlatformFee || 0);
+    const gst = Number(((itemsTotal + deliveryFee + silentFee) * 0.05).toFixed(2));
+    const grandTotal = Number((itemsTotal + deliveryFee + silentFee + gst).toFixed(2));
+
     const newOrder = {
       id: `VFL-${Math.floor(1000 + Math.random() * 9000)}`,
-      dateStr: "2026-11-01",
-      createdAt: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      }),
+      dateStr: new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       periodTag: "TODAY",
       customerName: currentUser.fullName,
       address: activeAddressObj.fullAddress,
-      distanceKm: activeAddressObj.distanceKm,
-      totalWeightGrams: totalWeightKg * 1000,
-      weightKg: totalWeightKg,
-      requiredVehicleCode: enforcedVehCode,
-      vehicle: vRule.label,
-      shopName: shopNames,
-      items: merchantCart.map((it) => ({
-        ...it,
-        approvalStatus: "PENDING_MERCHANT"
-      })),
+      distanceKm: totalRouteKm,
+      totalWeightGrams,
+      vehicle,
+      shopName: Array.from(new Set(merchantCart.map((i) => i.merchantName))).join(" + "),
+      items: merchantCart,
       itemsTotal,
       deliveryFee,
       gst,
       grandTotal,
-      riderName: riders[0]?.name || "Raju Local Rider",
-      status: "AWAITING_MERCHANT_APPROVAL",
-      secretOtp: generatedOtp
-    };
-
-    const radarDispatch = {
-      id: newOrder.id,
-      requiredVehicleCode: enforcedVehCode,
-      vehicleLabel: vRule.label,
-      weightKg: totalWeightKg,
-      badge: `Store Order (${totalWeightKg} kg | ${vRule.shortLabel})`,
-      bookedBy: `Customer: ${currentUser.fullName} (Shop: ${shopNames})`,
-      pickupPin: shopNames,
-      dropPin: activeAddressObj.fullAddress,
-      distFromCaptainKm: 0.5,
-      distanceKm: activeAddressObj.distanceKm,
-      captainPayout: deliveryFee,
-      secretOtp: generatedOtp,
-      status: "OPEN_ON_RADAR",
-      paymentReqStatus: "PENDING_TRIP_COMPLETION"
+      riderName: riders[0]?.name || "Assigned Captain",
+      status: "MERCHANT_APPROVED_AWAITING_PAYMENT",
+      secretOtp: String(Math.floor(1000 + Math.random() * 9000))
     };
 
     setOrders([newOrder, ...orders]);
-    setCaptainRadarJobs([radarDispatch, ...captainRadarJobs]);
     setActiveOrderId(newOrder.id);
     setMerchantCart([]);
-    setFooterTab("orders");
-    triggerToast(
-      `Order #${newOrder.id} placed! Sent to Merchant Queue & ${vRule.shortLabel} Captain Radar.`
-    );
-  };
-
-  const executeLabourOrderCheckout = () => {
-    if (labourCart.length === 0) return;
-    const createdCalls = labourCart.map((lc, idx) => ({
-      id: `WRK-${Math.floor(1000 + Math.random() * 9000) + idx}`,
-      customerName: currentUser.fullName,
-      siteAddress: lc.siteAddress || activeAddressObj.fullAddress,
-      skillNeeded: `${lc.workerName} (${lc.skillLabel})`,
-      shiftType: lc.shiftType,
-      hiringMode: `${lc.workersCount} Worker(s)`,
-      workersCount: lc.workersCount,
-      toolsRequirement: `Bring Tools (${lc.toolsList})`,
-      transportNote: `From ${lc.addaLocation}`,
-      teaBhattaNote: `${geoSlang.bhattaSlang} & Muster OTP Active`,
-      totalDailyWage: lc.totalDailyWage,
-      startWorkOtp: String(Math.floor(1000 + Math.random() * 9000)),
-      wageReleaseOtp: String(Math.floor(1000 + Math.random() * 9000)),
-      status: "OPEN_SITE_CALL",
-      createdAt: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      })
-    }));
-    setLabourBookings([...createdCalls, ...labourBookings]);
-    setLabourCart([]);
-    setFooterTab("orders");
-    triggerToast(
-      `Booked ${createdCalls.length} Labour Work-Site Call(s)! Dispatched to ${geoSlang.standSlang}.`
-    );
+    setPendingUpiPayment({
+      type: "APPROVED_MERCHANT_ORDER",
+      orderId: newOrder.id,
+      title: `Order #${newOrder.id}`,
+      amount: newOrder.grandTotal
+    });
   };
 
   const handleCompleteUpiPayment = (chosenUpiAppName) => {
@@ -963,27 +669,22 @@ function AppContent() {
       setOrders(
         orders.map((o) =>
           o.id === pendingUpiPayment.orderId
-            ? {
-                ...o,
-                paidViaApp: chosenUpiAppName,
-                status: "PAID_PACKING_STARTED"
-              }
+            ? { ...o, paidViaApp: chosenUpiAppName, status: "PAID_PACKING_STARTED" }
             : o
         )
       );
       setPendingUpiPayment(null);
       setFooterTab("orders");
       setLiveOrderDrawerOpen(true);
-      triggerToast(`Paid via ${chosenUpiAppName}! Merchant packing started.`);
+      triggerToast(`Paid via ${chosenUpiAppName}! Order sent to Merchant Packing Queue.`);
     } else if (pendingUpiPayment.type === "SERVICE_ESCROW") {
       const created = serviceCart.map((sc) => ({
         ...sc,
         id: `SRV-${Math.floor(1000 + Math.random() * 9000)}`,
         customerName: currentUser.fullName,
-        escrowVisitingAmount: sc.visitingFee,
+        escrowVisitingAmount: sc.visitingFee + (monetizationConfig.serviceBookingSurcharge || 0),
         paidViaApp: chosenUpiAppName,
         happyCode: String(Math.floor(1000 + Math.random() * 9000)),
-        periodTag: "TODAY",
         escrowStatus: "VISITING_FEE_HELD_IN_ESCROW",
         status: "CONFIRMED_PROVIDER_EN_ROUTE"
       }));
@@ -995,2001 +696,1374 @@ function AppContent() {
     }
   };
 
-  const openAdminGate = () => {
-    setIsAdminAuthenticated(false);
-    setAdminAuthStep(1);
-    setViewMode("founder_web");
-  };
-
-  // ==========================================================================
-  // PORTAL 1: CONSUMER SUPER-APP (CATEGORY ICON GRID + LABOUR + CHECKOUT GATE)
-  // ==========================================================================
-  const renderCustomerPortal = () => {
-    const q = searchQuery.trim().toLowerCase();
-
-    const getGeoCategoryLabel = (catId, fallback) => {
-      return geoSlang?.categories?.[catId] || cleanLabel(fallback);
-    };
-
-    const getGeoLabourRoleLabel = (skillId, fallback) => {
-      return geoSlang?.labourRoles?.[skillId] || cleanLabel(fallback);
-    };
-
-    // Visual Category-Wise Icons Grid (Tap any icon to open that specific section!)
-    const categoryIconGrid = [
-      {
-        id: "daily_needs",
-        icon: "\uD83D\uDED2",
-        label: getGeoCategoryLabel("daily_needs", "Kirana & Daily")
-      },
-      {
-        id: "veg_fruits",
-        icon: "\uD83E\uDD66",
-        label: getGeoCategoryLabel("veg_fruits", "Fresh Veg")
-      },
-      {
-        id: "meat_fish",
-        icon: "\uD83C\uDF57",
-        label: getGeoCategoryLabel("meat_fish", "Meat & Fish")
-      },
-      {
-        id: "construction",
-        icon: "\uD83E\uDDF1",
-        label: getGeoCategoryLabel("construction", "Cement & Steel")
-      },
-      {
-        id: "medicines",
-        icon: "\uD83D\uDC8A",
-        label: getGeoCategoryLabel("medicines", "Medicines")
-      },
-      {
-        id: "CAT_LABOUR",
-        icon: "\uD83D\uDC77",
-        label: String(geoSlang?.standSlang || "Labour Adda | Morning 7:00 AM - 11:00 AM").split("(")[0].trim()
-      },
-      {
-        id: "CAT_SERVICES",
-        icon: "\uD83D\uDEE0\uFE0F",
-        label: t.services || "1-Hr Services"
-      },
-      {
-        id: "CAT_DECOR",
-        icon: "\uD83C\uDF38",
-        label: t.decor || "Decor & Halls"
-      },
-      {
-        id: "CAT_TAXI",
-        icon: "\uD83D\uDEF5",
-        label: t.taxi || "2W/3W/4W Rides"
-      },
-      {
-        id: "CAT_MANDI",
-        icon: "\uD83C\uDF3E",
-        label: "Kisan Mandi"
-      }
-    ];
-
-    const isStoreCategory = categories.some((c) => c.id === selectedCategory);
-
-    const matchingProducts = products.filter(
-      (p) =>
-        (searchQuery.trim() !== "" || p.categoryId === selectedCategory) &&
-        p.isPublished !== false &&
-        p.inStock !== false &&
-        (p.stockQty ?? 10) > 0 &&
-        cleanLabel(p.subCategoryBrand).toLowerCase().includes(q)
-    );
-
-    const matchingLabour = labourWorkers.filter((lw) => {
-      const roleSlang = getGeoLabourRoleLabel(lw.skillId, lw.skillLabel);
-      return (
-        lw.isAvailableToday !== false &&
-        (labourFilterSkill === "ALL" || lw.skillId === labourFilterSkill) &&
-        (cleanLabel(lw.workerName).toLowerCase().includes(q) ||
-          roleSlang.toLowerCase().includes(q) ||
-          cleanLabel(lw.addaLocation).toLowerCase().includes(q))
-      );
-    });
-
-    const matchingServices = serviceProviders.filter(
-      (sp) =>
-        sp.isPublished !== false &&
-        sp.isPublishedToPublic !== false &&
-        (cleanLabel(sp.serviceCategory).toLowerCase().includes(q) ||
-          cleanLabel(sp.specialization).toLowerCase().includes(q) ||
-          cleanLabel(sp.maskedId).toLowerCase().includes(q))
-    );
-
-    const matchingDecor = decorPortfolio.filter(
-      (dp) =>
-        cleanLabel(dp.title).toLowerCase().includes(q) ||
-        cleanLabel(dp.merchantName).toLowerCase().includes(q)
-    );
-
-    const cartTotalWeightGrams = merchantCart.reduce(
-      (sum, it) => sum + (it.weightGrams || 1000) * (it.qty || 1),
-      0
-    );
-    const cartWeightKg = Math.max(1, Math.ceil(cartTotalWeightGrams / 1000));
-    const cartAllow2W = cartWeightKg <= 45;
-    const cartAllow3W = cartWeightKg <= 300;
-    const effectiveCartVehCode =
-      !cartAllow2W && cartChosenVehicleCode === "2W"
-        ? cartAllow3W
-          ? "3W"
-          : "4W_HEAVY"
-        : !cartAllow3W && cartChosenVehicleCode === "3W"
-        ? "4W_HEAVY"
-        : cartChosenVehicleCode;
-    const cartVehRule =
-      VEHICLE_CONSORT_RULES[effectiveCartVehCode] ||
-      VEHICLE_CONSORT_RULES["2W"];
-    const cartDeliveryFee = Math.round(
-      cartVehRule.baseFare2Km +
-        activeAddressObj.distanceKm * cartVehRule.perKmRate
-    );
-
-    const wKg = Number(customerBookingForm.weightKg) || 1;
-    const is2WAllowed = wKg <= 45;
-    const is3WAllowed = wKg <= 300;
-    const activeVehCode =
-      !is2WAllowed && customerBookingForm.chosenVehicleCode === "2W"
-        ? is3WAllowed
-          ? "3W"
-          : "4W_HEAVY"
-        : !is3WAllowed && customerBookingForm.chosenVehicleCode === "3W"
-        ? "4W_HEAVY"
-        : customerBookingForm.chosenVehicleCode;
-    const chosenRule =
-      VEHICLE_CONSORT_RULES[activeVehCode] || VEHICLE_CONSORT_RULES["2W"];
-    const calculatedFare = Math.round(
-      chosenRule.baseFare2Km +
-        customerBookingForm.distanceKm * chosenRule.perKmRate
-    );
-
-    return (
-      <MobilePhoneShell
-        title="Customer Super-App"
-        badge={isAuthenticated ? "Prime" : "Guest"}
-        activePortal="customer"
-        footerTab={footerTab}
-        setFooterTab={setFooterTab}
-        totalCartCount={totalCartCount}
-        totalOrdersCount={
-          orders.length + serviceBookings.length + labourBookings.length
-        }
-        floatingLiveOrder={activeOrder}
-        onOpenLiveOrderModal={() => setLiveOrderDrawerOpen(true)}
-        brightTheme={brightTheme}
-        lang={lang}
-        personalShoppingFromPartner={personalShoppingFromPartner}
-        onReturnToPartnerDesk={() => {
-          setActivePortal(personalShoppingFromPartner);
-          setPersonalShoppingFromPartner(null);
-          setFooterTab("home");
-        }}
-      >
-        {/* Clean Amazon-Style Delivery Location Bar */}
-        <div className="bg-[#232f3e] text-white px-3 py-2 rounded-xl flex justify-between items-center gap-2 text-[10px]">
-          <div className="flex items-center gap-2 truncate">
-            <FounderLogoBadge logoUrl={founderLogoUrl} />
-            <div>
-              <span className="text-slate-300 block text-[8px]">
-                {t.deliverTo}{" "}
-                {isAuthenticated ? cleanLabel(currentUser.fullName) : "Guest"} (
-                {String(geoSlang?.stateName || geoSlang?.stateLabel || geoSlang?.name || "Telangana (Adilabad)").split(" ")[0]})
-              </span>
-              <span className="text-amber-300 font-black text-[10px]">
-                {activeAddressObj.label}: {activeAddressObj.fullAddress}
-              </span>
+  const renderAuthVault = () => (
+    <MobilePhoneShell
+      title="Security & KYC Vault"
+      badge="PIN / Biometric"
+      activePortal={activePortal}
+      footerTab={footerTab}
+      setFooterTab={setFooterTab}
+      totalCartCount={totalCartCount}
+      totalOrdersCount={orders.length}
+      onOpenAdminConsole={openFounderAdminGate}
+      brightTheme={brightTheme}
+      lang={lang}
+      setLang={setLang}
+      appUpdateInfo={appUpdateInfo}
+      onTriggerOtaUpdate={handleRunOtaUpdate}
+      showFooter={false}
+    >
+      <div className="space-y-3 text-xs">
+        <div className="bg-slate-900 text-white border border-emerald-500/40 rounded-2xl p-3.5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FounderLogoBadge logoUrl={founderLogoUrl} />
+              <div>
+                <h2 className="font-black text-amber-400 text-xs">WE4ALL SECURITY VAULT</h2>
+                <p className="text-[10px] text-slate-300">Select Role or Unlock with PIN</p>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={openFounderAdminGate}
+              className="bg-amber-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
+            >
+              {t.adminBtn}
+            </button>
           </div>
+
+          <select
+            value={selectedRole}
+            onChange={(e) => {
+              setSelectedRole(e.target.value);
+              setRegForm({ ...regForm, role: e.target.value });
+            }}
+            className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl p-2 text-white font-bold text-xs"
+          >
+            <option value="customer">1. Customer Super-App</option>
+            <option value="merchant">2. Product Merchant Portal</option>
+            <option value="service_provider">3. 1-Hr Service Provider Portal</option>
+            <option value="decorator">4. Event Decorator & Function Hall Portal</option>
+            <option value="rider">5. Delivery Captain Radar</option>
+            <option value="labour">6. Labour & Mistri Work-Site Adda</option>
+          </select>
+
           <button
             type="button"
-            onClick={() => setFooterTab("carts")}
-            className="bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0 shadow"
+            onClick={() => {
+              setActivePortal(selectedRole);
+              setFooterTab("home");
+              setOnboardingStep("app");
+              triggerToast("Biometric Verified!");
+            }}
+            className="w-full bg-emerald-500 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
           >
-            Cart ({totalCartCount})
+            Unlock Selected Role via Biometric / Instant Access
           </button>
+
+          <div className="flex gap-1.5">
+            <input
+              type="password"
+              maxLength={4}
+              value={pinUnlockInput}
+              onChange={(e) => setPinUnlockInput(e.target.value)}
+              placeholder="4-Digit PIN (1234)"
+              className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-center font-black tracking-widest text-amber-300"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (pinUnlockInput === (accountSecurity.fastPin || "1234")) {
+                  setActivePortal(selectedRole);
+                  setFooterTab("home");
+                  setOnboardingStep("app");
+                  setPinUnlockInput("");
+                  triggerToast("PIN Verified!");
+                } else {
+                  triggerToast("Invalid PIN! Default is 1234");
+                }
+              }}
+              className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl font-black cursor-pointer"
+            >
+              PIN Unlock
+            </button>
+          </div>
         </div>
 
-        {footerTab === "home" && (
-          <div className="space-y-3">
-            <GeoTargetedAdBanner
-              adsList={geoAds}
-              userTown="Adilabad"
-              userState="Telangana"
-              brightTheme={brightTheme}
-            />
+        <div className="bg-white border border-slate-200 rounded-2xl p-3 space-y-2 text-slate-900">
+          <h3 className="font-black text-xs text-emerald-900">New User / Partner KYC Registration</h3>
+          <input
+            type="text"
+            value={regForm.fullName}
+            onChange={(e) => setRegForm({ ...regForm, fullName: e.target.value })}
+            placeholder="Full Legal Name / Business Name"
+            className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
+          />
+          <input
+            type="tel"
+            value={regForm.phone}
+            onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })}
+            placeholder="10-Digit Mobile Number"
+            className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
+          />
+          <input
+            type="text"
+            value={regForm.upiId}
+            onChange={(e) => setRegForm({ ...regForm, upiId: e.target.value })}
+            placeholder="Settlement UPI ID (e.g., name@ybl)"
+            className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!regForm.fullName.trim()) return;
+              const newUser = {
+                id: `usr_${Date.now()}`,
+                ...regForm
+              };
+              setRegisteredUsers([newUser, ...registeredUsers]);
+              setCurrentUser({ ...currentUser, ...newUser });
+              setActivePortal(regForm.role);
+              setOnboardingStep("app");
+              triggerToast(`Registered & switched to ${regForm.role.toUpperCase()}!`);
+            }}
+            className="w-full bg-slate-900 text-amber-400 font-black py-2 rounded-xl cursor-pointer"
+          >
+            Complete KYC & Launch Portal
+          </button>
+        </div>
+      </div>
+    </MobilePhoneShell>
+  );
 
-            {/* Universal Search Bar */}
+  const renderRolePortalContent = (portalRole) => {
+    if (portalRole === "customer") {
+      const visibleCategories = categories.filter(
+        (c) => !(killedCategoriesByZone[selectedZoneFilter] || []).includes(c.id)
+      );
+      const filteredProducts = products.filter((p) => {
+        const matchCat = selectedCategory === "all" || p.categoryId === selectedCategory;
+        const matchSearch =
+          !searchQuery.trim() ||
+          p.subCategoryBrand.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.shopName.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchCat && matchSearch;
+      });
+
+      return (
+        <div className="space-y-3 text-xs">
+          <div className="bg-emerald-950 text-white p-3 rounded-2xl border border-emerald-700/60 space-y-2 shadow">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <FounderLogoBadge logoUrl={founderLogoUrl} />
+                <div>
+                  <h1 className="font-black text-amber-400 text-xs leading-tight">
+                    WE4ALL HYPERLOCAL SUPER-APP
+                  </h1>
+                  <p className="text-[10px] text-emerald-200 font-bold">
+                    Delivering to: {activeAddressObj.label} ({activeAddressObj.fullAddress})
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setBrightTheme(!brightTheme)}
+                  className="bg-slate-900 text-amber-300 px-2 py-1 rounded-lg text-[9px] font-black cursor-pointer"
+                >
+                  {brightTheme ? "🌙" : "☀️"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOnboardingStep("auth")}
+                  className="bg-amber-400 text-slate-950 px-2 py-1 rounded-lg text-[9px] font-black cursor-pointer"
+                >
+                  KYC / Role
+                </button>
+              </div>
+            </div>
+
             <div className="flex gap-1.5">
+              <select
+                value={selectedZoneFilter}
+                onChange={(e) => setSelectedZoneFilter(e.target.value)}
+                className="bg-slate-900 text-emerald-300 border border-emerald-700 rounded-xl px-2 py-1 text-[10px] font-bold"
+              >
+                {GEO_ZONES.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {z.label}
+                  </option>
+                ))}
+              </select>
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  recordUserActivityTelemetry("SEARCH", {
-                    query: e.target.value
-                  });
-                }}
-                placeholder={t.searchPlaceholder}
-                className="flex-1 bg-white border-2 border-amber-400 rounded-xl px-3 py-2 text-xs text-slate-900 font-semibold shadow-sm"
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t.searchPlaceholder || "Search stores, items, services..."}
+                className="flex-1 bg-slate-900 text-white border border-slate-700 rounded-xl px-2.5 py-1 text-[11px]"
               />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="bg-slate-800 text-white px-3 rounded-xl text-[10px] font-black cursor-pointer"
-                >
-                  Clear
-                </button>
-              )}
             </div>
+          </div>
 
-            {/* ============================================================== */}
-            {/* REQ 1 & 5: VISUAL CATEGORY-WISE ICONS GRID (INCLUDING LABOUR!) */}
-            {/* ============================================================== */}
-            <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm space-y-1.5">
-              <div className="flex justify-between items-center px-1">
-                <span className="text-[10px] font-black text-slate-700 uppercase">
-                  Shop &amp; Book by Category (Tap Any Icon):
-                </span>
-                <span className="text-[9px] font-bold text-emerald-700">
-                  {String(geoSlang?.stateName || geoSlang?.stateLabel || geoSlang?.name || "Telangana (Adilabad)").split("(")[0]} Slang Active
-                </span>
+          <GeoTargetedAdBanner
+            ads={geoAds}
+            selectedZone={selectedZoneFilter}
+            brightTheme={brightTheme}
+          />
+
+          {footerTab === "home" && (
+            <>
+              <div className="grid grid-cols-5 gap-1 bg-slate-200/80 p-1 rounded-xl text-[10px] font-black text-slate-800">
+                {[
+                  { id: "stores", label: "🛒 Stores" },
+                  { id: "services", label: "🛠️ 1-Hr Srv" },
+                  { id: "events", label: "🎪 Events" },
+                  { id: "taxi", label: "🚕 Rides" },
+                  { id: "labour", label: "👷 Mistri" }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setCustomerHomeSubTab(tab.id)}
+                    className={`py-1.5 rounded-lg text-center cursor-pointer ${
+                      customerHomeSubTab === tab.id
+                        ? "bg-emerald-900 text-amber-300 shadow"
+                        : "hover:bg-white/60"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              <div className="grid grid-cols-5 gap-1.5">
-                {categoryIconGrid.map((cat) => {
-                  const active = selectedCategory === cat.id;
-                  return (
+
+              {customerHomeSubTab === "stores" && (
+                <div className="space-y-2.5">
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
                     <button
-                      key={cat.id}
                       type="button"
-                      onClick={() => {
-                        setSelectedCategory(cat.id);
-                        setSearchQuery("");
-                      }}
-                      className={`p-2 rounded-xl border text-center cursor-pointer transition flex flex-col items-center justify-center ${
-                        active
-                          ? "border-emerald-600 bg-emerald-600 text-white font-black shadow-md scale-[1.02]"
-                          : "border-slate-200 bg-slate-50 text-slate-800 hover:border-emerald-400"
+                      onClick={() => setSelectedCategory("all")}
+                      className={`px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0 cursor-pointer ${
+                        selectedCategory === "all"
+                          ? "bg-amber-400 text-slate-950"
+                          : "bg-slate-800 text-white"
                       }`}
                     >
-                      <span className="text-lg leading-none">{cat.icon}</span>
-                      <span className="text-[9px] font-bold mt-1 leading-tight line-clamp-2">
-                        {cat.label}
-                      </span>
+                      All Categories
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* ============================================================== */}
-            {/* VIEW 1: STORE CATEGORY PRODUCTS (KIRANA, VEG, MEAT, CEMENT...) */}
-            {/* ============================================================== */}
-            {(isStoreCategory || searchQuery.trim() !== "") && (
-              <div className="space-y-2">
-                <div className="flex justify-between items-center px-1">
-                  <h3 className="font-black text-emerald-800 text-xs uppercase">
-                    {getGeoCategoryLabel(selectedCategory, "Store Products")} (
-                    {matchingProducts.length} Items)
-                  </h3>
-                  <span className="text-[10px] font-bold text-slate-500">
-                    {t.compareShops}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {matchingProducts.map((prod) => {
-                    const chosenVarId =
-                      selectedVariantMap[prod.id] || prod.variants[0].id;
-                    const currentVar =
-                      prod.variants.find((v) => v.id === chosenVarId) ||
-                      prod.variants[0];
-                    const { offers, activeOffer } = getProductBestOffer(prod);
-                    const isCompareOpen = expandedCompareProdId === prod.id;
-                    const cleanTitle = cleanLabel(prod.subCategoryBrand);
-                    const localCatTitle =
-                      geoSlang?.categories?.[prod.categoryId] ||
-                      cleanLabel(prod.curiosityTag || "Local Market");
-                    const inCartItem = merchantCart.find(
-                      (i) =>
-                        i.productId === prod.id &&
-                        i.variantId === currentVar.id
-                    );
-
-                    return (
-                      <div
-                        key={prod.id}
-                        className="rounded-2xl p-3 space-y-2 border bg-white border-slate-200 text-slate-900 shadow-sm"
+                    {visibleCategories.map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setSelectedCategory(cat.id)}
+                        className={`px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0 cursor-pointer ${
+                          selectedCategory === cat.id
+                            ? "bg-amber-400 text-slate-950"
+                            : "bg-slate-800 text-white"
+                        }`}
                       >
-                        <div className="flex gap-2.5 items-center">
-                          <img
-                            src={prod.image}
-                            alt={cleanTitle}
-                            className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[9px] text-amber-600 font-black block truncate">
-                              {localCatTitle} | Stock: {prod.stockQty ?? 25}
-                            </span>
-                            <h4 className="text-xs font-black text-slate-900 truncate">
-                              {cleanTitle}
-                            </h4>
-                            <div className="flex justify-between items-center mt-0.5">
-                              <p className="text-[10px] text-emerald-700 font-bold truncate">
-                                {cleanLabel(activeOffer.merchantName)}
+                        {cat.icon} {translateCategoryName(cat.id, cat.name, lang)}
+                      </button>
+                    ))}
+                  </div>
+
+                  {filteredProducts.length === 0 ? (
+                    <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
+                      <p className="font-black text-xs">
+                        Clean Production Server Catalog (0 Pre-Installed Items)
+                      </p>
+                      <p className="text-[10px] opacity-80">
+                        Switch to the Merchant Portal to publish live products, or add a test listing below.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setActivePortal("merchant")}
+                        className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
+                      >
+                        Open Merchant Portal to Add Products &rarr;
+                      </button>
+                    </div>
+                  ) : (
+                    filteredProducts.map((prod) => {
+                      const chosenVarId = selectedVariantMap[prod.id] || prod.variants[0]?.id;
+                      const activeVar =
+                        prod.variants.find((v) => v.id === chosenVarId) || prod.variants[0];
+                      const { offers, activeOffer } = getProductBestOffer(prod);
+                      return (
+                        <div
+                          key={prod.id}
+                          className="p-3 rounded-2xl border border-slate-300/80 bg-white text-slate-900 shadow-sm space-y-2"
+                        >
+                          <div className="flex justify-between items-start gap-2">
+                            <div>
+                              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-900">
+                                {activeOffer.merchantName || prod.shopName}
+                              </span>
+                              <h3 className="font-black text-xs mt-1">{prod.subCategoryBrand}</h3>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-black text-sm text-emerald-700">
+                                ₹{activeOffer.price || activeVar?.price}
                               </p>
+                              <p className="text-[9px] line-through text-slate-400">
+                                MRP ₹{activeVar?.mrp || (activeVar?.price || 100) + 25}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <select
+                              value={chosenVarId}
+                              onChange={(e) =>
+                                setSelectedVariantMap({
+                                  ...selectedVariantMap,
+                                  [prod.id]: e.target.value
+                                })
+                              }
+                              className="border border-slate-300 rounded-lg px-2 py-1 text-[10px] font-bold bg-slate-50"
+                            >
+                              {prod.variants.map((v) => (
+                                <option key={v.id} value={v.id}>
+                                  {v.label} - ₹{v.price}
+                                </option>
+                              ))}
+                            </select>
+
+                            {offers.length > 1 && (
                               <button
                                 type="button"
                                 onClick={() =>
                                   setExpandedCompareProdId(
-                                    isCompareOpen ? null : prod.id
+                                    expandedCompareProdId === prod.id ? null : prod.id
                                   )
                                 }
-                                className="text-[9px] text-indigo-600 underline font-black cursor-pointer shrink-0"
+                                className="text-[9px] font-black text-indigo-700 underline cursor-pointer"
                               >
-                                {t.compareShops} ({offers.length})
+                                Compare {offers.length} Shops
                               </button>
-                            </div>
-                          </div>
-                        </div>
+                            )}
 
-                        {isCompareOpen && (
-                          <div className="bg-slate-900 text-white p-2 rounded-xl space-y-1 text-[10px]">
-                            {offers.map((off) => (
-                              <button
-                                key={off.merchantId}
-                                type="button"
-                                onClick={() =>
-                                  setSelectedMerchantByProduct({
-                                    ...selectedMerchantByProduct,
-                                    [prod.id]: off.merchantId
-                                  })
-                                }
-                                className="w-full p-1.5 rounded-lg border border-slate-700 flex justify-between cursor-pointer"
-                              >
-                                <span>{cleanLabel(off.merchantName)}</span>
-                                <span className="text-emerald-400 font-bold">
-                                  Rs.{off.price}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="flex gap-1.5 items-center">
-                          <select
-                            value={currentVar.id}
-                            onChange={(e) =>
-                              setSelectedVariantMap({
-                                ...selectedVariantMap,
-                                [prod.id]: e.target.value
-                              })
-                            }
-                            className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-[10px] text-emerald-300 flex-1 font-bold"
-                          >
-                            {prod.variants.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {cleanLabel(v.label)} - Rs.{v.price} (MRP Rs.{v.mrp})
-                              </option>
-                            ))}
-                          </select>
-
-                          {inCartItem ? (
-                            <div className="flex items-center bg-emerald-600 text-white rounded-lg px-1.5 py-1 gap-2 font-black text-[10px]">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (inCartItem.qty <= 1) {
-                                    setMerchantCart(
-                                      merchantCart.filter(
-                                        (x) => x !== inCartItem
-                                      )
-                                    );
-                                  } else {
-                                    setMerchantCart(
-                                      merchantCart.map((x) =>
-                                        x === inCartItem
-                                          ? { ...x, qty: x.qty - 1 }
-                                          : x
-                                      )
-                                    );
-                                  }
-                                }}
-                                className="px-1.5 bg-emerald-800 rounded cursor-pointer"
-                              >
-                                -
-                              </button>
-                              <span>{inCartItem.qty}</span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleAddToUnifiedMerchantCart(prod)
-                                }
-                                className="px-1.5 bg-emerald-800 rounded cursor-pointer"
-                              >
-                                +
-                              </button>
-                            </div>
-                          ) : (
                             <button
                               type="button"
-                              onClick={() =>
-                                handleAddToUnifiedMerchantCart(prod)
-                              }
-                              className="bg-emerald-600 hover:bg-emerald-500 text-white font-black px-3 py-1.5 rounded-lg text-[10px] cursor-pointer shrink-0"
+                              onClick={() => handleAddToUnifiedMerchantCart(prod)}
+                              className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                             >
-                              {t.addCart}
+                              + Add
                             </button>
+                          </div>
+
+                          {expandedCompareProdId === prod.id && (
+                            <div className="bg-slate-100 p-2 rounded-xl space-y-1">
+                              {offers.map((off) => (
+                                <button
+                                  key={off.merchantId}
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedMerchantByProduct({
+                                      ...selectedMerchantByProduct,
+                                      [prod.id]: off.merchantId
+                                    })
+                                  }
+                                  className="w-full flex justify-between items-center text-[10px] font-bold px-2 py-1 rounded bg-white border border-slate-200 cursor-pointer"
+                                >
+                                  <span>{off.merchantName}</span>
+                                  <span className="text-emerald-700 font-black">₹{off.price}</span>
+                                </button>
+                              ))}
+                            </div>
                           )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* ============================================================== */}
-            {/* REQ 1: CONSUMER LABOUR ORDERING SECTION (SUB-CATEGORIES + CART)*/}
-            {/* ============================================================== */}
-            {(selectedCategory === "CAT_LABOUR" || searchQuery.trim() !== "") && (
-              <div className="bg-slate-900 text-white p-3.5 rounded-2xl border-2 border-amber-400 space-y-3 text-xs">
-                <div className="flex flex-wrap justify-between items-center gap-2">
-                  <div>
-                    <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[9px]">
-                      ORDER LABOURERS TO CART &amp; CHECKOUT
-                    </span>
-                    <h3 className="font-black text-amber-300 text-xs mt-1 uppercase">
-                      {geoSlang.standSlang} &amp; {geoSlang.groupSlang} Booking
-                    </h3>
-                    <p className="text-[10px] text-slate-300">
-                      Choose work type sub-category below, select shift &amp; worker count, and tap <strong>+ Add Labour to Cart</strong>
-                    </p>
+              {customerHomeSubTab === "services" && (
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-2 gap-1.5 bg-white p-2 rounded-xl border border-slate-200 text-slate-900">
+                    <input
+                      type="date"
+                      value={serviceFilterDate}
+                      onChange={(e) => setServiceFilterDate(e.target.value)}
+                      className="border border-slate-300 rounded-lg px-2 py-1 text-[10px] font-bold"
+                    />
+                    <select
+                      value={serviceFilterSlot}
+                      onChange={(e) => setServiceFilterSlot(e.target.value)}
+                      className="border border-slate-300 rounded-lg px-2 py-1 text-[10px] font-bold"
+                    >
+                      <option>10:00 AM - 11:00 AM</option>
+                      <option>12:00 PM - 01:00 PM</option>
+                      <option>03:00 PM - 04:00 PM</option>
+                      <option>06:00 PM - 07:00 PM</option>
+                    </select>
                   </div>
-                </div>
 
-                {/* Sub-Category Pills for Labour Roles */}
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
-                  <button
-                    type="button"
-                    onClick={() => setLabourFilterSkill("ALL")}
-                    className={`px-3 py-1.5 rounded-xl font-black text-[10px] shrink-0 cursor-pointer ${
-                      labourFilterSkill === "ALL"
-                        ? "bg-amber-400 text-slate-950"
-                        : "bg-slate-950 text-slate-300 border border-slate-800"
-                    }`}
-                  >
-                    All Labour ({labourWorkers.length})
-                  </button>
-                  {LABOUR_SKILL_CATEGORIES.map((sc) => {
-                    const localRole = getGeoLabourRoleLabel(sc.id, sc.name);
-                    return (
+                  {serviceProviders.length === 0 ? (
+                    <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
+                      <p className="font-black text-xs">No Active 1-Hr Service Providers Yet</p>
                       <button
-                        key={sc.id}
                         type="button"
-                        onClick={() => setLabourFilterSkill(sc.id)}
-                        className={`px-3 py-1.5 rounded-xl font-black text-[10px] shrink-0 cursor-pointer ${
-                          labourFilterSkill === sc.id
-                            ? "bg-emerald-400 text-slate-950"
-                            : "bg-slate-950 text-slate-300 border border-slate-800"
-                        }`}
+                        onClick={() => setActivePortal("service_provider")}
+                        className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                       >
-                        {localRole.split("(")[0].trim()}
+                        Switch to Service Provider Portal to Register &rarr;
                       </button>
-                    );
-                  })}
-                </div>
-
-                {/* Labour Worker / Toli Cards with + Add to Cart */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {matchingLabour.map((lw) => {
-                    const localRoleTitle = getGeoLabourRoleLabel(
-                      lw.skillId,
-                      lw.skillLabel
-                    );
-                    const chosenShift =
-                      labourShiftMap[lw.id] ||
-                      "Full-Day Shift (09:00 AM - 05:30 PM)";
-                    const chosenWorkers =
-                      labourCountMap[lw.id] ??
-                      (lw.workerType === "MISTRI_TOLI" ? lw.toliCount || 4 : 1);
-                    const isHalf = chosenShift.includes("Half-Day");
-                    const unitRate = isHalf ? lw.halfDayWage : lw.fullDayWage;
-                    const estTotalWage =
-                      chosenWorkers === 1
-                        ? unitRate
-                        : unitRate +
-                          Math.max(0, chosenWorkers - 1) *
-                            (isHalf
-                              ? Math.round((lw.helperDailyWage || 500) * 0.55)
-                              : lw.helperDailyWage || 500);
-
-                    return (
+                    </div>
+                  ) : (
+                    serviceProviders.map((sp) => (
                       <div
-                        key={lw.id}
-                        className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2"
+                        key={sp.id}
+                        className="p-3 rounded-2xl border border-slate-200 bg-white text-slate-900 flex justify-between items-center"
                       >
-                        <div className="flex justify-between items-start gap-2">
-                          <div>
-                            <span className="bg-emerald-500/20 text-emerald-300 text-[8px] font-black px-2 py-0.5 rounded">
-                              {lw.workerType === "MISTRI_TOLI"
-                                ? `${geoSlang.groupSlang}`
-                                : "SINGLE WORKER"}{" "}
-                              | {lw.experienceYrs} YRS EXP
-                            </span>
-                            <h4 className="font-black text-white text-xs mt-1">
-                              {lw.workerName}
-                            </h4>
-                            <p className="text-[10px] text-amber-300 font-bold">
-                              {localRoleTitle}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-black text-emerald-400 text-sm block">
-                              Rs.{estTotalWage}
-                            </span>
-                            <span className="text-[8px] text-slate-400 block">
-                              Full: Rs.{lw.fullDayWage} | Half: Rs.{lw.halfDayWage}
-                            </span>
-                          </div>
+                        <div>
+                          <h4 className="font-black text-xs">{sp.providerName}</h4>
+                          <p className="text-[10px] text-slate-600">{sp.specialization}</p>
+                          <p className="text-[10px] font-black text-emerald-700">
+                            Visiting Escrow Fee: ₹{sp.visitingFee}
+                          </p>
                         </div>
-
-                        <p className="text-[9px] text-slate-400">
-                          Stand: {lw.addaLocation} | Tools: {lw.toolsList}
-                        </p>
-
-                        <div className="grid grid-cols-3 gap-1.5 items-center pt-1">
-                          <select
-                            value={chosenShift}
-                            onChange={(e) =>
-                              setLabourShiftMap({
-                                ...labourShiftMap,
-                                [lw.id]: e.target.value
-                              })
-                            }
-                            className="col-span-2 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-[10px] text-white font-bold"
-                          >
-                            <option value="Full-Day Shift (09:00 AM - 05:30 PM)">
-                              Full-Day (9AM - 5:30PM)
-                            </option>
-                            <option value="Half-Day Shift (4 Hours)">
-                              Half-Day (4 Hours)
-                            </option>
-                            <option value="Contract / Piece-Rate">
-                              Contract / Sq.Ft
-                            </option>
-                          </select>
-                          <div className="flex items-center justify-between bg-slate-900 border border-slate-700 rounded-lg px-2 py-1">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setLabourCountMap({
-                                  ...labourCountMap,
-                                  [lw.id]: Math.max(1, chosenWorkers - 1)
-                                })
-                              }
-                              className="text-amber-300 font-black cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <span className="text-[10px] font-bold">
-                              {chosenWorkers}P
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setLabourCountMap({
-                                  ...labourCountMap,
-                                  [lw.id]: chosenWorkers + 1
-                                })
-                              }
-                              className="text-emerald-300 font-black cursor-pointer"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-
                         <button
                           type="button"
-                          onClick={() =>
-                            handleAddLabourToCart(lw, localRoleTitle)
-                          }
-                          className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-2 rounded-xl text-[10px] cursor-pointer shadow"
+                          onClick={() => {
+                            setServiceCart([
+                              ...serviceCart,
+                              {
+                                ...sp,
+                                bookingDate: serviceFilterDate,
+                                bookingSlot: serviceFilterSlot
+                              }
+                            ]);
+                            triggerToast(`Booked ${sp.providerName} into Service Cart!`);
+                          }}
+                          className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                         >
-                          + Add Labour to Cart ({chosenWorkers} Worker
-                          {chosenWorkers > 1 ? "s" : ""} | Rs.{estTotalWage})
+                          Book 1-Hr
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {customerHomeSubTab === "events" && (
+                <div className="space-y-2.5">
+                  <div className="bg-white p-2.5 rounded-2xl border border-slate-200 text-slate-900 space-y-2">
+                    <label className="text-[10px] font-black">Select Event / Muhurtham Date:</label>
+                    <input
+                      type="date"
+                      value={eventDate}
+                      onChange={(e) => setEventDate(e.target.value)}
+                      className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold"
+                    />
+                  </div>
+                  {functionHalls.map((hall) => {
+                    const isBooked = (hall.bookedDates || []).includes(eventDate);
+                    return (
+                      <div
+                        key={hall.id}
+                        className="p-3 rounded-2xl border border-slate-200 bg-white text-slate-900 flex justify-between items-center"
+                      >
+                        <div>
+                          <h4 className="font-black text-xs">{hall.name}</h4>
+                          <p className="text-[10px] text-slate-600">
+                            {hall.capacity} • ₹{hall.pricePerDay}/day
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isBooked}
+                          onClick={() => {
+                            setDecorCart([
+                              ...decorCart,
+                              { id: hall.id, title: hall.name, eventDate, price: hall.pricePerDay }
+                            ]);
+                            triggerToast(`Reserved ${hall.name} in Event Cart!`);
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black ${
+                            isBooked
+                              ? "bg-rose-200 text-rose-800"
+                              : "bg-emerald-600 text-white cursor-pointer"
+                          }`}
+                        >
+                          {isBooked ? "Date Booked" : "Reserve Hall"}
                         </button>
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 3: 1-HR HOME SERVICES */}
-            {selectedCategory === "CAT_SERVICES" && (
-              <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-indigo-500/40 space-y-2.5 text-xs">
-                <h3 className="font-black text-indigo-300 text-xs uppercase">
-                  1-Hr Home Services (Plumber, Electrician, AC, Carpenter)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {matchingServices.map((sp) => (
+                  {DECORATION_SERVICE_MODULES.map((mod) => (
                     <div
-                      key={sp.id}
-                      className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex justify-between items-center gap-2"
-                    >
-                      <div className="flex gap-2.5 items-center min-w-0">
-                        <img
-                          src={sp.image}
-                          alt={cleanLabel(sp.maskedId)}
-                          className="w-12 h-12 rounded-xl object-cover shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <p className="font-bold text-white truncate">
-                            {cleanLabel(sp.maskedId)} | {cleanLabel(sp.serviceCategory)}
-                          </p>
-                          <p className="text-[10px] text-emerald-400 font-bold">
-                            Visit Escrow: Rs.{sp.visitingFee} | Hourly: Rs.{sp.hourlyRate}/hr
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setServiceCart([
-                            ...serviceCart,
-                            {
-                              ...sp,
-                              cartItemId: `sc_${Date.now()}`,
-                              bookedDate: serviceFilterDate,
-                              bookedSlot: serviceFilterSlot,
-                              address: activeAddressObj.fullAddress
-                            }
-                          ]);
-                          triggerToast(
-                            `Added ${cleanLabel(sp.maskedId)} to Cart!`
-                          );
-                        }}
-                        className="bg-indigo-500 text-white font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
-                      >
-                        + Add to Cart
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 4: DECOR & FUNCTION HALLS */}
-            {selectedCategory === "CAT_DECOR" && (
-              <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-amber-500/40 space-y-2.5 text-xs">
-                <h3 className="font-black text-amber-400 text-xs uppercase">
-                  Function Halls &amp; Flower Decoration
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {matchingDecor.map((item) => (
-                    <div
-                      key={item.id}
-                      className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex gap-2.5 items-center"
-                    >
-                      <img
-                        src={item.image}
-                        alt={cleanLabel(item.title)}
-                        className="w-14 h-14 rounded-xl object-cover border border-amber-400/50 shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-white text-xs truncate">
-                          {cleanLabel(item.title)}
-                        </h4>
-                        <p className="text-[10px] text-emerald-400 font-bold">
-                          {cleanLabel(item.merchantName)} | Est. Rs.
-                          {Number(item.baseEstimate).toLocaleString("en-IN")}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDecorCart([...decorCart, item]);
-                          triggerToast(
-                            `Added "${cleanLabel(item.title)}" to Cart!`
-                          );
-                        }}
-                        className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[9px] cursor-pointer shrink-0"
-                      >
-                        + Add to Cart
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 5: 2W / 3W / 4W RIDES & PARCELS */}
-            {selectedCategory === "CAT_TAXI" && (
-              <div className="bg-slate-900 p-3.5 rounded-2xl border border-teal-500/40 space-y-2.5 text-xs text-white">
-                <h3 className="font-black text-teal-300 uppercase">
-                  2W Bike, 3W Auto &amp; 4W Mini-Truck Booking
-                </h3>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { code: "2W", allowed: is2WAllowed, limitText: "Max 45 kg" },
-                    { code: "3W", allowed: is3WAllowed, limitText: "Max 300 kg" },
-                    { code: "4W_HEAVY", allowed: true, limitText: "Up to 2000 kg" }
-                  ].map((opt) => {
-                    const rule = VEHICLE_CONSORT_RULES[opt.code];
-                    const selected = activeVehCode === opt.code;
-                    return (
-                      <button
-                        key={opt.code}
-                        type="button"
-                        disabled={!opt.allowed}
-                        onClick={() =>
-                          setCustomerBookingForm({
-                            ...customerBookingForm,
-                            chosenVehicleCode: opt.code
-                          })
-                        }
-                        className={`p-2 rounded-xl border text-center transition ${
-                          !opt.allowed
-                            ? "bg-rose-950/30 border-rose-500/40 text-rose-400 opacity-50 cursor-not-allowed"
-                            : selected
-                            ? "bg-emerald-400 text-slate-950 border-white font-black cursor-pointer shadow"
-                            : "bg-slate-950 text-slate-300 border-slate-800 cursor-pointer"
-                        }`}
-                      >
-                        <div className="text-[10px] font-black">{rule.shortLabel}</div>
-                        <div className="text-[8px] mt-0.5">
-                          {opt.allowed ? opt.limitText : "Over Weight Limit"}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    requireAuthAtCheckout(() => {
-                      const newJob = {
-                        id: `RDR-${activeVehCode}-${Math.floor(
-                          100 + Math.random() * 900
-                        )}`,
-                        requiredVehicleCode: activeVehCode,
-                        vehicleLabel: chosenRule.label,
-                        weightKg: wKg,
-                        badge: `${chosenRule.shortLabel} (${wKg} kg)`,
-                        bookedBy: `Customer: ${currentUser.fullName}`,
-                        pickupPin: customerBookingForm.pickupPin,
-                        dropPin: customerBookingForm.dropPin,
-                        distFromCaptainKm: 0.6,
-                        distanceKm: customerBookingForm.distanceKm,
-                        captainPayout: calculatedFare,
-                        secretOtp: String(
-                          Math.floor(1000 + Math.random() * 9000)
-                        ),
-                        status: "OPEN_ON_RADAR",
-                        paymentReqStatus: "PENDING_TRIP_COMPLETION"
-                      };
-                      setCaptainRadarJobs([newJob, ...captainRadarJobs]);
-                      triggerToast(
-                        `Booked ${chosenRule.shortLabel} #${newJob.id}!`
-                      );
-                    })
-                  }
-                  className="w-full bg-teal-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
-                >
-                  Book {chosenRule.shortLabel} Now (Rs.{calculatedFare})
-                </button>
-              </div>
-            )}
-
-            {/* VIEW 6: KISAN MANDI */}
-            {selectedCategory === "CAT_MANDI" && (
-              <div className="bg-slate-900 p-3.5 rounded-2xl border border-purple-500/40 space-y-2.5 text-xs text-white">
-                <h3 className="font-black text-purple-300 uppercase">
-                  Direct Kisan Mandi &amp; Farm Produce
-                </h3>
-                {customPortals.map((cp) =>
-                  (cp.items || []).map((it) => (
-                    <div
-                      key={it.id}
-                      className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
+                      key={mod.id}
+                      className="p-3 rounded-2xl border border-slate-200 bg-white text-slate-900 flex justify-between items-center"
                     >
                       <div>
-                        <p className="font-bold text-white text-xs">
-                          {cleanLabel(it.title)}
-                        </p>
-                        <p className="text-[10px] text-amber-300">
-                          Rs.{it.price} ({it.unit})
+                        <h4 className="font-black text-xs">
+                          {mod.icon} {mod.name}
+                        </h4>
+                        <p className="text-[10px] text-emerald-700 font-bold">
+                          Starting ₹{mod.startingPrice}
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => {
-                          setMerchantCart([
-                            ...merchantCart,
-                            {
-                              productId: it.id,
-                              variantId: "v1",
-                              name: cleanLabel(it.title),
-                              merchantId: cp.id,
-                              merchantName: cleanLabel(cp.title),
-                              price: Number(it.price) || 199,
-                              weightGrams: 1000,
-                              qty: 1
-                            }
+                          setDecorCart([
+                            ...decorCart,
+                            { id: mod.id, title: mod.name, eventDate, price: mod.startingPrice }
                           ]);
-                          triggerToast(`Added ${cleanLabel(it.title)} to Cart!`);
+                          triggerToast(`Added ${mod.name} to Event Cart!`);
                         }}
-                        className="bg-emerald-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
+                        className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                       >
-                        + Add to Cart
+                        + Add Decor
                       </button>
                     </div>
-                  ))
-                )}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
 
-            {/* Sticky Bottom Checkout Pill whenever Cart has items or labourers */}
-            {totalCartCount > 0 && (
-              <div className="sticky bottom-2 z-30 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setFooterTab("carts")}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-2xl shadow-2xl border-2 border-amber-400 flex justify-between items-center cursor-pointer"
-                >
-                  <div className="text-left">
-                    <span className="text-xs font-black block">
-                      {totalCartCount} Item(s) / Worker(s) in Cart
-                    </span>
-                    <span className="text-[9px] text-amber-200 font-bold block">
-                      Tap to Review Cart &amp; Proceed to Checkout
-                    </span>
-                  </div>
-                  <span className="bg-amber-400 text-slate-950 font-black px-3 py-1 rounded-xl text-[10px]">
-                    Go to Checkout &rarr;
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {footerTab === "services" && (
-          <div className="space-y-2.5 text-xs text-white">
-            {matchingServices.map((sp) => (
-              <div
-                key={sp.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2"
-              >
-                <div className="flex gap-2.5 items-center">
-                  <img
-                    src={sp.image}
-                    alt={cleanLabel(sp.maskedId)}
-                    className="w-12 h-12 rounded-xl object-cover shrink-0"
+              {customerHomeSubTab === "taxi" && (
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-2">
+                  <h3 className="font-black text-xs">Instant Local Point-to-Point Ride</h3>
+                  <input
+                    type="text"
+                    value={taxiBookingForm.pickupPin}
+                    onChange={(e) =>
+                      setTaxiBookingForm({ ...taxiBookingForm, pickupPin: e.target.value })
+                    }
+                    placeholder="Pickup Location"
+                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
                   />
-                  <div>
-                    <p className="font-bold text-white">
-                      {cleanLabel(sp.maskedId)} | {cleanLabel(sp.serviceCategory)}
-                    </p>
-                    <p className="text-[10px] text-emerald-400 font-bold">
-                      Visit Escrow: Rs.{sp.visitingFee} | Hourly: Rs.{sp.hourlyRate}/hr
-                    </p>
+                  <input
+                    type="text"
+                    value={taxiBookingForm.dropPin}
+                    onChange={(e) =>
+                      setTaxiBookingForm({ ...taxiBookingForm, dropPin: e.target.value })
+                    }
+                    placeholder="Drop Location"
+                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
+                  />
+                  <div className="grid grid-cols-3 gap-1.5 pt-1">
+                    {[
+                      { type: "2W Bike", rate: 12 },
+                      { type: "3W Auto", rate: 22 },
+                      { type: "AC Cab", rate: 35 }
+                    ].map((v) => {
+                      const fare = Math.round(taxiBookingForm.distanceKm * v.rate + 20);
+                      return (
+                        <button
+                          key={v.type}
+                          type="button"
+                          onClick={() => {
+                            setTaxiCart([
+                              ...taxiCart,
+                              {
+                                id: `RIDE-${Date.now()}`,
+                                vehicle: v.type,
+                                pickup: taxiBookingForm.pickupPin,
+                                drop: taxiBookingForm.dropPin,
+                                fare
+                              }
+                            ]);
+                            triggerToast(`${v.type} (₹${fare}) added to Ride Cart!`);
+                          }}
+                          className="p-2 rounded-xl border border-emerald-600 bg-emerald-50 text-center cursor-pointer"
+                        >
+                          <p className="font-black text-[10px]">{v.type}</p>
+                          <p className="font-black text-xs text-emerald-800">₹{fare}</p>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setServiceCart([
-                      ...serviceCart,
-                      {
-                        ...sp,
-                        cartItemId: `sc_${Date.now()}`,
-                        bookedDate: serviceFilterDate,
-                        bookedSlot: serviceFilterSlot,
-                        address: activeAddressObj.fullAddress
-                      }
-                    ]);
-                    setFooterTab("carts");
-                  }}
-                  className="w-full bg-indigo-500 text-white font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
-                >
-                  + Add 1-Hr Slot to Cart (Rs.{sp.visitingFee})
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
 
-        {/* ================================================================ */}
-        {/* UNIFIED CARTS TAB (STORE ITEMS + LABOUR + SERVICES + DECOR)      */}
-        {/* Triggers Login / Sign-Up Gate at Checkout if Not Signed In!      */}
-        {/* ================================================================ */}
-        {footerTab === "carts" && (
-          <div className="space-y-3 text-xs text-white">
-            {totalCartCount === 0 && (
-              <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center space-y-2">
-                <p className="font-bold text-slate-300">
-                  Your Cart is currently empty.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setFooterTab("home")}
-                  className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl text-[10px] cursor-pointer"
-                >
-                  Browse Categories &amp; Add Items
-                </button>
-              </div>
-            )}
+              {customerHomeSubTab === "labour" && (
+                <LabourWorksitePortal
+                  mode="customer"
+                  categories={LABOUR_TRADE_CATEGORIES}
+                  workers={labourWorkers}
+                  setWorkers={setLabourWorkers}
+                  bookings={labourBookings}
+                  setBookings={setLabourBookings}
+                  currentUser={currentUser}
+                  brightTheme={brightTheme}
+                  onToast={triggerToast}
+                />
+              )}
+            </>
+          )}
 
-            {/* 1. Store Products Cart */}
-            {merchantCart.length > 0 && (
-              <div className="bg-slate-900 p-3.5 rounded-2xl border border-emerald-500/40 space-y-2.5">
-                <h4 className="font-black text-emerald-400">
-                  1. Store Shopping Cart ({cartWeightKg} kg Total Load)
-                </h4>
-                {merchantCart.map((it, idx) => (
-                  <div
-                    key={idx}
-                    className="flex justify-between items-center bg-slate-950 p-2 rounded-xl border border-slate-800"
-                  >
-                    <div>
-                      <p className="font-bold text-white">
-                        {it.qty}x {cleanLabel(it.name)}
-                      </p>
-                      <p className="text-[9px] text-slate-400">
-                        Shop: {cleanLabel(it.merchantName)}
-                      </p>
-                    </div>
-                    <span className="text-amber-300 font-black">
-                      Rs.{it.price * it.qty}
-                    </span>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() =>
-                    requireAuthAtCheckout(() =>
-                      executeMerchantOrderCheckout(
-                        effectiveCartVehCode,
-                        cartDeliveryFee,
-                        cartWeightKg
-                      )
-                    )
-                  }
-                  className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
-                >
-                  Proceed to Checkout &amp; Place Store Order (Delivery Rs.{cartDeliveryFee}) &rarr;
-                </button>
-              </div>
-            )}
-
-            {/* 2. Labour & Mistri Cart */}
-            {labourCart.length > 0 && (
-              <div className="bg-slate-900 p-3.5 rounded-2xl border-2 border-amber-400 space-y-2.5">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-black text-amber-300">
-                    2. {geoSlang.standSlang} Booking Cart ({labourCart.length})
-                  </h4>
+          {footerTab === "cart" && (
+            <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-3">
+              <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-[9px] font-black">
+                {[
+                  { id: "merchant_cart", label: `Stores (${merchantCart.length})` },
+                  { id: "service_cart", label: `1-Hr (${serviceCart.length})` },
+                  { id: "decor_cart", label: `Events (${decorCart.length})` },
+                  { id: "taxi_cart", label: `Rides (${taxiCart.length})` }
+                ].map((ct) => (
                   <button
+                    key={ct.id}
                     type="button"
-                    onClick={() => setLabourCart([])}
-                    className="text-[9px] text-rose-300 underline cursor-pointer"
+                    onClick={() => setActiveCartViewTab(ct.id)}
+                    className={`py-1.5 rounded-lg cursor-pointer ${
+                      activeCartViewTab === ct.id ? "bg-emerald-900 text-amber-300" : ""
+                    }`}
                   >
-                    Clear
+                    {ct.label}
                   </button>
+                ))}
+              </div>
+
+              {activeCartViewTab === "merchant_cart" && (
+                <div className="space-y-2">
+                  {merchantCart.length === 0 ? (
+                    <p className="text-center py-4 text-slate-500 font-bold">
+                      Your store cart is empty.
+                    </p>
+                  ) : (
+                    <>
+                      {merchantCart.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="flex justify-between items-center border-b border-slate-200 pb-1.5"
+                        >
+                          <div>
+                            <p className="font-black text-xs">{item.name}</p>
+                            <p className="text-[10px] text-slate-500">
+                              {item.merchantName} • ₹{item.price} x {item.qty}
+                            </p>
+                          </div>
+                          <p className="font-black text-xs text-emerald-700">
+                            ₹{item.price * item.qty}
+                          </p>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={handlePlaceOrderForCheckout}
+                        className="w-full bg-emerald-600 text-white font-black py-2.5 rounded-xl cursor-pointer"
+                      >
+                        Approve & Pay via UPI
+                      </button>
+                    </>
+                  )}
                 </div>
-                {labourCart.map((lc) => (
-                  <div
-                    key={lc.cartItemId}
-                    className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
-                  >
-                    <div>
-                      <p className="font-bold text-white">
-                        {lc.workerName} ({lc.workersCount} Worker
-                        {lc.workersCount > 1 ? "s" : ""})
-                      </p>
-                      <p className="text-[10px] text-amber-300">
-                        {lc.skillLabel} | {lc.shiftType}
-                      </p>
-                    </div>
-                    <span className="font-black text-emerald-400">
-                      Rs.{lc.totalDailyWage}
-                    </span>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() =>
-                    requireAuthAtCheckout(() => executeLabourOrderCheckout())
-                  }
-                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
-                >
-                  Proceed to Checkout &amp; Confirm Labour Booking (Rs.
-                  {labourCart.reduce((s, l) => s + l.totalDailyWage, 0)}) &rarr;
-                </button>
-              </div>
-            )}
+              )}
 
-            {/* 3. 1-Hr Home Service Cart */}
-            {serviceCart.length > 0 && (
-              <div className="bg-slate-900 p-3 rounded-2xl border border-indigo-500/40 space-y-2">
-                <h4 className="font-black text-indigo-300">
-                  3. 1-Hr Service Escrow Cart
-                </h4>
-                {serviceCart.map((c) => (
-                  <div
-                    key={c.cartItemId}
-                    className="bg-slate-950 p-2 rounded-xl flex justify-between"
-                  >
-                    <span>
-                      {cleanLabel(c.maskedId)} ({c.bookedSlot})
-                    </span>
-                    <span className="text-amber-300 font-bold">
-                      Rs.{c.visitingFee}
-                    </span>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() =>
-                    requireAuthAtCheckout(() =>
-                      setPendingUpiPayment({
-                        type: "SERVICE_ESCROW",
-                        title: "Visiting Fee Escrow",
-                        amount: serviceCart.reduce(
-                          (s, i) => s + i.visitingFee,
-                          0
-                        )
-                      })
-                    )
-                  }
-                  className="w-full bg-indigo-500 text-white font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Checkout &amp; Pay Visiting Fee via UPI &rarr;
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+              {activeCartViewTab === "service_cart" && (
+                <div className="space-y-2">
+                  {serviceCart.length === 0 ? (
+                    <p className="text-center py-4 text-slate-500 font-bold">
+                      No 1-Hr Service bookings in cart.
+                    </p>
+                  ) : (
+                    <>
+                      {serviceCart.map((sc, i) => (
+                        <div key={i} className="flex justify-between border-b pb-1.5">
+                          <span>
+                            {sc.providerName} ({sc.bookingSlot})
+                          </span>
+                          <span className="font-black">₹{sc.visitingFee}</span>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const total = serviceCart.reduce((s, x) => s + x.visitingFee, 0);
+                          setPendingUpiPayment({
+                            type: "SERVICE_ESCROW",
+                            title: "1-Hr Service Escrow Visiting Fee",
+                            amount: total
+                          });
+                        }}
+                        className="w-full bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
+                      >
+                        Pay Visiting Fee into Escrow
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
 
-        {footerTab === "orders" && (
-          <div className="space-y-3">
-            {labourBookings.length > 0 && (
-              <div className="bg-slate-900 p-3 rounded-2xl border border-amber-400/50 space-y-2 text-xs text-white">
-                <h4 className="font-black text-amber-300">
-                  Active Labour &amp; Work-Site Bookings ({labourBookings.length})
-                </h4>
-                {labourBookings.map((lb) => (
-                  <div
-                    key={lb.id}
-                    className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center"
-                  >
-                    <div>
-                      <p className="font-bold text-white">
-                        #{lb.id} | {lb.skillNeeded}
-                      </p>
-                      <p className="text-[10px] text-slate-400">
-                        Start OTP: <strong className="text-emerald-400">{lb.startWorkOtp}</strong> | Release OTP: <strong className="text-amber-300">{lb.wageReleaseOtp}</strong>
-                      </p>
+              {activeCartViewTab === "decor_cart" && (
+                <div className="space-y-2">
+                  {decorCart.map((d, i) => (
+                    <div key={i} className="flex justify-between border-b pb-1">
+                      <span>
+                        {d.title} ({d.eventDate})
+                      </span>
+                      <span className="font-black">₹{d.price}</span>
                     </div>
-                    <span className="font-black text-emerald-400">
-                      Rs.{lb.totalDailyWage}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                  {decorCart.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDecorCart([]);
+                        triggerToast("Event & Hall Reservation Confirmed!");
+                      }}
+                      className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
+                    >
+                      Confirm Event Booking
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {activeCartViewTab === "taxi_cart" && (
+                <div className="space-y-2">
+                  {taxiCart.map((r, i) => (
+                    <div key={i} className="flex justify-between border-b pb-1">
+                      <span>
+                        {r.vehicle}: {r.pickup} &rarr; {r.drop}
+                      </span>
+                      <span className="font-black">₹{r.fare}</span>
+                    </div>
+                  ))}
+                  {taxiCart.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTaxiCart([]);
+                        triggerToast("Captain Dispatched for Your Ride!");
+                      }}
+                      className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
+                    >
+                      Dispatch Ride Captain Now
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {footerTab === "orders" && (
             <OrdersHistoryAndInvoice
               orders={orders}
+              setOrders={setOrders}
               serviceBookings={serviceBookings}
-              onCancelOrder={(id) =>
-                setOrders(
-                  orders.map((o) =>
-                    o.id === id ? { ...o, status: "CANCELLED_BY_USER" } : o
-                  )
-                )
-              }
-              onReturnOrder={(id) =>
-                setOrders(
-                  orders.map((o) =>
-                    o.id === id ? { ...o, status: "RETURN_REQUESTED" } : o
-                  )
-                )
-              }
+              labourBookings={labourBookings}
+              brightTheme={brightTheme}
               onOpenLiveMap={(ord) => {
                 setActiveOrderId(ord.id);
                 setLiveOrderDrawerOpen(true);
               }}
               onTriggerToast={triggerToast}
             />
-          </div>
-        )}
+          )}
 
-        {footerTab === "account" && renderSharedAccountTab("customer")}
-      </MobilePhoneShell>
-    );
-  };
-
-  const switchPartnerToConsumerShopping = (partnerRoleName) => {
-    setPersonalShoppingFromPartner(partnerRoleName);
-    setActivePortal("customer");
-    setSelectedCategory("daily_needs");
-    setFooterTab("home");
-  };
-
-  const renderSharedAccountTab = (partnerRole) => (
-    <OwnerAccountProfile
-      currentUser={currentUser}
-      setCurrentUser={setCurrentUser}
-      isAuthenticated={isAuthenticated}
-      onOpenAuthModal={(mode) => {
-        setAuthModalMode(mode || "login");
-        setAuthModalOpen(true);
-      }}
-      activePortal={activePortal}
-      setActivePortal={(nextPortal) => {
-        if (nextPortal === "customer")
-          switchPartnerToConsumerShopping(partnerRole);
-        else {
-          setActivePortal(nextPortal);
-          setFooterTab("home");
-        }
-      }}
-      activeAddressObj={activeAddressObj}
-      accountSecurity={accountSecurity}
-      setAccountSecurity={setAccountSecurity}
-      onLockApp={() => {
-        localStorage.setItem("we4all_persistent_session_v4", "logged_out");
-        setIsAuthenticated(false);
-        setActivePortal("customer");
-        setFooterTab("home");
-        triggerToast("Signed out. Returned to Consumer Shopping Mode.");
-      }}
-      brightTheme={brightTheme}
-      setBrightTheme={setBrightTheme}
-      lang={lang}
-      setLang={setLang}
-      geoRegion={geoRegion}
-      setGeoRegion={setGeoRegion}
-      appUpdateInfo={appUpdateInfo}
-      onCheckForUpdate={handleManualCheckForUpdate}
-      checkingUpdate={checkingUpdate}
-      onRunOtaUpdate={() => handleRunOtaUpdate()}
-      otaProgress={otaProgress}
-      onTriggerToast={triggerToast}
-    />
-  );
-
-  const renderMerchantPortal = () => (
-    <MobilePhoneShell
-      title="2. Product Merchant"
-      badge="Merchant"
-      activePortal="merchant"
-      footerTab={footerTab}
-      setFooterTab={setFooterTab}
-      totalCartCount={totalCartCount}
-      totalOrdersCount={orders.length}
-      brightTheme={brightTheme}
-      lang={lang}
-    >
-      <PortalPowerToolsBar
-        activePortal="merchant"
-        lang={lang}
-        onTriggerToast={triggerToast}
-      />
-      <MerchantPortal
-        footerTab={footerTab}
-        setFooterTab={setFooterTab}
-        currentUser={currentUser}
-        categories={categories}
-        products={products}
-        setProducts={setProducts}
-        pendingSubCategories={pendingSubCategories}
-        setPendingSubCategories={setPendingSubCategories}
-        orders={orders}
-        setOrders={setOrders}
-        merchants={merchants}
-        pendingMerchants={pendingMerchants}
-        onSwitchToPersonalShop={() =>
-          switchPartnerToConsumerShopping("merchant")
-        }
-        onTriggerToast={triggerToast}
-        renderAccountTab={() => renderSharedAccountTab("merchant")}
-      />
-    </MobilePhoneShell>
-  );
-
-  const renderServiceProviderPortal = () => (
-    <MobilePhoneShell
-      title="3. Service Provider"
-      badge="Service Pro"
-      activePortal="service_provider"
-      footerTab={footerTab}
-      setFooterTab={setFooterTab}
-      totalCartCount={totalCartCount}
-      totalOrdersCount={serviceBookings.length}
-      brightTheme={brightTheme}
-      lang={lang}
-    >
-      <PortalPowerToolsBar
-        activePortal="service_provider"
-        lang={lang}
-        onTriggerToast={triggerToast}
-      />
-      <ServiceProviderPortal
-        footerTab={footerTab}
-        setFooterTab={setFooterTab}
-        currentUser={currentUser}
-        serviceCategories={serviceCategories}
-        serviceProviders={serviceProviders}
-        setServiceProviders={setServiceProviders}
-        pendingServiceProviders={pendingServiceProviders}
-        serviceBookings={serviceBookings}
-        setServiceBookings={setServiceBookings}
-        onSwitchToPersonalShop={() =>
-          switchPartnerToConsumerShopping("service_provider")
-        }
-        onTriggerToast={triggerToast}
-        renderAccountTab={() => renderSharedAccountTab("service_provider")}
-      />
-    </MobilePhoneShell>
-  );
-
-  const renderDecoratorPortal = () => (
-    <MobilePhoneShell
-      title="4. Decorator & Halls"
-      badge="Decor Suite"
-      activePortal="decorator"
-      footerTab={footerTab}
-      setFooterTab={setFooterTab}
-      totalCartCount={totalCartCount}
-      totalOrdersCount={decorReverseBids.length}
-      brightTheme={brightTheme}
-      lang={lang}
-    >
-      <PortalPowerToolsBar
-        activePortal="decorator"
-        lang={lang}
-        onTriggerToast={triggerToast}
-      />
-      <DecoratorPortal
-        footerTab={footerTab}
-        setFooterTab={setFooterTab}
-        currentUser={currentUser}
-        setCurrentUser={setCurrentUser}
-        functionHalls={functionHalls}
-        setFunctionHalls={setFunctionHalls}
-        decorPortfolio={decorPortfolio}
-        setDecorPortfolio={setDecorPortfolio}
-        decorReverseBids={decorReverseBids}
-        setDecorReverseBids={setDecorReverseBids}
-        decorEscrowBookings={decorEscrowBookings}
-        setDecorEscrowBookings={setDecorEscrowBookings}
-        pendingDecorators={pendingDecorators}
-        onSwitchToPersonalShop={() =>
-          switchPartnerToConsumerShopping("decorator")
-        }
-        onTriggerToast={triggerToast}
-        renderAccountTab={() => renderSharedAccountTab("decorator")}
-      />
-    </MobilePhoneShell>
-  );
-
-  const renderRiderPortal = () => (
-    <MobilePhoneShell
-      title="5. Delivery Captain"
-      badge={`v3.0.4 (${currentUser?.vehicleCode || "2W"})`}
-      activePortal="rider"
-      footerTab={footerTab}
-      setFooterTab={setFooterTab}
-      totalCartCount={totalCartCount}
-      totalOrdersCount={captainRadarJobs.length + orders.length}
-      brightTheme={brightTheme}
-      lang={lang}
-    >
-      <PortalPowerToolsBar
-        activePortal="rider"
-        lang={lang}
-        onTriggerToast={triggerToast}
-      />
-      <RiderCaptainPortal
-        footerTab={footerTab}
-        setFooterTab={setFooterTab}
-        currentUser={currentUser}
-        setCurrentUser={setCurrentUser}
-        orders={orders}
-        setOrders={setOrders}
-        captainRadarJobs={captainRadarJobs}
-        setCaptainRadarJobs={setCaptainRadarJobs}
-        pendingRiders={pendingRiders}
-        onSwitchToPersonalShop={() => switchPartnerToConsumerShopping("rider")}
-        onTriggerToast={triggerToast}
-        onReportError={reportAppError}
-        renderAccountTab={() => renderSharedAccountTab("rider")}
-      />
-    </MobilePhoneShell>
-  );
-
-  const renderLabourPortal = () => (
-    <MobilePhoneShell
-      title={`6. ${geoSlang.standSlang}`}
-      badge={geoSlang.groupSlang}
-      activePortal="labour_portal"
-      footerTab={footerTab}
-      setFooterTab={setFooterTab}
-      totalCartCount={totalCartCount}
-      totalOrdersCount={labourBookings.length}
-      brightTheme={brightTheme}
-      lang={lang}
-    >
-      <LabourWorksitePortal
-        footerTab={footerTab}
-        setFooterTab={setFooterTab}
-        currentUser={currentUser}
-        geoRegion={geoRegion}
-        labourWorkers={labourWorkers}
-        setLabourWorkers={setLabourWorkers}
-        labourBookings={labourBookings}
-        setLabourBookings={setLabourBookings}
-        onSwitchToPersonalShop={() =>
-          switchPartnerToConsumerShopping("labour_portal")
-        }
-        onTriggerToast={triggerToast}
-        renderAccountTab={() => renderSharedAccountTab("labour_portal")}
-      />
-    </MobilePhoneShell>
-  );
-
-  const activeDynamicPortal = customPortals.find((cp) => cp.id === activePortal);
-  const renderDynamicCustomPortal = (portalCfg) => (
-    <MobilePhoneShell
-      title={cleanLabel(portalCfg.title)}
-      badge={cleanLabel(portalCfg.badge)}
-      activePortal={portalCfg.id}
-      footerTab={footerTab}
-      setFooterTab={setFooterTab}
-      totalCartCount={totalCartCount}
-      totalOrdersCount={(portalCfg.bookings || []).length}
-      brightTheme={brightTheme}
-      lang={lang}
-      customPortalTabs={portalCfg.tabs}
-    >
-      <DynamicPortalEngine
-        portalConfig={portalCfg}
-        footerTab={footerTab}
-        setFooterTab={setFooterTab}
-        currentUser={currentUser}
-        onUpdatePortalConfig={(updatedCfg) => {
-          setCustomPortals(
-            customPortals.map((x) => (x.id === updatedCfg.id ? updatedCfg : x))
-          );
-        }}
-        onSwitchToPersonalShop={() =>
-          switchPartnerToConsumerShopping(cleanLabel(portalCfg.title))
-        }
-        onTriggerToast={triggerToast}
-        renderAccountTab={() => renderSharedAccountTab(portalCfg.id)}
-      />
-    </MobilePhoneShell>
-  );
-
-  const renderAdminAuthGate = () => (
-    <div className="min-h-screen bg-[#04090e] flex items-center justify-center p-4 text-white">
-      <div className="bg-slate-900 border-2 border-amber-400 rounded-3xl max-w-sm w-full p-5 space-y-3 shadow-2xl text-xs">
-        <h2 className="text-sm font-black text-amber-400">
-          WE4ALL 2-STEP FOUNDER ADMIN GATE
-        </h2>
-        {adminLoginError && (
-          <div className="bg-rose-950 border border-rose-500 text-rose-200 p-2 rounded-xl text-center font-bold">
-            {adminLoginError}
-          </div>
-        )}
-        {adminAuthStep === 1 ? (
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={adminLoginForm.username}
-              onChange={(e) =>
-                setAdminLoginForm({
-                  ...adminLoginForm,
-                  username: e.target.value
-                })
-              }
-              placeholder="Founder Username (KhodayAnvesh)"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
+          {footerTab === "account" && (
+            <OwnerAccountProfile
+              currentUser={currentUser}
+              setCurrentUser={setCurrentUser}
+              accountSecurity={accountSecurity}
+              setAccountSecurity={setAccountSecurity}
+              addressBook={addressBook}
+              setAddressBook={setAddressBook}
+              isPrimeCustomer={isPrimeCustomer}
+              setIsPrimeCustomer={setIsPrimeCustomer}
+              appUpdateInfo={appUpdateInfo}
+              onCheckForUpdate={handleManualCheckForUpdate}
+              checkingUpdate={checkingUpdate}
+              onRunOtaUpdate={handleRunOtaUpdate}
+              otaProgress={otaProgress}
+              founderLogoUrl={founderLogoUrl}
+              onUploadFounderPhoto={handleUploadFounderPhoto}
+              apkIconUrl={apkIconUrl}
+              onUploadApkIcon={handleUploadApkIcon}
+              brightTheme={brightTheme}
+              setBrightTheme={setBrightTheme}
+              onSwitchRole={(r) => {
+                setActivePortal(r);
+                setFooterTab("home");
+              }}
+              onOpenAuthVault={() => setOnboardingStep("auth")}
+              onTriggerToast={triggerToast}
             />
-            <input
-              type="password"
-              value={adminLoginForm.password}
-              onChange={(e) =>
-                setAdminLoginForm({
-                  ...adminLoginForm,
-                  password: e.target.value
-                })
-              }
-              placeholder="Founder Password"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setViewMode("mobile_app")}
-                className="bg-slate-800 text-slate-300 px-3 py-2.5 rounded-xl font-bold cursor-pointer"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (
-                    adminLoginForm.username.trim().toLowerCase() ===
-                      "khodayanvesh" &&
-                    adminLoginForm.password === "22061969s!"
-                  ) {
-                    setAdminAuthStep(2);
-                    setAdminLoginError("");
-                  } else {
-                    setAdminLoginError("Invalid Founder Credentials.");
-                  }
-                }}
-                className="flex-1 bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-              >
-                Step 1: Verify
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3 text-center">
-            <input
-              type="password"
-              maxLength={4}
-              value={adminPinInput}
-              onChange={(e) => setAdminPinInput(e.target.value)}
-              placeholder="4-Digit Founder PIN (9999)"
-              className="w-full bg-slate-950 border border-amber-400 rounded-xl p-3 text-center font-mono text-white"
-            />
+          )}
+        </div>
+      );
+    }
+
+    if (portalRole === "merchant") {
+      return (
+        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
+          <div className="flex justify-between items-center">
+            <h2 className="font-black text-emerald-900 text-sm">🏪 Product Merchant Desk</h2>
             <button
               type="button"
               onClick={() => {
-                if (adminPinInput.trim() === "9999") {
-                  setIsAdminAuthenticated(true);
-                  setAdminPinInput("");
-                  setAdminAuthStep(1);
-                } else {
-                  setAdminLoginError("Invalid PIN.");
-                }
+                setPersonalShoppingFromPartner("merchant");
+                setActivePortal("customer");
               }}
-              className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
+              className="bg-indigo-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
             >
-              Step 2: Unlock Admin Suite
+              Shop as Customer
             </button>
           </div>
-        )}
-      </div>
-    </div>
-  );
 
-  return (
-    <div className="min-h-screen bg-[#071118] text-white flex flex-col relative">
-      {viewMode === "founder_web" ? (
-        !isAdminAuthenticated ? (
-          renderAdminAuthGate()
-        ) : (
-          <FounderAdminSuite captainRadarJobs={captainRadarJobs} liveDeviceTelemetry={liveDeviceTelemetry} onWipeAllTestData={async () => { await wipeAllOnlineAndOfflineData(); setOrders([]); setServiceBookings([]); setCaptainRadarJobs([]); setPendingMerchants([]); setPendingServiceProviders([]); setPendingDecorators([]); setPendingRiders([]); setLiveDeviceTelemetry({}); triggerToast("Production Reset Complete: All Online & Offline Test Data Wiped!"); }}
-            founderLogoUrl={founderLogoUrl}
-            onUploadFounderPhoto={handleUploadFounderPhoto}
-            categories={categories}
-            setCategories={setCategories}
-            geoAds={geoAds}
-            setGeoAds={setGeoAds}
-            merchants={merchants}
-            setMerchants={setMerchants}
-            serviceProviders={serviceProviders}
-            setServiceProviders={setServiceProviders}
-            decorators={decorators}
-            setDecorators={setDecorators}
-            riders={riders}
-            setRiders={setRiders}
-            pendingMerchants={pendingMerchants}
-            setPendingMerchants={setPendingMerchants}
-            pendingServiceProviders={pendingServiceProviders}
-            setPendingServiceProviders={setPendingServiceProviders}
-            pendingDecorators={pendingDecorators}
-            setPendingDecorators={setPendingDecorators}
-            pendingRiders={pendingRiders}
-            setPendingRiders={setPendingRiders}
-            orders={orders}
-            serviceBookings={serviceBookings}
-            customPortals={customPortals}
-            setCustomPortals={setCustomPortals}
-            monetizationConfig={monetizationConfig}
-            setMonetizationConfig={setMonetizationConfig}
-            appUpdateInfo={appUpdateInfo}
-            setAppUpdateInfo={setAppUpdateInfo}
-            onBroadcastOtaPushNotification={(nextInfo) => {
-              saveCloudAndLocalState({ appUpdateInfo: nextInfo });
-              handleRunOtaUpdate(nextInfo.latestAvailableVersion);
-            }}
-            onLaunchMultiPhoneView={() => {
-              setActivePortal("split");
-              setViewMode("mobile_app");
-            }}
-            onTeleportToScreen={(flowId) => {
-              setViewMode("mobile_app");
-              setFooterTab("home");
-              if (flowId === "portal_rider") setActivePortal("rider");
-              else if (flowId === "portal_decorator")
-                setActivePortal("decorator");
-              else if (flowId === "portal_service")
-                setActivePortal("service_provider");
-              else if (flowId === "portal_merchant")
-                setActivePortal("merchant");
-              else if (flowId === "portal_customer") {
-                setActivePortal("customer");
-                setSelectedCategory("daily_needs");
-              } else {
-                setActivePortal(flowId);
+          <div className="space-y-2 border-t pt-2">
+            <h3 className="font-black text-xs">Publish New Product to Live Catalog</h3>
+            <select
+              value={newMerchantProd.categoryId}
+              onChange={(e) =>
+                setNewMerchantProd({ ...newMerchantProd, categoryId: e.target.value })
               }
-            }}
-            onExitAdminToApp={() => setViewMode("mobile_app")}
-            onTriggerToast={triggerToast}
-          />
-        )
-      ) : (
-        <main className="flex-1 flex flex-col justify-center items-center w-full">
-          {activePortal === "customer" && renderCustomerPortal()}
-          {activePortal === "merchant" && renderMerchantPortal()}
-          {activePortal === "service_provider" && renderServiceProviderPortal()}
-          {activePortal === "decorator" && renderDecoratorPortal()}
-          {activePortal === "rider" && renderRiderPortal()}
-          {activePortal === "labour_portal" && renderLabourPortal()}
-          {activeDynamicPortal && renderDynamicCustomPortal(activeDynamicPortal)}
-          {activePortal === "split" && (
-            <div className="w-full flex overflow-x-auto gap-4 p-4 snap-x snap-mandatory">
-              {splitScreens.map((p, i) => (
-                <div
-                  key={p.id}
-                  className="min-w-[395px] shrink-0 snap-center relative pt-6"
-                >
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-amber-400 text-slate-950 px-3 py-0.5 rounded-full text-[10px] font-black z-40">
-                    PHONE #{i + 1}: {p.role.toUpperCase()}
-                  </div>
-                  {p.role === "customer" && renderCustomerPortal()}
-                  {p.role === "merchant" && renderMerchantPortal()}
-                  {p.role === "service_provider" &&
-                    renderServiceProviderPortal()}
-                  {p.role === "decorator" && renderDecoratorPortal()}
-                  {p.role === "rider" && renderRiderPortal()}
-                  {p.role === "labour_portal" && renderLabourPortal()}
-                </div>
-              ))}
-            </div>
-          )}
-        </main>
-      )}
-
-      {/* ==================================================================== */}
-      {/* REQ 6, 7 & 8: CHECKOUT & ACCOUNT LOGIN / SIGN-UP MODAL               */}
-      {/* Existing User/Partner -> Login | New User/Partner -> Sign-Up Form    */}
-      {/* ==================================================================== */}
-      {authModalOpen && (
-        <div className="fixed inset-0 bg-black/90 z-[95] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-md w-full p-5 space-y-3 text-xs text-white shadow-2xl">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="font-black text-amber-400 text-sm">
-                WE4ALL LOGIN &amp; PARTNER REGISTRATION GATE
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthModalOpen(false);
-                  setPendingCheckoutCallback(null);
-                }}
-                className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-xl font-black cursor-pointer"
-              >
-                X
-              </button>
-            </div>
-
-            {/* 2 Mode Switcher: Existing Login vs New Sign Up */}
-            <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-2xl border border-slate-800">
-              <button
-                type="button"
-                onClick={() => setAuthModalMode("login")}
-                className={`py-2 rounded-xl font-black cursor-pointer ${
-                  authModalMode === "login"
-                    ? "bg-emerald-400 text-slate-950"
-                    : "text-slate-300"
-                }`}
-              >
-                1. Existing User (Login)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthModalMode("signup");
-                  setRegStep(1);
-                }}
-                className={`py-2 rounded-xl font-black cursor-pointer ${
-                  authModalMode === "signup"
-                    ? "bg-amber-400 text-slate-950"
-                    : "text-slate-300"
-                }`}
-              >
-                2. New User (Sign Up)
-              </button>
-            </div>
-
-            {/* Role Selector (Consumer, Merchant, Service Pro, Decorator, Captain, Labour) */}
-            <div className="space-y-1">
-              <label className="block text-[10px] text-slate-300 font-bold">
-                Select Account / Portal Type:
-              </label>
-              <select
-                value={selectedRole}
-                onChange={(e) => {
-                  setSelectedRole(e.target.value);
-                  setRegForm({ ...regForm, role: e.target.value });
-                }}
-                className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl p-2 text-white font-bold"
-              >
-                <option value="customer">1. Consumer (Shopping &amp; Checkout)</option>
-                <option value="merchant">2. Product Merchant (Supermart / Kirana)</option>
-                <option value="service_provider">3. 1-Hr Home Service Provider</option>
-                <option value="decorator">4. Flower Decorator &amp; Function Halls</option>
-                <option value="rider">5. Delivery Captain (2W / 3W / 4W)</option>
-                <option value="labour_portal">
-                  6. {geoSlang.standSlang} Worker / Mistri
+              className="w-full border rounded-xl p-1.5 text-xs font-bold"
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
                 </option>
-              </select>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={newMerchantProd.subCategoryBrand}
+              onChange={(e) =>
+                setNewMerchantProd({ ...newMerchantProd, subCategoryBrand: e.target.value })
+              }
+              placeholder="Product / Brand Title (e.g., Aashirvaad Atta)"
+              className="w-full border rounded-xl p-1.5 text-xs"
+            />
+            <input
+              type="text"
+              value={newMerchantProd.shopName}
+              onChange={(e) =>
+                setNewMerchantProd({ ...newMerchantProd, shopName: e.target.value })
+              }
+              placeholder="Your Shop Name (e.g., Sri Laxmi Kirana)"
+              className="w-full border rounded-xl p-1.5 text-xs"
+            />
+            <div className="grid grid-cols-2 gap-1.5">
+              <input
+                type="number"
+                value={newMerchantProd.price}
+                onChange={(e) =>
+                  setNewMerchantProd({ ...newMerchantProd, price: e.target.value })
+                }
+                placeholder="Selling Price (₹)"
+                className="border rounded-xl p-1.5 text-xs"
+              />
+              <input
+                type="number"
+                value={newMerchantProd.mrp}
+                onChange={(e) => setNewMerchantProd({ ...newMerchantProd, mrp: e.target.value })}
+                placeholder="MRP (₹)"
+                className="border rounded-xl p-1.5 text-xs"
+              />
             </div>
-
-            {authModalMode === "login" ? (
-              <div className="space-y-2.5">
-                <input
-                  type="text"
-                  value={loginInput.phoneOrName}
-                  onChange={(e) =>
-                    setLoginInput({ ...loginInput, phoneOrName: e.target.value })
-                  }
-                  placeholder="Registered Mobile Number or Name"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
-                />
-                <input
-                  type="password"
-                  maxLength={4}
-                  value={loginInput.pin}
-                  onChange={(e) =>
-                    setLoginInput({ ...loginInput, pin: e.target.value })
-                  }
-                  placeholder="4-Digit Security PIN (Default: 1990)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await verifyPhoneHardwareBiometric(
-                      loginInput.phoneOrName || currentUser.fullName
-                    );
-                    localStorage.setItem("we4all_persistent_session_v4", "active");
-                    setIsAuthenticated(true);
-                    if (loginInput.phoneOrName.trim()) {
-                      setCurrentUser({
-                        ...currentUser,
-                        fullName: loginInput.phoneOrName.trim(),
-                        role: selectedRole
-                      });
+            <button
+              type="button"
+              onClick={() => {
+                if (!newMerchantProd.subCategoryBrand || !newMerchantProd.price) return;
+                const priceNum = Number(newMerchantProd.price);
+                const created = {
+                  id: `prod_${Date.now()}`,
+                  categoryId: newMerchantProd.categoryId,
+                  subCategoryBrand: newMerchantProd.subCategoryBrand,
+                  shopName: newMerchantProd.shopName || "Adilabad Local Store",
+                  variants: [
+                    {
+                      id: `v_${Date.now()}`,
+                      label: newMerchantProd.variantLabel || "Standard Pack",
+                      price: priceNum,
+                      mrp: Number(newMerchantProd.mrp || priceNum + 20),
+                      weightGrams: 1000
                     }
-                    setAuthModalOpen(false);
-                    if (pendingCheckoutCallback) {
-                      const cb = pendingCheckoutCallback;
-                      setPendingCheckoutCallback(null);
-                      cb();
-                    } else {
-                      setActivePortal(selectedRole);
-                      setFooterTab("home");
+                  ],
+                  merchantOffers: [
+                    {
+                      merchantId: Date.now(),
+                      merchantName: newMerchantProd.shopName || "Adilabad Local Store",
+                      price: priceNum,
+                      area: "Adilabad"
                     }
-                    triggerToast(`Logged in as ${selectedRole.toUpperCase()}!`);
-                  }}
-                  className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
-                >
-                  Verify Biometric / PIN &amp; Login Now &rarr;
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                <div className="flex justify-between items-center text-[10px] text-amber-300 font-bold">
-                  <span>3-Step Registration Form ({selectedRole.toUpperCase()})</span>
-                  <span>Step {regStep} of 3</span>
-                </div>
-
-                {regStep === 1 && (
-                  <div className="space-y-2">
-                    <div className="flex gap-1.5">
-                      <input
-                        type="tel"
-                        maxLength={10}
-                        value={regForm.phone}
-                        onChange={(e) =>
-                          setRegForm({ ...regForm, phone: e.target.value })
-                        }
-                        placeholder="Enter 10-Digit Mobile Number"
-                        className="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const otp = String(
-                            Math.floor(1000 + Math.random() * 9000)
-                          );
-                          setRegForm({ ...regForm, generatedOtp: otp });
-                          triggerToast(`Registration OTP Sent: ${otp}`);
-                        }}
-                        className="bg-amber-400 text-slate-950 font-black px-3 rounded-xl cursor-pointer"
-                      >
-                        Send OTP
-                      </button>
-                    </div>
-                    {regForm.generatedOtp && (
-                      <button
-                        type="button"
-                        onClick={() => setRegStep(2)}
-                        className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
-                      >
-                        Verify OTP ({regForm.generatedOtp}) &amp; Continue &rarr;
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {regStep === 2 && (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={regForm.fullName}
-                      onChange={(e) =>
-                        setRegForm({ ...regForm, fullName: e.target.value })
-                      }
-                      placeholder="Full Legal / Shop / Partner Name"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-                    />
-                    <input
-                      type="text"
-                      value={regForm.upiId}
-                      onChange={(e) =>
-                        setRegForm({ ...regForm, upiId: e.target.value })
-                      }
-                      placeholder="UPI ID (e.g. name@ybl)"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setRegStep(3)}
-                      className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
-                    >
-                      Continue to Step 3 (Digital Signature &amp; T&amp;C) &rarr;
-                    </button>
-                  </div>
-                )}
-
-                {regStep === 3 && (
-                  <div className="space-y-2">
-                    <canvas
-                      ref={sigCanvasRef}
-                      width={310}
-                      height={65}
-                      onMouseDown={startSigDraw}
-                      onMouseMove={moveSigDraw}
-                      onMouseUp={endSigDraw}
-                      onTouchStart={startSigDraw}
-                      onTouchMove={moveSigDraw}
-                      onTouchEnd={endSigDraw}
-                      className="w-full h-[65px] bg-white rounded-xl border-2 border-emerald-400 cursor-crosshair touch-none"
-                    />
-                    <input
-                      type="text"
-                      value={regForm.digitalSignatureText}
-                      onChange={(e) =>
-                        setRegForm({
-                          ...regForm,
-                          digitalSignatureText: e.target.value
-                        })
-                      }
-                      placeholder="Or type Full Legal Name as Digital Signature"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-1.5 text-white text-[11px] font-serif italic"
-                    />
-                    <label className="flex items-start gap-2 bg-emerald-950/40 p-2 rounded-xl border border-emerald-500/40 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={regForm.tcAccepted}
-                        onChange={(e) =>
-                          setRegForm({ ...regForm, tcAccepted: e.target.checked })
-                        }
-                        className="mt-0.5"
-                      />
-                      <span className="text-[10px] text-emerald-200 font-bold">
-                        I accept the WE4ALL Platform Terms &amp; Conditions.
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newUser = {
-                          id: Date.now(),
-                          fullName:
-                            regForm.fullName.trim() || "Verified Member",
-                          businessName:
-                            regForm.fullName.trim() || "Verified Shop",
-                          providerName:
-                            regForm.fullName.trim() || "Verified Pro",
-                          captainName:
-                            regForm.fullName.trim() || "Verified Captain",
-                          phone: regForm.phone.trim() || "9848055112",
-                          role: selectedRole,
-                          vehicleCode: regForm.vehicleCode || "2W",
-                          upiId: regForm.upiId || "member@ybl",
-                          digitalSignatureText:
-                            regForm.digitalSignatureText ||
-                            regForm.fullName ||
-                            "Signed",
-                          tcAccepted: true,
-                          acceptedAt: new Date().toLocaleString(),
-                          status: "Pending_Admin_Approval"
-                        };
-                        if (selectedRole === "merchant") {
-                          setPendingMerchants([newUser, ...pendingMerchants]);
-                        } else if (selectedRole === "service_provider") {
-                          setPendingServiceProviders([
-                            newUser,
-                            ...pendingServiceProviders
-                          ]);
-                        } else if (selectedRole === "decorator") {
-                          setPendingDecorators([newUser, ...pendingDecorators]);
-                        } else if (selectedRole === "rider") {
-                          setPendingRiders([newUser, ...pendingRiders]);
-                        }
-                        localStorage.setItem(
-                          "we4all_persistent_session_v4",
-                          "active"
-                        );
-                        localStorage.setItem(
-                          "we4all_device_bound_user_v5",
-                          JSON.stringify(newUser)
-                        );
-                        setCurrentUser(newUser);
-                        setIsAuthenticated(true);
-                        setAuthModalOpen(false);
-                        if (pendingCheckoutCallback) {
-                          const cb = pendingCheckoutCallback;
-                          setPendingCheckoutCallback(null);
-                          cb();
-                        } else {
-                          setActivePortal(selectedRole);
-                          setFooterTab("home");
-                        }
-                        triggerToast(
-                          `Signed up & logged in as ${newUser.fullName}!`
-                        );
-                      }}
-                      className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
-                    >
-                      Complete Sign-Up &amp; Continue &rarr;
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+                  ]
+                };
+                setProducts([created, ...products]);
+                setNewMerchantProd({
+                  ...newMerchantProd,
+                  subCategoryBrand: "",
+                  price: "",
+                  mrp: ""
+                });
+                triggerToast("Product published live to Customer Super-App!");
+              }}
+              className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
+            >
+              + Publish Live Product
+            </button>
           </div>
-        </div>
-      )}
 
-      {/* UNIVERSAL LIVE DIAGNOSTIC ERROR POPUP MODAL */}
-      {diagnosticErrorModal && (
-        <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4">
-          <div className="bg-slate-900 border-2 border-rose-500 rounded-3xl max-w-sm w-full p-5 space-y-3 text-xs text-white shadow-2xl">
-            <div className="flex justify-between items-start gap-2 border-b border-slate-800 pb-2">
-              <div>
-                <span className="bg-rose-600 text-white text-[9px] font-black px-2 py-0.5 rounded uppercase">
-                  LIVE DIAGNOSTIC POPUP | {diagnosticErrorModal.time}
-                </span>
-                <h3 className="font-black text-rose-400 text-sm mt-1">
-                  {diagnosticErrorModal.title}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDiagnosticErrorModal(null)}
-                className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-xl font-black cursor-pointer"
-              >
-                X
-              </button>
-            </div>
-            <div className="bg-slate-950 p-3 rounded-2xl border border-rose-500/40 space-y-1">
-              <p className="text-[11px] font-mono text-white">
-                {diagnosticErrorModal.details}
-              </p>
-            </div>
-            <div className="flex gap-2 pt-1">
-              {diagnosticErrorModal.autoFixCallback && (
+          <div className="space-y-2 border-t pt-2">
+            <h3 className="font-black text-xs">Incoming Customer Orders ({orders.length})</h3>
+            {orders.map((o) => (
+              <div key={o.id} className="p-2 border rounded-xl flex justify-between items-center">
+                <div>
+                  <p className="font-black text-xs">
+                    #{o.id} • ₹{o.grandTotal}
+                  </p>
+                  <p className="text-[10px] text-slate-500">{o.status}</p>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
-                    const cb = diagnosticErrorModal.autoFixCallback;
-                    setDiagnosticErrorModal(null);
-                    cb();
+                    setOrders(
+                      orders.map((ord) =>
+                        ord.id === o.id
+                          ? { ...ord, status: "PACKED_HANDED_TO_CAPTAIN" }
+                          : ord
+                      )
+                    );
+                    triggerToast(`Order #${o.id} handed over to Delivery Captain!`);
                   }}
-                  className="flex-1 bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
+                  className="bg-amber-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
                 >
-                  Auto-Fix &amp; Complete Now
+                  Mark Packed & Hand to Rider
                 </button>
-              )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (portalRole === "service_provider") {
+      return (
+        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
+          <h2 className="font-black text-emerald-900 text-sm">🛠️ 1-Hr Service Provider Desk</h2>
+          <input
+            type="text"
+            value={newSpForm.providerName}
+            onChange={(e) => setNewSpForm({ ...newSpForm, providerName: e.target.value })}
+            placeholder="Provider / Technician Name"
+            className="w-full border rounded-xl p-1.5 text-xs"
+          />
+          <input
+            type="text"
+            value={newSpForm.specialization}
+            onChange={(e) => setNewSpForm({ ...newSpForm, specialization: e.target.value })}
+            placeholder="Specialization (e.g., AC Repair, Master Plumber)"
+            className="w-full border rounded-xl p-1.5 text-xs"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!newSpForm.providerName) return;
+              setServiceProviders([
+                { id: `sp_${Date.now()}`, ...newSpForm },
+                ...serviceProviders
+              ]);
+              setNewSpForm({ ...newSpForm, providerName: "", specialization: "" });
+              triggerToast("Listed in 1-Hr Service Directory!");
+            }}
+            className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
+          >
+            + Go Live in 1-Hr Services
+          </button>
+
+          <div className="space-y-2 border-t pt-2">
+            <h3 className="font-black text-xs">Escrow Bookings ({serviceBookings.length})</h3>
+            {serviceBookings.map((sb) => (
+              <div key={sb.id} className="p-2 border rounded-xl space-y-1.5">
+                <p className="font-black text-xs">
+                  {sb.id} • Escrow: ₹{sb.escrowVisitingAmount} ({sb.escrowStatus})
+                </p>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={providerHappyCodeInput}
+                    onChange={(e) => setProviderHappyCodeInput(e.target.value)}
+                    placeholder={`Enter Customer Happy Code (${sb.happyCode})`}
+                    className="flex-1 border rounded-lg px-2 py-1 text-[10px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (providerHappyCodeInput === sb.happyCode) {
+                        setServiceBookings(
+                          serviceBookings.map((b) =>
+                            b.id === sb.id
+                              ? {
+                                  ...b,
+                                  escrowStatus: "RELEASED_TO_PROVIDER_BANK",
+                                  status: "COMPLETED"
+                                }
+                              : b
+                          )
+                        );
+                        setProviderHappyCodeInput("");
+                        triggerToast("Happy Code Verified! Escrow settled to Bank/UPI.");
+                      } else {
+                        triggerToast("Invalid Happy Code!");
+                      }
+                    }}
+                    className="bg-emerald-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
+                  >
+                    Verify & Claim
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (portalRole === "decorator") {
+      return (
+        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
+          <h2 className="font-black text-emerald-900 text-sm">
+            🎪 Function Hall & Event Decorator Desk
+          </h2>
+          <input
+            type="text"
+            value={newHallForm.name}
+            onChange={(e) => setNewHallForm({ ...newHallForm, name: e.target.value })}
+            placeholder="Function Hall Name"
+            className="w-full border rounded-xl p-1.5 text-xs"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!newHallForm.name) return;
+              setFunctionHalls([
+                { id: `hall_${Date.now()}`, ...newHallForm, bookedDates: [] },
+                ...functionHalls
+              ]);
+              setNewHallForm({ ...newHallForm, name: "" });
+              triggerToast("Function Hall published!");
+            }}
+            className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
+          >
+            + Add Function Hall
+          </button>
+        </div>
+      );
+    }
+
+    if (portalRole === "rider") {
+      return (
+        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
+          <h2 className="font-black text-emerald-900 text-sm">🛵 Delivery Captain Live Radar</h2>
+          {activeOrder ? (
+            <div className="space-y-2">
+              <LiveRouteMap order={activeOrder} brightTheme={brightTheme} />
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={captainOtpInput}
+                  onChange={(e) => setCaptainOtpInput(e.target.value)}
+                  placeholder={`Customer Delivery OTP (${activeOrder.secretOtp})`}
+                  className="flex-1 border rounded-xl px-2.5 py-1.5 text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (captainOtpInput === activeOrder.secretOtp) {
+                      setOrders(
+                        orders.map((o) =>
+                          o.id === activeOrder.id ? { ...o, status: "DELIVERED" } : o
+                        )
+                      );
+                      setCaptainOtpInput("");
+                      triggerToast(`Order #${activeOrder.id} Marked DELIVERED!`);
+                    } else {
+                      triggerToast("Incorrect Customer OTP!");
+                    }
+                  }}
+                  className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-black cursor-pointer"
+                >
+                  Verify OTP
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-slate-500 py-4 text-center font-bold">
+              No active dispatches waiting on radar.
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    if (portalRole === "labour") {
+      return (
+        <LabourWorksitePortal
+          mode="worker"
+          categories={LABOUR_TRADE_CATEGORIES}
+          workers={labourWorkers}
+          setWorkers={setLabourWorkers}
+          bookings={labourBookings}
+          setBookings={setLabourBookings}
+          currentUser={currentUser}
+          brightTheme={brightTheme}
+          onToast={triggerToast}
+        />
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <div className="min-h-screen bg-[#040b10] text-white">
+      <div className="bg-slate-950 border-b border-emerald-900/60 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+        <div className="flex items-center gap-2">
+          <span className="font-black text-amber-400">WE4ALL v{appUpdateInfo.currentVersion}</span>
+          <select
+            value={activePortal}
+            onChange={(e) => {
+              setActivePortal(e.target.value);
+              setOnboardingStep("app");
+            }}
+            className="bg-slate-900 text-emerald-300 border border-emerald-700 rounded-lg px-2 py-0.5 font-black"
+          >
+            <option value="customer">Portal 1: Customer Super-App</option>
+            <option value="merchant">Portal 2: Merchant Desk</option>
+            <option value="service_provider">Portal 3: 1-Hr Service Provider</option>
+            <option value="decorator">Portal 4: Event & Function Hall</option>
+            <option value="rider">Portal 5: Delivery Captain Radar</option>
+            <option value="labour">Portal 6: Labour & Mistri Adda</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setViewMode("mobile_app")}
+            className={`px-2 py-0.5 rounded font-black cursor-pointer ${
+              viewMode === "mobile_app" ? "bg-emerald-500 text-slate-950" : "bg-slate-800"
+            }`}
+          >
+            📱 Single App
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("multi_role_lab")}
+            className={`px-2 py-0.5 rounded font-black cursor-pointer ${
+              viewMode === "multi_role_lab" ? "bg-emerald-500 text-slate-950" : "bg-slate-800"
+            }`}
+          >
+            🖥️ 6-Portal Split Lab
+          </button>
+          <button
+            type="button"
+            onClick={openFounderAdminGate}
+            className={`px-2 py-0.5 rounded font-black cursor-pointer ${
+              viewMode === "founder_web" ? "bg-amber-400 text-slate-950" : "bg-slate-800 text-amber-300"
+            }`}
+          >
+            🔐 Founder Admin
+          </button>
+        </div>
+      </div>
+
+      {mobileToast && (
+        <div className="fixed top-10 left-1/2 -translate-x-1/2 z-50 bg-slate-950 text-amber-300 border-2 border-amber-400 px-4 py-2 rounded-2xl text-xs font-black shadow-2xl">
+          {mobileToast}
+        </div>
+      )}
+
+      {viewMode === "founder_web" ? (
+        !isAdminAuthenticated ? (
+          <div className="max-w-md mx-auto mt-12 bg-slate-900 border border-amber-400/50 rounded-3xl p-6 space-y-4">
+            <h2 className="font-black text-amber-400 text-base">
+              🔐 WE4ALL Founder Admin 2-Factor Gate
+            </h2>
+            {adminLoginError && (
+              <p className="text-rose-400 text-xs font-bold">{adminLoginError}</p>
+            )}
+            {adminAuthStep === 1 ? (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={adminLoginForm.username}
+                  onChange={(e) =>
+                    setAdminLoginForm({ ...adminLoginForm, username: e.target.value })
+                  }
+                  placeholder="Founder Username (admin)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
+                />
+                <input
+                  type="password"
+                  value={adminLoginForm.password}
+                  onChange={(e) =>
+                    setAdminLoginForm({ ...adminLoginForm, password: e.target.value })
+                  }
+                  placeholder="Founder Password (we4all2026)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      adminLoginForm.username.toLowerCase() === "admin" &&
+                      adminLoginForm.password === "we4all2026"
+                    ) {
+                      setAdminLoginError("");
+                      setAdminAuthStep(2);
+                    } else {
+                      setAdminLoginError("Use admin / we4all2026");
+                    }
+                  }}
+                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
+                >
+                  Next: Verify Founder PIN &rarr;
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <input
+                  type="password"
+                  value={adminPinInput}
+                  onChange={(e) => setAdminPinInput(e.target.value)}
+                  placeholder="Founder Master PIN (9999)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-center font-black tracking-widest text-amber-300"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (adminPinInput === "9999" || adminPinInput === "1234") {
+                      setIsAdminAuthenticated(true);
+                      setAdminLoginError("");
+                    } else {
+                      setAdminLoginError("Invalid Master PIN (Use 9999)");
+                    }
+                  }}
+                  className="w-full bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
+                >
+                  Unlock Founder Admin Suite
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-4 space-y-4">
+            <div className="flex justify-between items-center bg-slate-900 p-3 rounded-2xl border border-amber-400/40">
+              <span className="font-black text-amber-400 text-xs">
+                FOUNDER MASTER CONTROL • ZERO PRE-INSTALLED DATA MODE
+              </span>
               <button
                 type="button"
-                onClick={() => setDiagnosticErrorModal(null)}
-                className="flex-1 bg-slate-800 text-white font-bold py-2.5 rounded-xl cursor-pointer"
+                onClick={async () => {
+                  const wiped = await wipeAllPreinstalledServerData();
+                  setProducts(wiped.products);
+                  setMerchants(wiped.merchants);
+                  setServiceProviders(wiped.serviceProviders);
+                  setOrders(wiped.orders);
+                  triggerToast("All Server Transactional States Wiped 100% Clean!");
+                }}
+                className="bg-rose-600 text-white px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer"
               >
-                Dismiss
+                🧹 Wipe Server Data Clean
               </button>
             </div>
+            <FounderAdminSuite
+              appUpdateInfo={appUpdateInfo}
+              setAppUpdateInfo={setAppUpdateInfo}
+              monetizationConfig={monetizationConfig}
+              setMonetizationConfig={setMonetizationConfig}
+              geoAds={geoAds}
+              setGeoAds={setGeoAds}
+              categories={categories}
+              setCategories={setCategories}
+              merchants={merchants}
+              setMerchants={setMerchants}
+              products={products}
+              setProducts={setProducts}
+              orders={orders}
+              serviceBookings={serviceBookings}
+              labourBookings={labourBookings}
+              registeredUsers={registeredUsers}
+              onBackToApp={() => setViewMode("mobile_app")}
+              onTriggerToast={triggerToast}
+            />
           </div>
+        )
+      ) : viewMode === "multi_role_lab" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
+          {splitScreens.map((scr) => (
+            <MobilePhoneShell
+              key={scr.id}
+              title={scr.role.toUpperCase()}
+              activePortal={scr.role}
+              footerTab={footerTab}
+              setFooterTab={setFooterTab}
+              totalCartCount={totalCartCount}
+              totalOrdersCount={orders.length}
+              brightTheme={brightTheme}
+              lang={lang}
+              setLang={setLang}
+              appUpdateInfo={appUpdateInfo}
+              onTriggerOtaUpdate={handleRunOtaUpdate}
+            >
+              {renderRolePortalContent(scr.role)}
+            </MobilePhoneShell>
+          ))}
         </div>
+      ) : onboardingStep !== "app" ? (
+        renderAuthVault()
+      ) : (
+        <MobilePhoneShell
+          title={activePortal.toUpperCase()}
+          activePortal={activePortal}
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          totalCartCount={totalCartCount}
+          totalOrdersCount={orders.length}
+          floatingLiveOrder={activeOrder}
+          onOpenLiveOrderModal={() => setLiveOrderDrawerOpen(true)}
+          onOpenAdminConsole={openFounderAdminGate}
+          brightTheme={brightTheme}
+          lang={lang}
+          setLang={setLang}
+          appUpdateInfo={appUpdateInfo}
+          onTriggerOtaUpdate={handleRunOtaUpdate}
+          personalShoppingFromPartner={personalShoppingFromPartner}
+          onReturnToPartnerDesk={() => {
+            setActivePortal(personalShoppingFromPartner);
+            setPersonalShoppingFromPartner(null);
+          }}
+        >
+          {renderRolePortalContent(activePortal)}
+        </MobilePhoneShell>
       )}
-
-      {otaProgress && (
-        <div className="fixed inset-0 bg-black/90 z-[110] flex items-center justify-center p-6">
-          <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-sm w-full p-5 text-center space-y-3 text-xs text-white">
-            <h3 className="font-black text-emerald-400 text-sm">
-              Auto-Updating WE4ALL ({otaProgress.pct}%)
-            </h3>
-            <p className="text-slate-300">{otaProgress.msg}</p>
-          </div>
-        </div>
-      )}
-
-      <UpiPaymentModal
-        paymentRequest={pendingUpiPayment}
-        userBankDetails={currentUser}
-        onClose={() => setPendingUpiPayment(null)}
-        onPaymentSuccess={handleCompleteUpiPayment}
-      />
 
       {liveOrderDrawerOpen && activeOrder && (
-        <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border-2 border-emerald-400 rounded-3xl max-w-sm w-full p-4 space-y-3 text-xs text-white">
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-amber-400 rounded-3xl p-4 w-full max-w-md space-y-3">
             <div className="flex justify-between items-center">
-              <h3 className="font-black text-emerald-400">
-                Live Order #{activeOrder.id}
+              <h3 className="font-black text-amber-400 text-xs">
+                LIVE ORDER #{activeOrder.id} • OTP: {activeOrder.secretOtp}
               </h3>
               <button
                 type="button"
                 onClick={() => setLiveOrderDrawerOpen(false)}
-                className="bg-slate-800 px-2.5 py-1 rounded-xl cursor-pointer"
+                className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer"
               >
-                X
+                ✕
               </button>
             </div>
-            <LiveRouteMap
-              pickupLabel={activeOrder.shopName}
-              dropLabel={activeOrder.address}
-              riderName={activeOrder.riderName}
-              vehicle={activeOrder.vehicle}
-              distanceKm={activeOrder.distanceKm || 1.8}
-            />
+            <LiveRouteMap order={activeOrder} brightTheme={false} />
           </div>
         </div>
+      )}
+
+      {pendingUpiPayment && (
+        <UpiPaymentModal
+          payment={pendingUpiPayment}
+          onClose={() => setPendingUpiPayment(null)}
+          onConfirmPayment={handleCompleteUpiPayment}
+        />
       )}
     </div>
   );
 }
 
 export default function App() {
-  const [liveDeviceTelemetry, setLiveDeviceTelemetry] = useState({});
-  const [myLivePing, setMyLivePing] = useState(null);
   return <AppContent />;
 }
