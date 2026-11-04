@@ -22,7 +22,7 @@ export function verifyModulePipelineIntegrity(statePayload) {
 }
 
 export function redactSensitiveGovId(rawId = "") {
-  const cleaned = String(rawId).replace(/\s+/g, "");
+  const cleaned = StringString((rawId) ?? "").replace(/\s+/g, "");
   if (cleaned.length >= 8) {
     return "[Gov-ID Verified & Redacted]";
   }

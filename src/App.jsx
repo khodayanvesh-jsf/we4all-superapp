@@ -203,7 +203,7 @@ function MobilePhoneShell({
           >
             <div className="text-left">
               <p className="text-[10px] font-black leading-tight">
-                LIVE ORDER #{floatingLiveOrder.id}: {floatingLiveOrder.status.replace(/_/g, " ")}
+                LIVE ORDER #{floatingLiveOrder.id}: {StringString((floatingLiveOrder?.status ?? "") ?? "").replace(/_/g, " ")}
               </p>
               <p className="text-[9px] font-bold text-amber-200">
                 Captain: {floatingLiveOrder.riderName} | Tap for Live Route Map & OTP

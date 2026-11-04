@@ -154,7 +154,7 @@ export default function OrdersHistoryAndInvoice({
 
             <div className="flex justify-between items-center text-[10px]">
               <span className="bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-emerald-300 font-bold">
-                {ord.status.replace(/_/g, " ")}
+                {StringString((ord?.status ?? "") ?? "").replace(/_/g, " ")}
               </span>
               <button
                 type="button"

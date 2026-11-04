@@ -9,7 +9,7 @@ const ROLE_LABELS = {
   labour: "Labour & Mistri Partner"
 };
 
-export default function OwnerAccountProfile({
+function OriginalOwnerAccountProfile({
   currentUser = {},
   setCurrentUser = () => {},
   accountSecurity = { pinEnabled: true, biometricEnabled: true, fastPin: "1234" },
@@ -688,5 +688,97 @@ export default function OwnerAccountProfile({
         </div>
       )}
     </div>
+  );
+}
+
+function stripUndefinedProps(obj) {
+  if (!obj || typeof obj !== "object") return {};
+  const clean = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined && v !== null) clean[k] = v;
+  }
+  return clean;
+}
+
+export default function OwnerAccountProfile(rawProps = {}) {
+  const cleanProps = stripUndefinedProps(rawProps);
+  const cleanUser = stripUndefinedProps(rawProps.currentUser);
+  const resolvedRole =
+    typeof cleanUser.role === "string" && cleanUser.role
+      ? cleanUser.role
+      : typeof cleanProps.activePortal === "string" && cleanProps.activePortal
+      ? cleanProps.activePortal
+      : typeof cleanProps.portalRole === "string" && cleanProps.portalRole
+      ? cleanProps.portalRole
+      : "customer";
+
+  const safeCurrentUser = {
+    id: "guest_user",
+    fullName: "Guest Consumer Shopper",
+    phone: "9848011223",
+    role: resolvedRole,
+    portal: resolvedRole,
+    decoratorSubRole: "flower_decorator",
+    vehicleCode: "2W",
+    isGuest: !rawProps.currentUser || Boolean(rawProps.currentUser?.isGuest),
+    upiId: "khodayanvesh@ybl",
+    bankName: "State Bank of India (Adilabad Main)",
+    accountNumber: "30984451209",
+    ifscCode: "SBIN0000801",
+    address: "Subhash Nagar, Adilabad",
+    ...cleanUser,
+    role: String(cleanUser.role || resolvedRole || "customer"),
+    portal: String(cleanUser.portal || resolvedRole || "customer")
+  };
+
+  const safeTelemetry = {
+    lat: 19.6641,
+    lng: 78.5320,
+    accuracyMeters: 10,
+    speedKmh: 0,
+    batteryPct: 100,
+    isCharging: true,
+    networkType: "5G/WIFI",
+    locationSource: "Adilabad Town GPS",
+    ...stripUndefinedProps(rawProps.liveTelemetryPing)
+  };
+
+  const safeAddress = {
+    label: "Home",
+    fullAddress: "Subhash Nagar, Adilabad",
+    lat: 19.6641,
+    lng: 78.5320,
+    ...stripUndefinedProps(rawProps.activeAddressObj)
+  };
+
+  const safeSecurity = {
+    pinEnabled: true,
+    biometricEnabled: true,
+    fastPin: "1990",
+    ...stripUndefinedProps(rawProps.accountSecurity)
+  };
+
+  const safeUpdateInfo = {
+    currentVersion: "3.1.2",
+    latestAvailableVersion: "3.1.2",
+    updateAvailable: false,
+    releaseNotes: "WE4ALL Official Build",
+    ...stripUndefinedProps(rawProps.appUpdateInfo)
+  };
+
+  return (
+    <OriginalOwnerAccountProfile
+      {...cleanProps}
+      activePortal={String(cleanProps.activePortal || resolvedRole || "customer")}
+      portalRole={String(cleanProps.portalRole || resolvedRole || "customer")}
+      userRole={String(cleanProps.userRole || resolvedRole || "customer")}
+      role={String(cleanProps.role || resolvedRole || "customer")}
+      selectedRegion={String(cleanProps.selectedRegion || "TELANGANA")}
+      currentUser={safeCurrentUser}
+      liveTelemetryPing={safeTelemetry}
+      activeAddressObj={safeAddress}
+      accountSecurity={safeSecurity}
+      appUpdateInfo={safeUpdateInfo}
+    />
   );
 }

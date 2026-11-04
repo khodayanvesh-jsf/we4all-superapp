@@ -1306,7 +1306,7 @@ export function FounderAdminWebSuite({
                   >
                     <p className="text-[10px] text-slate-400">Phone {idx + 1}</p>
                     <p className="text-xs font-extrabold text-emerald-300 capitalize">
-                      {phone.role.replace('_', ' ')}
+                      {StringString((phone?.role ?? "customer") ?? "").replace('_', ' ')}
                     </p>
                   </div>
                 ))}

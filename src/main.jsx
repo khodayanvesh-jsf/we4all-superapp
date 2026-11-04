@@ -2,53 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 
-// Non-enumerable fallback getters so .stateName.split() and .standSlang.split() never crash on any object
-if (typeof Object !== "undefined") {
-  const safeSlangDefaults = {
-    stateName: "Telangana (Adilabad / Nirmal / Hyderabad)",
-    stateLabel: "Telangana (Adilabad / Nirmal / Hyderabad)",
-    standSlang: "Labour Adda / Mestri Chowk | Morning 7:00 AM - 11:00 AM",
-    workerSlang: "Adda Coolie / Mestri / Beldar",
-    contractorSlang: "Mestri / Site Munshi / Mukadam",
-    wageSlang: "Dehadi / Roju Coolie (Daily Wage)",
-    bhattaSlang: "Chai-Pani & Tiffin Bhatta",
-    halfDaySlang: "Poddu / Half-Shift (8 AM - 1 PM)",
-    overtimeSlang: "Extra Ganta / Double Shift",
-    toolsSlang: "Gampa, Para, Thapi & Own Tools",
-    labourRoleTitle: "Adda Coolie / Mestri & Worksite Hands",
-    supervisorTitle: "Mestri / Site Munshi",
-    dailyWageLabel: "Dehadi / Roju Coolie",
-    teaAllowanceLabel: "Chai-Pani Allowance",
-    urgentBadge: "Pakka Local Mestri Verified"
-  };
-
-  Object.entries(safeSlangDefaults).forEach(([propKey, fallbackVal]) => {
-    if (!Object.prototype.hasOwnProperty(propKey)) {
-      Object.defineProperty(Object.prototype, propKey, {
-        configurable: true,
-        enumerable: false,
-        get() {
-          if (propKey === "stateName") {
-            return this.stateLabel || this.name || this.state || fallbackVal;
-          }
-          if (propKey === "stateLabel") {
-            return this.stateName || this.name || this.state || fallbackVal;
-          }
-          return fallbackVal;
-        },
-        set(val) {
-          Object.defineProperty(this, propKey, {
-            value: val,
-            writable: true,
-            enumerable: true,
-            configurable: true
-          });
-        }
-      });
-    }
-  });
-}
-
 class RootErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
