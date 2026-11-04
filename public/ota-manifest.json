@@ -1,9 +1,9 @@
 {
   "currentVersion": "3.1.2",
-  "latestAvailableVersion": "3.1.2",
+  "latestAvailableVersion": "3.2.0",
   "updateAvailable": true,
-  "publishedAt": "2026-11-04T07:45:00Z",
+  "publishedAt": "2026-11-04T08:15:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.1.2",
-  "releaseNotes": "WE4ALL v3.1.2 Production OTA: Resolved standSlang startup crash, restored all 48 modules, linked live Supabase & GPS Locator."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.2.0",
+  "releaseNotes": "WE4ALL v3.2.0 Complete Release: All Portals Unified & Crash-Shielded, getGeoSlangConfig Restored, Heavy/Labor Merchant Billing, 35%|85% Decor Escrow, 1-Hr Service Slots, 3-Pt Captain Radar & Account-Only In-App Updater."
 }
