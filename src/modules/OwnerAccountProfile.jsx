@@ -1,10 +1,11 @@
 ﻿import React, { useState, useEffect } from "react";
 import {
   loadCloudAndLocalState,
-  saveCloudAndLocalState,
   performZeroLossOtaUpdate,
   getFounderCredentials,
-  supabase
+  supabase,
+  activateSupabaseAccount,
+  clearActiveSupabaseAccount
 } from "../supabaseClient";
 
 const ROLE_OPTIONS = [
@@ -111,7 +112,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (!active) return;
       setLocalUser(signedInUser);
       setCurrentUser?.(signedInUser);
-      saveCloudAndLocalState({ currentUser: signedInUser });
       if (resolvedRole !== "customer") {
         onPartnerAuthenticated?.(resolvedRole, signedInUser);
       } else {
@@ -233,7 +233,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
           const partnerUser = { ...baseUser, role: "customer", status: "Approved" };
           setLocalUser(partnerUser);
           setCurrentUser?.(partnerUser);
-          saveCloudAndLocalState({ currentUser: partnerUser });
           setActivePortal?.("customer");
           onSelectRole?.("customer");
           setFormFeedback({ type: "error", message: `Your customer account is active. The ${requestedRole.replace("_", " ")} portal is still pending Founder approval.` });
@@ -243,7 +242,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
         const partnerUser = { ...baseUser, role: requestedRole, status: "Approved" };
         setLocalUser(partnerUser);
         setCurrentUser?.(partnerUser);
-        saveCloudAndLocalState({ currentUser: partnerUser });
         setFormFeedback({ type: "success", message: `${requestedRole.replace("_", " ")} portal access verified.` });
         setSubTab("account_details");
         return;
@@ -252,7 +250,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
       const customer = { ...baseUser, role: "customer", status: "Approved" };
       setLocalUser(customer);
       setCurrentUser?.(customer);
-      saveCloudAndLocalState({ currentUser: customer });
       setActivePortal?.("customer");
       onSelectRole?.("customer");
       setFormFeedback({ type: "success", message: "Phone verified. Your WE4ALL customer account is connected to Supabase." });
@@ -336,6 +333,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const handleLogout = async () => {
     try {
       await supabase?.auth.signOut();
+      clearActiveSupabaseAccount();
     } catch (error) {
       console.warn("WE4ALL sign-out failed:", error?.message || error);
     }
@@ -348,6 +346,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
     setOtpState({ sent: false, phone: "", token: "", busy: false });
     setSubTab("kyc_gate");
     onTriggerToast("Signed out of Supabase. Returned to Guest Visitor mode.");
+    if (typeof window !== "undefined") window.location.reload();
   };
 
   return (
