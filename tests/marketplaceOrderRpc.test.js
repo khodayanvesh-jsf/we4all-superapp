@@ -22,6 +22,6 @@ test("stock reservations are transactional and payment remains pending", () => {
 });
 test("RPC client validates login, UUID catalogue ids and pending response", () => {
  assert.match(client, /export async function createMarketplaceOrder/);
- assert.match(client, /supabase\.rpc\("we4all_create_order"/);
+ assert.match(client, /supabase\.functions\.invoke\("we4all-create-order"/);
  assert.match(client, /payment_status !== "pending"/);
 });
