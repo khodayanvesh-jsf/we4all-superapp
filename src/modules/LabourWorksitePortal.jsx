@@ -2,12 +2,24 @@ import React, { useState } from "react";
 import { LABOUR_TRADE_CATEGORIES } from "../data";
 
 export default function LabourWorksitePortal({
-  labourWorkers = [],
+  mode = "worker",
+  labourWorkers,
   setLabourWorkers,
-  labourBookings = [],
+  labourBookings,
   setLabourBookings,
-  onTriggerToast
+  workers,
+  setWorkers,
+  bookings,
+  setBookings,
+  currentUser,
+  onTriggerToast,
+  onToast
 }) {
+  const resolvedWorkers = Array.isArray(labourWorkers) ? labourWorkers : (workers || []);
+  const resolvedBookings = Array.isArray(labourBookings) ? labourBookings : (bookings || []);
+  const updateWorkers = setLabourWorkers || setWorkers || (() => {});
+  const updateBookings = setLabourBookings || setBookings || (() => {});
+  const notify = onTriggerToast || onToast || (() => {});
   const [newWorkerForm, setNewWorkerForm] = useState({
     name: "",
     tradeId: "lab_mason",
@@ -100,11 +112,11 @@ export default function LabourWorksitePortal({
                 id: `lab_${Date.now()}`,
                 ...newWorkerForm,
                 tradeName: tradeObj ? tradeObj.name : "Mason / Helper",
-                status: "AVAILABLE_AT_ADDA"
+                status: "PENDING_ADMIN_APPROVAL", ownerUserId: currentUser?.id || null
               };
-              setLabourWorkers([created, ...labourWorkers]);
+              updateWorkers([created, ...resolvedWorkers]);
               setNewWorkerForm({ ...newWorkerForm, name: "", phone: "" });
-              if (onTriggerToast) onTriggerToast(`Registered ${created.name} in Labour Adda!`);
+              notify(`Worker registration submitted for approval: ${created.name}.`);
             }}
             className="w-full bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
           >
@@ -116,14 +128,14 @@ export default function LabourWorksitePortal({
       {/* 2-Step Muster Roll Bookings */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
         <h4 className="font-black text-emerald-400">
-          Active Work-Site Muster Roll Bookings ({(labourBookings || []).length})
+          Active Work-Site Muster Roll Bookings ({(resolvedBookings || []).length})
         </h4>
-        {(labourBookings || []).length === 0 ? (
+        {(resolvedBookings || []).length === 0 ? (
           <p className="text-[11px] text-slate-400 py-2">
             No active work-site bookings yet. Customers can hire workers from the Customer Portal.
           </p>
         ) : (
-          labourBookings.map((lb) => (
+          resolvedBookings.map((lb) => (
             <div
               key={lb.id}
               className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2"
@@ -142,7 +154,7 @@ export default function LabourWorksitePortal({
                 <div className="flex gap-1.5">
                   <input
                     type="text"
-                    placeholder={`Morning Start OTP (${lb.morningStartOtp})`}
+                    placeholder="Secure morning OTP is issued by server"
                     value={otpInputMap[lb.id] || ""}
                     onChange={(e) => setOtpInputMap({ ...otpInputMap, [lb.id]: e.target.value })}
                     className="flex-1 bg-slate-900 border border-amber-400 rounded-lg p-1.5 text-center font-mono text-white"
@@ -150,19 +162,10 @@ export default function LabourWorksitePortal({
                   <button
                     type="button"
                     onClick={() => {
-                      if (otpInputMap[lb.id] === lb.morningStartOtp) {
-                        setLabourBookings(
-                          labourBookings.map((b) =>
-                            b.id === lb.id ? { ...b, status: "WORK_IN_PROGRESS_ON_SITE" } : b
-                          )
-                        );
-                        setOtpInputMap({ ...otpInputMap, [lb.id]: "" });
-                        if (onTriggerToast) onTriggerToast("Morning Attendance Verified! Work Started.");
-                      } else {
-                        alert(`Morning Start OTP is ${lb.morningStartOtp}`);
-                      }
+                      notify("Morning attendance requires a server-issued, order-bound OTP. Local codes are not accepted.");
                     }}
-                    className="bg-amber-400 text-slate-950 font-black px-3 rounded-lg cursor-pointer"
+                    disabled
+                    className="bg-slate-700 text-slate-300 font-black px-3 rounded-lg cursor-not-allowed"
                   >
                     Start Shift
                   </button>
@@ -173,7 +176,7 @@ export default function LabourWorksitePortal({
                 <div className="flex gap-1.5">
                   <input
                     type="text"
-                    placeholder={`Evening Wage OTP (${lb.eveningReleaseOtp})`}
+                    placeholder="Secure evening OTP is issued by server"
                     value={otpInputMap[lb.id] || ""}
                     onChange={(e) => setOtpInputMap({ ...otpInputMap, [lb.id]: e.target.value })}
                     className="flex-1 bg-slate-900 border border-emerald-400 rounded-lg p-1.5 text-center font-mono text-white"
@@ -181,19 +184,10 @@ export default function LabourWorksitePortal({
                   <button
                     type="button"
                     onClick={() => {
-                      if (otpInputMap[lb.id] === lb.eveningReleaseOtp) {
-                        setLabourBookings(
-                          labourBookings.map((b) =>
-                            b.id === lb.id ? { ...b, status: "WAGE_RELEASED_COMPLETED" } : b
-                          )
-                        );
-                        if (onTriggerToast)
-                          onTriggerToast("Evening OTP Verified! Daily Wage Released to Worker.");
-                      } else {
-                        alert(`Evening Wage Release OTP is ${lb.eveningReleaseOtp}`);
-                      }
+                      notify("Wage release requires server-verified attendance and a confirmed payment settlement.");
                     }}
-                    className="bg-emerald-400 text-slate-950 font-black px-3 rounded-lg cursor-pointer"
+                    disabled
+                    className="bg-slate-700 text-slate-300 font-black px-3 rounded-lg cursor-not-allowed"
                   >
                     Release Wage
                   </button>
