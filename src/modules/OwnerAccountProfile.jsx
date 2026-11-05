@@ -91,71 +91,15 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   const handleLoginSubmit = () => {
     const ident = String(loginForm.identifier || "").trim();
-    const pin = cleanPinDigits(loginForm.pin);
-
     if (!ident) {
-      setFormFeedback({ type: "error", message: "Please enter your Registered Phone Number or Username." });
+      setFormFeedback({ type: "error", message: "Enter the registered phone number." });
       return;
     }
-    if (loginMethod === "pin" && pin.length !== 4) {
-      setFormFeedback({ type: "error", message: "Please enter your valid 4-Digit Security PIN." });
-      return;
-    }
-    if (loginMethod === "otp" || loginMethod === "biometric") {
-      setFormFeedback({
-        type: "error",
-        message:
-          loginMethod === "otp"
-            ? "Mobile OTP sign-in is temporarily unavailable until WE4ALL's SMS OTP provider and server-side verification are configured. No code is generated or accepted on this device."
-            : "Biometric/passkey sign-in is temporarily unavailable until server-side passkey enrollment and challenge verification are configured. A device prompt alone cannot authenticate your WE4ALL account."
-      });
-      return;
-    }
-
-    const snap = loadCloudAndLocalState() || {};
-    const registeredUsers = Array.isArray(snap.registeredUsers) ? snap.registeredUsers : [];
-
-    const matched = registeredUsers.find(
-      (u) =>
-        (u?.phone && cleanPhoneDigits(u.phone) === cleanPhoneDigits(ident)) ||
-        (u?.username && u.username.toLowerCase() === ident.toLowerCase()) ||
-        (u?.fullName && u.fullName.toLowerCase() === ident.toLowerCase())
-    );
-
-    if (!matched) {
-      setFormFeedback({
-        type: "error",
-        message: `No account found for "${ident}". Please check your details or switch to New Registration.`
-      });
-      return;
-    }
-
-    if (loginMethod === "pin" && matched.pin && String(matched.pin) !== pin) {
-      setFormFeedback({ type: "error", message: "Incorrect 4-Digit Security PIN." });
-      return;
-    }
-
-    const activeRole = matched.role || selectedRoleKey || "customer";
-    const activeUser = {
-      ...matched,
-      role: activeRole,
-      portal: activeRole,
-      isGuest: false,
-      lastLoginAt: new Date().toLocaleString()
-    };
-
-    setLocalUser(activeUser);
-    try {
-      localStorage.setItem("we4all_persistent_user_session_v8", JSON.stringify(activeUser));
-    } catch (e) {}
-    saveCloudAndLocalState({ currentUser: activeUser });
-
-    if (setCurrentUser) setCurrentUser(activeUser);
-    if (setActivePortal) setActivePortal(activeRole);
-    if (onSelectRole) onSelectRole(activeRole);
-
-    setSubTab("account_details");
-    onTriggerToast(`✓ Successfully logged into ${activeRole.toUpperCase()} portal! Session persists.`);
+    setFormFeedback({
+      type: "error",
+      message:
+        "Secure sign-in is not configured yet. WE4ALL must verify a server-issued SMS OTP and load the approved role from the server. Local PINs, browser-stored profiles and demo codes are not accepted as authentication."
+    });
   };
 
   const handleLogout = () => {
@@ -439,43 +383,19 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 type="button"
                 onClick={() => {
                   const phone = cleanPhoneDigits(regForm.phone);
-                  const pin = cleanPinDigits(regForm.pin);
-                  if (!regForm.fullName.trim() || phone.length !== 10 || pin.length !== 4) {
-                    setFormFeedback({ type: "error", message: "Please fill Name, 10-digit mobile, and 4-digit PIN." });
+                  if (!regForm.fullName.trim() || phone.length !== 10) {
+                    setFormFeedback({ type: "error", message: "Enter your name and valid 10-digit mobile number." });
                     return;
                   }
-                  const newUser = {
-                    id: `${selectedRoleKey}_${Date.now()}`,
-                    fullName: regForm.fullName.trim(),
-                    name: regForm.fullName.trim(),
-                    businessName: regForm.businessName.trim() || regForm.fullName.trim(),
-                    phone,
-                    role: selectedRoleKey,
-                    portal: selectedRoleKey,
-                    upiId: normalizeUpiId(regForm.upiId, phone),
-                    pin,
-                    isGuest: false,
-                    status: isConsumerSelected ? "Approved" : "Pending Admin Approval"
-                  };
-                  const snap = loadCloudAndLocalState() || {};
-                  const list = Array.isArray(snap.registeredUsers) ? snap.registeredUsers : [];
-                  saveCloudAndLocalState({
-                    currentUser: newUser,
-                    registeredUsers: [newUser, ...list]
+                  setFormFeedback({
+                    type: "error",
+                    message:
+                      "Registration cannot create an authenticated account yet. Secure SMS verification and the server-side account/partner approval API must be configured first. No PIN or local session was saved."
                   });
-                  setLocalUser(newUser);
-                  try {
-                    localStorage.setItem("we4all_persistent_user_session_v8", JSON.stringify(newUser));
-                  } catch (e) {}
-                  if (setCurrentUser) setCurrentUser(newUser);
-                  if (setActivePortal) setActivePortal(selectedRoleKey);
-                  if (onSelectRole) onSelectRole(selectedRoleKey);
-                  setSubTab("account_details");
-                  onTriggerToast(`✓ Registration complete! Logged into ${selectedRoleKey.toUpperCase()} portal.`);
                 }}
                 className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow text-xs"
               >
-                Complete Registration &amp; Start Session →
+                Request Secure Registration →
               </button>
             </div>
           )}
