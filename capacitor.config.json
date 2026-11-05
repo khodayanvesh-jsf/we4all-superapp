@@ -4,5 +4,15 @@
   "webDir": "dist",
   "android": {
     "allowMixedContent": false
+  },
+  "plugins": {
+    "CapacitorUpdater": {
+      "appId": "com.we4all.superapp",
+      "autoUpdate": "atBackground",
+      "appReadyTimeout": 10000,
+      "httpsOnly": true,
+      "keepUrlPathAfterReload": true,
+      "autoDeleteFailed": true
+    }
   }
 }
