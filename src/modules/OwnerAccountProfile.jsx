@@ -101,15 +101,15 @@ export default function OwnerAccountProfile(rawProps = {}) {
       setFormFeedback({ type: "error", message: "Please enter your valid 4-Digit Security PIN." });
       return;
     }
-    if (loginMethod === "otp") {
-      if (!otpState.sent) {
-        setFormFeedback({ type: "error", message: "Please request a Mobile OTP first." });
-        return;
-      }
-      if (String(otpState.enteredOtp).trim() !== String(otpState.generatedOtp).trim()) {
-        setFormFeedback({ type: "error", message: "Incorrect 4-Digit OTP entered." });
-        return;
-      }
+    if (loginMethod === "otp" || loginMethod === "biometric") {
+      setFormFeedback({
+        type: "error",
+        message:
+          loginMethod === "otp"
+            ? "Mobile OTP sign-in is temporarily unavailable until WE4ALL's SMS OTP provider and server-side verification are configured. No code is generated or accepted on this device."
+            : "Biometric/passkey sign-in is temporarily unavailable until server-side passkey enrollment and challenge verification are configured. A device prompt alone cannot authenticate your WE4ALL account."
+      });
+      return;
     }
 
     const snap = loadCloudAndLocalState() || {};
@@ -342,24 +342,16 @@ export default function OwnerAccountProfile(rawProps = {}) {
               {loginMethod === "otp" && (
                 <div className="space-y-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const code = String(Math.floor(1000 + Math.random() * 9000));
-                        setOtpState({ sent: true, generatedOtp: code, enteredOtp: code });
-                        onTriggerToast(`📲 Instant OTP Generated: ${code}`);
-                      }}
-                      className="bg-amber-400 text-slate-950 font-black px-3 py-2 rounded-xl cursor-pointer text-[11px]"
-                    >
-                      📲 Send Mobile OTP
-                    </button>
+                    <div className="flex-1 bg-amber-950/50 border border-amber-500/50 rounded-xl px-3 py-2 text-amber-200 text-[10px]">
+                      SMS OTP is unavailable until the secure server provider is configured. No demo OTP is generated.
+                    </div>
                     <input
                       type="text"
-                      maxLength={4}
-                      value={otpState.enteredOtp}
-                      onChange={(e) => setOtpState({ ...otpState, enteredOtp: cleanPinDigits(e.target.value) })}
-                      placeholder="4-Digit OTP"
-                      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-emerald-300 font-mono text-center font-black"
+                      maxLength={6}
+                      value=""
+                      disabled
+                      placeholder="OTP unavailable"
+                      className="w-28 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-500 font-mono text-center font-black"
                     />
                   </div>
                 </div>
@@ -370,11 +362,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   <p className="text-emerald-300 font-bold text-xs">Touch Fingerprint Sensor or FaceID</p>
                   <button
                     type="button"
-                    onClick={() => {
-                      setLoginForm({ ...loginForm, identifier: currentUser?.phone || "9848011223" });
-                      onTriggerToast("✓ Biometric Passkey Verified!");
-                      setTimeout(handleLoginSubmit, 400);
-                    }}
+                    onClick={() => setFormFeedback({
+                      type: "error",
+                      message: "Biometric/passkey sign-in is not configured yet. WE4ALL needs server-side passkey enrollment and verification before this can be enabled."
+                    })}
                     className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl cursor-pointer text-xs"
                   >
                     Authenticate with Device Biometrics 👆
