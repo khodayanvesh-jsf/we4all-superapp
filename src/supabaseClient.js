@@ -80,6 +80,126 @@ export function saveFounderCredentials() {
 
 export const isLiveSupabaseConfigured = Boolean(supabase);
 
+let lastCloudSyncState = {
+  status: "not-signed-in",
+  message: "Sign in to enable private cloud synchronization.",
+  lastSyncedAt: null
+};
+
+export function getCloudSyncState() {
+  return { ...lastCloudSyncState };
+}
+
+/**
+ * Checks the public Auth API and, when the current session is linked to this
+ * device account, verifies the authenticated per-user sync endpoint.
+ * This never uses or requests a secret/service-role key.
+ */
+export async function probeSupabaseConnection() {
+  if (!supabase || !SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    return {
+      configured: false,
+      backendReachable: false,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: "Supabase URL or publishable key is missing."
+    };
+  }
+
+  let backendReachable = false;
+  try {
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/health`, {
+      method: "GET",
+      headers: { apikey: SUPABASE_PUBLISHABLE_KEY },
+      cache: "no-store"
+    });
+    backendReachable = response.ok;
+  } catch (error) {
+    return {
+      configured: true,
+      backendReachable: false,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: error?.message || "Could not reach the Supabase Auth API."
+    };
+  }
+
+  if (!backendReachable) {
+    return {
+      configured: true,
+      backendReachable: false,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: "Supabase Auth API responded with an unsuccessful status."
+    };
+  }
+
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    return {
+      configured: true,
+      backendReachable: true,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: sessionError.message || "Could not read the Supabase session."
+    };
+  }
+
+  if (!session?.user?.id || !session.access_token) {
+    return {
+      configured: true,
+      backendReachable: true,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: "Supabase is reachable. Sign in with SMS OTP to enable private account sync."
+    };
+  }
+
+  const activeUserId = getActiveSupabaseUserId();
+  const accountLinked = activeUserId === session.user.id;
+  if (!accountLinked) {
+    return {
+      configured: true,
+      backendReachable: true,
+      authenticated: true,
+      accountLinked: false,
+      syncReady: false,
+      message: "A Supabase session exists, but this app has not activated the matching account cache yet."
+    };
+  }
+
+  try {
+    const sync = await invokeUserSync("GET", undefined, activeUserId);
+    const result = {
+      configured: true,
+      backendReachable: true,
+      authenticated: true,
+      accountLinked: true,
+      syncReady: sync?.ok === true,
+      userId: activeUserId,
+      message: sync?.ok === true
+        ? "Supabase connected. This signed-in account can read its private cloud state."
+        : "Supabase is reachable, but the account sync endpoint did not confirm a read."
+    };
+    return result;
+  } catch (error) {
+    return {
+      configured: true,
+      backendReachable: true,
+      authenticated: true,
+      accountLinked: true,
+      syncReady: false,
+      userId: activeUserId,
+      message: error?.message || "Authenticated cloud sync verification failed."
+    };
+  }
+}
+
 const syncChannel =
   typeof window !== "undefined" && "BroadcastChannel" in window
     ? new BroadcastChannel("we4all_realtime_bus_v5_prod")
@@ -264,16 +384,26 @@ async function pushPayloadToCloudServers(payload, nowIso, ownerUserId) {
   try {
     const activeUserId = getActiveSupabaseUserId();
     if (!ownerUserId || !activeUserId || activeUserId !== ownerUserId) {
-      return { ok: false, reason: "Save belongs to a different or unauthenticated account" };
+      const result = { ok: false, reason: "Save belongs to a different or unauthenticated account" };
+      lastCloudSyncState = { status: "local-only", message: result.reason, lastSyncedAt: null };
+      return result;
     }
     const safePayload = { ...payload, lastSyncedAt: nowIso };
     delete safePayload.founderCredentials;
     delete safePayload.supabaseSecretKey;
     delete safePayload.serviceRoleKey;
-    return await invokeUserSync("PUT", safePayload, ownerUserId);
+    const result = await invokeUserSync("PUT", safePayload, ownerUserId);
+    lastCloudSyncState = {
+      status: "synced",
+      message: "Saved to this authenticated Supabase account.",
+      lastSyncedAt: result.updated_at || nowIso
+    };
+    return result;
   } catch (error) {
-    console.error("WE4ALL authenticated cloud save failed:", error?.message || error);
-    return { ok: false, reason: error?.message || "Cloud save failed" };
+    const reason = error?.message || "Cloud save failed";
+    lastCloudSyncState = { status: "error", message: reason, lastSyncedAt: null };
+    console.error("WE4ALL authenticated cloud save failed:", reason);
+    return { ok: false, reason };
   }
 }
 
@@ -355,9 +485,20 @@ export function saveCloudAndLocalState(stateSlice) {
 
     if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", userId: getActiveSupabaseUserId(), payload: merged }); localWindowSubscribers.forEach((fn) => { try { fn(merged); } catch (e) {} });
     if (cloudSyncDebounceTimer) clearTimeout(cloudSyncDebounceTimer);
-    if (!ownerUserId) return; // Guest/local edits must never sync into the next signed-in user's account.
-    cloudSyncDebounceTimer = setTimeout(() => {
-      pushPayloadToCloudServers(merged, nowIso, ownerUserId);
+    if (!ownerUserId) {
+      lastCloudSyncState = {
+        status: "local-only",
+        message: "Guest changes are kept on this device and are not uploaded.",
+        lastSyncedAt: null
+      };
+      return; // Guest/local edits must never sync into the next signed-in user's account.
+    }
+    cloudSyncDebounceTimer = setTimeout(async () => {
+      const result = await pushPayloadToCloudServers(merged, nowIso, ownerUserId);
+      if (!result?.ok && lastPushedFingerprint === nextFingerprint) {
+        // Allow the next save/probe to retry the same payload after transient failure.
+        lastPushedFingerprint = "";
+      }
     }, 650);
   } catch (e) {}
 }
