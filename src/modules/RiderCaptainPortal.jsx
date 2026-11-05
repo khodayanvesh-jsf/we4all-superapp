@@ -46,9 +46,8 @@ export default function RiderCaptainPortal({
   onReportError = () => {},
   renderAccountTab
 }) {
-  const myVehicleCode = currentUser?.vehicleCode || "2W";
-  const myVehicleRule =
-    VEHICLE_CONSORT_RULES[myVehicleCode] || VEHICLE_CONSORT_RULES["2W"];
+  const myVehicleCode = currentUser?.vehicleCode || "UNVERIFIED";
+  const myVehicleRule = VEHICLE_CONSORT_RULES[myVehicleCode] || VEHICLE_CONSORT_RULES["2W"];
 
   const [isOnlineForDriving, setIsOnlineForDriving] = useState(false);
   const [locationConsent, setLocationConsent] = useState(false);
@@ -64,15 +63,21 @@ export default function RiderCaptainPortal({
       r.phone === currentUser?.phone ||
       r.captainName === currentUser?.fullName
   );
-  const isPublishedLive =
+  const isPublishedLive = Boolean(
+    currentUser?.authUserId &&
+    currentUser?.role === "rider" &&
     currentUser?.status === "Approved" &&
-    (!myPendingCaptain || myPendingCaptain.status === "Approved");
+    VEHICLE_CONSORT_RULES[myVehicleCode] &&
+    (!myPendingCaptain || myPendingCaptain.status === "Approved")
+  );
 
   // Merge store orders from Merchant Portal into Radar if not already in captainRadarJobs
   const radarJobIds = new Set((captainRadarJobs || []).map((j) => j.id));
   const storeOrdersForRadar = (orders || [])
     .filter(
       (o) =>
+        o.serverDispatchVerified === true &&
+        ["VERIFIED", "PAID"].includes(o.paymentStatus) &&
         !radarJobIds.has(o.id) &&
         (o.status === "READY_FOR_PICKUP_AGENT_ALERTED" ||
           o.status === "PAID_PACKING_STARTED" ||
@@ -110,13 +115,14 @@ export default function RiderCaptainPortal({
   // STRICT ISOLATION: A Captain can ONLY operate orders allocated to their exact vehicleCode
   const myEligibleRadarJobs = combinedRadarList.filter(
     (j) =>
+      j.serverDispatchVerified === true &&
       (j.requiredVehicleCode || "2W") === myVehicleCode &&
       j.status !== "COMPLETED_DELIVERED" &&
       j.status !== "DELIVERED_COMPLETED" &&
       j.status !== "DELIVERED_REVIEW_POPUP"
   );
   const lockedOtherVehicleJobs = combinedRadarList.filter(
-    (j) => (j.requiredVehicleCode || "2W") !== myVehicleCode
+    (j) => j.serverDispatchVerified === true && (j.requiredVehicleCode || "2W") !== myVehicleCode
   );
 
   // Deduplicated Active Accepted Trips for Tab 2 (Route Map & OTP Verification)
@@ -132,6 +138,7 @@ export default function RiderCaptainPortal({
   (orders || [])
     .filter(
       (o) =>
+        o.serverDispatchVerified === true &&
         (o.requiredVehicleCode || "2W") === myVehicleCode &&
         (o.status === "READY_FOR_PICKUP_AGENT_ALERTED" ||
           o.status === "CAPTAIN_EN_ROUTE_TO_DROP" ||
@@ -156,13 +163,14 @@ export default function RiderCaptainPortal({
   combinedRadarList
     .filter(
       (j) =>
+        j.serverDispatchVerified === true &&
         (j.requiredVehicleCode || "2W") === myVehicleCode &&
         j.status !== "OPEN_ON_RADAR"
     )
     .forEach((j) => bookingsMap.set(j.id, j));
 
   (orders || [])
-    .filter((o) => (o.requiredVehicleCode || "2W") === myVehicleCode)
+    .filter((o) => o.serverSettlementStatus === "VERIFIED" && (o.requiredVehicleCode || "2W") === myVehicleCode)
     .forEach((o) => {
       if (!bookingsMap.has(o.id)) {
         bookingsMap.set(o.id, o);
@@ -278,21 +286,9 @@ export default function RiderCaptainPortal({
               <button
                 key={vr.code}
                 type="button"
+                disabled={vr.code !== myVehicleCode || !isPublishedLive}
                 onClick={() => {
-                  const defaultModels = {
-                    "2W": "Hero Splendor 125cc",
-                    "3W": "Bajaj Maxima 3W Auto",
-                    "4W_HEAVY": "Tata Ace Gold Mini Truck"
-                  };
-                  setCurrentUser({
-                    ...currentUser,
-                    vehicleCode: vr.code,
-                    vehicleClass: vr.label,
-                    vehicleModel: defaultModels[vr.code]
-                  });
-                  onTriggerToast(
-                    `Switched Captain Login to ${vr.label}. Orders for other vehicles are strictly locked!`
-                  );
+                  onTriggerToast("Vehicle class is read-only and comes from the Founder-approved rider profile. Submit a vehicle change request for verification.");
                 }}
                 className={`py-1.5 rounded-lg font-black cursor-pointer ${
                   myVehicleCode === vr.code
@@ -300,7 +296,7 @@ export default function RiderCaptainPortal({
                     : "bg-slate-900 text-slate-400 border border-slate-800"
                 }`}
               >
-                Login as {vr.shortLabel}
+                {vr.shortLabel} {vr.code === myVehicleCode ? "Approved profile" : "Locked"}
               </button>
             ))}
           </div>
