@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import {
   getFounderCredentials,
@@ -188,6 +188,66 @@ export default function FounderAdminSuite({
   const [syncStatusMsg, setSyncStatusMsg] = useState(
     isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
   );
+
+  const [serverPartnerApplications, setServerPartnerApplications] = useState([]);
+  const [serverPartnerApplicationsLoading, setServerPartnerApplicationsLoading] = useState(false);
+  const [serverPartnerApplicationsError, setServerPartnerApplicationsError] = useState("");
+  const [serverReviewBusyId, setServerReviewBusyId] = useState("");
+
+  const refreshServerPartnerApplications = async () => {
+    if (!supabase) {
+      setServerPartnerApplicationsError("Supabase client is not configured.");
+      return;
+    }
+    setServerPartnerApplicationsLoading(true);
+    setServerPartnerApplicationsError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "list" }
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Founder server authorization was denied.");
+      setServerPartnerApplications(Array.isArray(data.applications) ? data.applications : []);
+      setSyncStatusMsg("Founder-authorized Supabase review connected.");
+    } catch (error) {
+      setServerPartnerApplicationsError(
+        error?.message || "Could not load server-side partner applications."
+      );
+    } finally {
+      setServerPartnerApplicationsLoading(false);
+    }
+  };
+
+  const reviewServerPartnerApplication = async (applicationId, decision) => {
+    if (!supabase || !applicationId) return;
+    setServerReviewBusyId(applicationId);
+    setServerPartnerApplicationsError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "review", application_id: applicationId, decision }
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Partner application review failed.");
+      setServerPartnerApplications((current) =>
+        current.filter((application) => application.id !== applicationId)
+      );
+      onTriggerToast(
+        decision === "approved"
+          ? "Partner application approved in Supabase. The approved role is now available to this account."
+          : `Partner application ${decision} in Supabase; portal access remains blocked.`
+      );
+    } catch (error) {
+      setServerPartnerApplicationsError(
+        error?.message || "Could not save the server-side partner review."
+      );
+    } finally {
+      setServerReviewBusyId("");
+    }
+  };
+
+  useEffect(() => {
+    if (founderTab === "approvals") refreshServerPartnerApplications();
+  }, [founderTab]);
 
   const [otaForm, setOtaForm] = useState({
     version: appUpdateInfo?.latestAvailableVersion || "3.2.2",
@@ -617,6 +677,82 @@ export default function FounderAdminSuite({
       ===================================================================== */}
       {founderTab === "approvals" && (
         <div className="space-y-4">
+          <section className="bg-slate-950 border border-emerald-500/40 rounded-2xl p-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-emerald-300 text-xs">Verified Supabase Partner Applications</h3>
+                <p className="text-[10px] text-slate-400">
+                  These applications were created after the applicant verified their phone through Supabase Auth.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={serverPartnerApplicationsLoading}
+                onClick={refreshServerPartnerApplications}
+                className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black px-3 py-2 rounded-lg text-[10px]"
+              >
+                {serverPartnerApplicationsLoading ? "Refreshing…" : "Refresh server queue"}
+              </button>
+            </div>
+            {serverPartnerApplicationsError && (
+              <p className="bg-rose-950/50 border border-rose-500/40 text-rose-200 rounded-xl p-2 text-[10px]">
+                {serverPartnerApplicationsError}
+                {serverPartnerApplicationsError.includes("Founder server authorization") || serverPartnerApplicationsError.includes("403")
+                  ? " Provision app_metadata.we4all_role=founder for the dedicated Founder Auth user, then sign out and back in to refresh the signed token."
+                  : ""}
+              </p>
+            )}
+            {serverPartnerApplicationsLoading ? (
+              <p className="text-slate-400 text-[10px]">Loading private applications from Supabase…</p>
+            ) : serverPartnerApplications.length === 0 ? (
+              <p className="text-slate-400 text-[10px]">
+                No pending server-side partner applications are visible to this Founder session. If this is the first load, verify Founder app_metadata authorization and refresh.
+              </p>
+            ) : (
+              serverPartnerApplications.map((application) => {
+                const profile = application.profile || {};
+                const payload = application.application_payload || {};
+                const name = profile.full_name || payload.full_name || "Partner applicant";
+                const phone = profile.phone || payload.phone || "Phone not recorded";
+                const area = profile.area || payload.area || "Area not recorded";
+                const business = profile.business_name || payload.business_name || "";
+                return (
+                  <div key={application.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <strong className="text-white">{name}</strong>
+                        <p className="text-[10px] text-slate-300">
+                          {application.requested_role.replaceAll("_", " ")} · {business || phone} · {area}
+                        </p>
+                        <p className="text-[9px] text-slate-500">
+                          Application {application.id} · {new Date(application.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                      <span className="text-amber-300 text-[9px] font-black">PENDING SERVER REVIEW</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={serverReviewBusyId === application.id}
+                        onClick={() => reviewServerPartnerApplication(application.id, "approved")}
+                        className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
+                      >
+                        Approve {application.requested_role.replaceAll("_", " ")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={serverReviewBusyId === application.id}
+                        onClick={() => reviewServerPartnerApplication(application.id, "rejected")}
+                        className="bg-rose-700 disabled:bg-slate-700 text-white disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </section>
           <div className="flex flex-wrap gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
             {[
               { id: "captains", label: `1. Captains (${safePendingRiders.length})` },
