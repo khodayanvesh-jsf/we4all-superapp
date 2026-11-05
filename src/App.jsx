@@ -1754,7 +1754,7 @@ function AppContent() {
                   onChange={(e) =>
                     setAdminLoginForm({ ...adminLoginForm, username: e.target.value })
                   }
-                  placeholder="Founder Username (admin)"
+                  placeholder="Founder username (server authentication required)"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
                 />
                 <input
@@ -1763,25 +1763,21 @@ function AppContent() {
                   onChange={(e) =>
                     setAdminLoginForm({ ...adminLoginForm, password: e.target.value })
                   }
-                  placeholder="Founder Password (we4all2026)"
+                  placeholder="Founder password (server authentication required)"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    if (
-                      adminLoginForm.username.toLowerCase() === "admin" &&
-                      adminLoginForm.password === "we4all2026"
-                    ) {
-                      setAdminLoginError("");
-                      setAdminAuthStep(2);
-                    } else {
-                      setAdminLoginError("Use admin / we4all2026");
-                    }
+                    setIsAdminAuthenticated(false);
+                    setAdminAuthStep(1);
+                    setAdminLoginError(
+                      "Founder login is disabled until server-side founder authentication and step-up verification are configured. No browser-stored fallback credentials are accepted."
+                    );
                   }}
                   className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
                 >
-                  Next: Verify Founder PIN
+                  Founder authentication unavailable
                 </button>
               </div>
             ) : (
@@ -1790,22 +1786,20 @@ function AppContent() {
                   type="password"
                   value={adminPinInput}
                   onChange={(e) => setAdminPinInput(e.target.value)}
-                  placeholder="Founder Master PIN (9999)"
+                  placeholder="Founder PIN (server verification required)"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-center font-black tracking-widest text-amber-300"
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    if (adminPinInput === __getDynamicAdminCreds().pin || adminPinInput === "1234") {
-                      setIsAdminAuthenticated(true);
-                      setAdminLoginError("");
-                    } else {
-                      setAdminLoginError("Invalid Master PIN (Use 9999)");
-                    }
+                    setIsAdminAuthenticated(false);
+                    setAdminLoginError(
+                      "Founder PIN verification is unavailable until a server-validated founder session is implemented."
+                    );
                   }}
                   className="w-full bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
                 >
-                  Unlock Founder Admin Suite
+                  Server verification required
                 </button>
               </div>
             )}
@@ -1953,19 +1947,6 @@ function AppContent() {
   );
 }
 
-const __getDynamicAdminCreds = () => {
-  try {
-    const raw = typeof window !== "undefined" ? localStorage.getItem("we4all_founder_credentials_v1") : null;
-    const parsed = raw ? JSON.parse(raw) : {};
-    return {
-      username: String(parsed.username || "KhodayAnvesh"),
-      password: String(parsed.password || "22061969s!"),
-      pin: String(parsed.pin || "9999")
-    };
-  } catch (e) {
-    return { username: "KhodayAnvesh", password: "22061969s!", pin: "9999" };
-  }
-};
 export default function App() {
   return <AppContent />;
 }
