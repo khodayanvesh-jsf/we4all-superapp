@@ -337,15 +337,16 @@ function AppContent() {
   );
   const [currentUser, setCurrentUser] = useState(
     savedCloud?.currentUser || {
-      id: "usr_clean",
-      fullName: "WE4ALL User",
+      id: "guest_visitor",
+      fullName: "Guest Visitor",
       phone: "",
       role: "customer",
+      portal: "customer",
+      isGuest: true,
       bankName: "",
       accountNumber: "",
       ifscCode: "",
-      upiId: "",
-      fastPin: "1234"
+      upiId: ""
     }
   );
   const [registeredUsers, setRegisteredUsers] = useState(savedCloud?.registeredUsers || []);
@@ -648,39 +649,6 @@ function AppContent() {
       title: "Order #" + newOrder.id,
       amount: newOrder.grandTotal
     });
-  };
-
-  const handleCompleteUpiPayment = (chosenUpiAppName) => {
-    if (!pendingUpiPayment) return;
-    if (pendingUpiPayment.type === "APPROVED_MERCHANT_ORDER") {
-      setOrders(
-        orders.map((o) =>
-          o.id === pendingUpiPayment.orderId
-            ? { ...o, paidViaApp: chosenUpiAppName, status: "PAID_PACKING_STARTED" }
-            : o
-        )
-      );
-      setPendingUpiPayment(null);
-      setFooterTab("orders");
-      setLiveOrderDrawerOpen(true);
-      triggerToast("Paid via " + chosenUpiAppName + "! Sent to Merchant Packing Queue.");
-    } else if (pendingUpiPayment.type === "SERVICE_ESCROW") {
-      const created = serviceCart.map((sc) => ({
-        ...sc,
-        id: "SRV-" + Math.floor(1000 + Math.random() * 9000),
-        customerName: currentUser.fullName,
-        escrowVisitingAmount: sc.visitingFee + (monetizationConfig.serviceBookingSurcharge || 0),
-        paidViaApp: chosenUpiAppName,
-        happyCode: String(Math.floor(1000 + Math.random() * 9000)),
-        escrowStatus: "VISITING_FEE_HELD_IN_ESCROW",
-        status: "CONFIRMED_PROVIDER_EN_ROUTE"
-      }));
-      setServiceBookings([...created, ...serviceBookings]);
-      setServiceCart([]);
-      setPendingUpiPayment(null);
-      setFooterTab("orders");
-      triggerToast("Paid via " + chosenUpiAppName + "! Visiting Fee held in Escrow.");
-    }
   };
 
   const renderRolePortalContent = (portalRole) => {
@@ -1950,9 +1918,8 @@ function AppContent() {
 
       {pendingUpiPayment && (
         <UpiPaymentModal
-          payment={pendingUpiPayment}
+          paymentRequest={pendingUpiPayment}
           onClose={() => setPendingUpiPayment(null)}
-          onConfirmPayment={handleCompleteUpiPayment}
         />
       )}
     </div>
