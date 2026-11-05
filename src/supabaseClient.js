@@ -146,8 +146,9 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
 async function invokeUserSync(method, payload) {
   if (!supabase) return { ok: false, reason: "Supabase is not configured" };
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError || !session?.access_token) {
-    return { ok: false, reason: "Sign in with verified mobile OTP before cloud sync" };
+  const activeUserId = getActiveSupabaseUserId();
+  if (sessionError || !session?.access_token || !activeUserId || session.user?.id !== activeUserId) {
+    return { ok: false, reason: "A matching verified Supabase account is required for cloud sync" };
   }
 
   const response = await fetch(`${SUPABASE_URL}/functions/v1/we4all-sync`, {
@@ -215,10 +216,6 @@ export async function activateSupabaseAccount(userId) {
       });
       localStorage.setItem(STORAGE_KEY, serialized);
       localStorage.setItem(BACKUP_KEY, serialized);
-      const activeUserId = getActiveSupabaseUserId();
-      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
-      const activeUserId = getActiveSupabaseUserId();
-      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
       localStorage.setItem(USER_CACHE_PREFIX + userId, serialized);
     }
     return { ok: true, changed, hasRemoteState: Boolean(payload && Object.keys(payload).length) };
@@ -284,6 +281,8 @@ export async function wipeAllOnlineAndOfflineData() {
       BACKUP_KEY
     ].forEach((k) => localStorage.removeItem(k));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
+    const activeUserId = getActiveSupabaseUserId();
+    if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, JSON.stringify(cleanState));
   }
   lastPushedFingerprint = computeStateFingerprint(cleanState);
   await pushPayloadToCloudServers(cleanState, freshTimestamp);
@@ -310,9 +309,13 @@ export function saveCloudAndLocalState(stateSlice) {
     try {
       localStorage.setItem(STORAGE_KEY, serialized);
       localStorage.setItem(BACKUP_KEY, serialized);
+      const activeUserId = getActiveSupabaseUserId();
+      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
     } catch (quotaErr) {
       localStorage.removeItem(BACKUP_KEY);
       localStorage.setItem(STORAGE_KEY, serialized);
+      const activeUserId = getActiveSupabaseUserId();
+      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
     }
 
     // Only push over network if business data actually changed (stops 1-second infinite POST loop)
@@ -323,7 +326,7 @@ export function saveCloudAndLocalState(stateSlice) {
     lastPushedFingerprint = nextFingerprint;
     lastAppliedCloudTimestamp = nowIso;
 
-    if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", payload: merged }); localWindowSubscribers.forEach((fn) => { try { fn(merged); } catch (e) {} });
+    if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", userId: getActiveSupabaseUserId(), payload: merged }); localWindowSubscribers.forEach((fn) => { try { fn(merged); } catch (e) {} });
     if (cloudSyncDebounceTimer) clearTimeout(cloudSyncDebounceTimer);
     cloudSyncDebounceTimer = setTimeout(() => {
       pushPayloadToCloudServers(merged, nowIso);
@@ -483,10 +486,18 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
 export async function pullRemoteSupabaseState(applyIncomingPayload) {
   if (!supabase) return null;
   try {
+    const activeUserId = getActiveSupabaseUserId();
+    if (!activeUserId) return null;
     const remote = await invokeUserSync("GET");
     const payload = remote?.state_payload;
     if (payload && typeof payload === "object" && Object.keys(payload).length) {
       const nextPayload = { ...payload, lastSyncedAt: remote.updated_at || payload.lastSyncedAt };
+      if (typeof window !== "undefined") {
+        const serialized = JSON.stringify(nextPayload);
+        localStorage.setItem(STORAGE_KEY, serialized);
+        localStorage.setItem(BACKUP_KEY, serialized);
+        localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
+      }
       if (applyIncomingPayload) applyIncomingPayload(nextPayload);
       return nextPayload;
     }
@@ -539,7 +550,7 @@ export function subscribeToRealtimeUpdates(callback) {
   };
   localWindowSubscribers.add(applyIncomingPayload); pullRemoteSupabaseState(applyIncomingPayload);
   const handler = (event) => {
-    if (event.data && event.data.type === "STATE_UPDATED") {
+    if (event.data && event.data.type === "STATE_UPDATED" && (event.data.userId || null) === getActiveSupabaseUserId()) {
       applyIncomingPayload(event.data.payload);
     }
   };
