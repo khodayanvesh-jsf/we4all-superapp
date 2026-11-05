@@ -16,7 +16,7 @@ test("installed APK version and build number are visible in the mobile shell", (
 test("one version source agrees with package metadata and Android native metadata", () => {
   assert.match(version, /APP_VERSION = "3.3.0"/);
   assert.match(version, /APP_BUILD_NUMBER = 330/);
-  assert.equal(pkg.version, "3.2.9");
+  assert.equal(pkg.version, "3.3.0");
   assert.match(gradle, /versionCode 330/);
   assert.match(gradle, /versionName "3.3.0"/);
 });
