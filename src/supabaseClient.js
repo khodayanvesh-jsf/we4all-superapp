@@ -1,8 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { Capacitor } from "@capacitor/core";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";
+import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "3.2.8";
+const CURRENT_SCHEMA_VERSION = "3.2.9";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
 const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
 const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
@@ -557,10 +558,18 @@ export function loadCloudAndLocalState() {
 }
 
 export async function checkLiveCloudOtaManifest(callback) {
+  const installedInfo = {
+    installedAppVersion: APP_VERSION,
+    installedBuildNumber: APP_BUILD_NUMBER,
+    currentVersion: APP_VERSION,
+    currentBundleVersion: "BUILT-IN",
+    nativeUpdater: Capacitor.isNativePlatform() ? "Capgo" : "Not installed"
+  };
+
   if (!Capacitor.isNativePlatform()) {
     const info = {
-      currentVersion: CURRENT_SCHEMA_VERSION,
-      latestAvailableVersion: CURRENT_SCHEMA_VERSION,
+      ...installedInfo,
+      latestAvailableVersion: APP_VERSION,
       updateAvailable: false,
       nativeUpdaterRequired: true,
       releaseNotes: "Automatic updates are available in the installed Android/iOS app."
@@ -574,12 +583,14 @@ export async function checkLiveCloudOtaManifest(callback) {
       CapacitorUpdater.getLatest(),
       CapacitorUpdater.current()
     ]);
-    const currentVersion =
-      current?.bundle?.version || current?.native || CURRENT_SCHEMA_VERSION;
-    const latestVersion = latest?.version || currentVersion;
+    const currentBundleVersion = current?.bundle?.version || "BUILT-IN";
+    const currentVersion = APP_VERSION;
+    const latestVersion = latest?.version || currentBundleVersion;
     const available = Boolean(latest?.url && latest?.version && latest.version !== currentVersion);
     const info = {
+      ...installedInfo,
       currentVersion,
+      currentBundleVersion,
       latestAvailableVersion: latestVersion,
       updateAvailable: available,
       releaseNotes: latest?.message || "",
@@ -590,10 +601,9 @@ export async function checkLiveCloudOtaManifest(callback) {
     return info;
   } catch (error) {
     return {
-      currentVersion: CURRENT_SCHEMA_VERSION,
-      latestAvailableVersion: CURRENT_SCHEMA_VERSION,
+      ...installedInfo,
+      latestAvailableVersion: APP_VERSION,
       updateAvailable: false,
-      nativeUpdater: "Capgo",
       error: error?.message || "Could not check the Capgo update channel."
     };
   }
