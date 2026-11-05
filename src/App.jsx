@@ -443,13 +443,7 @@ function AppContent() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN") {
-        window.setTimeout(() => {
-          if (active) restoreVerifiedSession().catch((error) =>
-            console.warn("WE4ALL sign-in restore failed:", error?.message || error)
-          );
-        }, 0);
-      }
+      // The Account flow verifies OTP and activates the user cache before setting app state.
       if (event === "SIGNED_OUT") {
         clearActiveSupabaseAccount();
         setAuthenticatedPartnerRole(null);
