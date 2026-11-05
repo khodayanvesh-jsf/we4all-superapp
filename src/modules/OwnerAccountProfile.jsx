@@ -108,6 +108,19 @@ export default function OwnerAccountProfile(rawProps = {}) {
       const preferredRole = currentUser?.authUserId === user.id ? currentUser.role : "customer";
       const approvedRole = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
       const resolvedRole = approvedRole?.role || "customer";
+      let partnerRecord = null;
+      if (resolvedRole !== "customer") {
+        const { data, error: partnerError } = await supabase
+          .from("we4all_partners")
+          .select("id,partner_type,approval_status")
+          .eq("owner_user_id", user.id)
+          .eq("partner_type", resolvedRole)
+          .eq("approval_status", "approved")
+          .maybeSingle();
+        if (partnerError) throw partnerError;
+        if (!data) throw new Error("Your approved role has no active WE4ALL partner profile. Contact Founder support.");
+        partnerRecord = data;
+      }
       const signedInUser = {
         id: user.id,
         authUserId: user.id,
@@ -116,6 +129,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         businessName: profile?.business_name || "",
         area: profile?.area || "",
         role: resolvedRole,
+        partnerId: partnerRecord?.id || null,
         status: "Approved",
         isGuest: false
       };
@@ -271,7 +285,16 @@ export default function OwnerAccountProfile(rawProps = {}) {
           setSubTab("account_details");
           return;
         }
-        const partnerUser = { ...baseUser, role: requestedRole, status: "Approved" };
+        const { data: partnerRecord, error: partnerError } = await supabase
+          .from("we4all_partners")
+          .select("id,partner_type,approval_status")
+          .eq("owner_user_id", user.id)
+          .eq("partner_type", requestedRole)
+          .eq("approval_status", "approved")
+          .maybeSingle();
+        if (partnerError) throw partnerError;
+        if (!partnerRecord) throw new Error("Founder-approved role has no active WE4ALL partner profile yet.");
+        const partnerUser = { ...baseUser, role: requestedRole, partnerId: partnerRecord.id, status: "Approved" };
         setLocalUser(partnerUser);
         setCurrentUser?.(partnerUser);
         onPartnerAuthenticated?.(requestedRole, partnerUser);
