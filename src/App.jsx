@@ -1309,16 +1309,59 @@ function AppContent() {
                       <button
                         type="button"
                         onClick={() => {
-                          const total = serviceCart.reduce((s, x) => s + x.visitingFee, 0);
+                          if (!currentUser || currentUser.isGuest || !currentUser.authUserId) {
+                            triggerToast("Secure customer sign-in is required before requesting a service booking. Your cart is unchanged.");
+                            setFooterTab("account");
+                            return;
+                          }
+                          const total = serviceCart.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0);
+                          if (!Number.isFinite(total) || total <= 0) {
+                            triggerToast("The service cart has an invalid visiting-fee total.");
+                            return;
+                          }
+                          const bookingKey = JSON.stringify(
+                            serviceCart.map((item) => ({
+                              providerId: item.providerId || "",
+                              providerName: item.providerName || "",
+                              bookingDate: item.bookingDate || serviceFilterDate,
+                              bookingSlot: item.bookingSlot || "",
+                              visitingFee: Number(item.visitingFee || 0)
+                            })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+                          );
+                          const pendingExisting = (serviceBookings || []).find((booking) =>
+                            booking.customerId === currentUser.id &&
+                            booking.bookingKey === bookingKey &&
+                            ["AWAITING_VERIFIED_PAYMENT", "PAYMENT_SETUP_REQUIRED"].includes(booking.status)
+                          );
+                          const booking = pendingExisting || {
+                            id: "SRV-" + (globalThis.crypto?.randomUUID?.() || Date.now()),
+                            bookingKey,
+                            customerId: currentUser.id,
+                            customerName: currentUser.fullName || currentUser.name || "Customer",
+                            bookingItems: serviceCart,
+                            providerId: serviceCart[0]?.providerId || null,
+                            providerName: serviceCart.map((item) => item.providerName).join(", "),
+                            bookedDate: serviceCart[0]?.bookingDate || serviceFilterDate,
+                            bookedSlot: serviceCart.map((item) => item.bookingSlot).join(", "),
+                            visitingFee: total,
+                            escrowVisitingAmount: total,
+                            escrowStatus: "NOT_FUNDED",
+                            paymentStatus: "PENDING",
+                            happyCodeStatus: "NOT_ISSUED",
+                            status: "AWAITING_VERIFIED_PAYMENT",
+                            createdAt: new Date().toISOString()
+                          };
+                          if (!pendingExisting) setServiceBookings([booking, ...(serviceBookings || [])]);
                           setPendingUpiPayment({
                             type: "SERVICE_ESCROW",
-                            title: "1-Hr Service Escrow Visiting Fee",
+                            orderId: booking.id,
+                            title: "Service booking " + booking.id + " — visiting fee",
                             amount: total
                           });
                         }}
                         className="w-full bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
                       >
-                        Pay Visiting Fee into Escrow
+                        Continue to secure visiting-fee payment
                       </button>
                     </>
                   )}
