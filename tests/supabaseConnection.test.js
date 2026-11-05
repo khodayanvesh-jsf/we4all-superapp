@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [client, edge, legacyApi, migration, storageMigration, envExample, packageJson, owner] = await Promise.all([
+const [client, edge, legacyApi, migration, storageMigration, realtimeMigration, envExample, packageJson, owner] = await Promise.all([
   read("../src/supabaseClient.js"),
   read("../supabase/functions/we4all-sync/index.ts"),
   read("../api/sync.js"),
   read("../supabase/migrations/20261105190000_secure_user_state_partner_auth.sql"),
   read("../supabase/migrations/20261105210000_secure_we4all_media_uploads.sql"),
+  read("../supabase/migrations/20261105220000_we4all_user_state_realtime_publication.sql"),
   read("../.env.example"),
   read("../package.json"),
   read("../src/modules/OwnerAccountProfile.jsx")
@@ -64,4 +65,14 @@ test("account authentication and file upload are bound to verified user identity
   assert.equal(owner.includes("supabase.auth.getUser"), true);
   assert.equal(client.includes('const objectPath = `${user.id}/${folder}/${crypto.randomUUID()}.'), true);
   assert.equal(client.includes("auth.getUser()"), true);
+});
+
+test("per-user state changes are published through Supabase Realtime and filtered by owner", () => {
+  assert.equal(client.includes('"postgres_changes"'), true);
+  assert.equal(client.includes('table: "we4all_user_state"'), true);
+  assert.equal(client.includes('`user_id=eq.${activeUserId}`'), true);
+  assert.equal(client.includes("supabase.removeChannel(realtimeChannel)"), true);
+  assert.equal(realtimeMigration.includes("ALTER PUBLICATION supabase_realtime ADD TABLE public.we4all_user_state"), true);
+  assert.equal(realtimeMigration.includes("DROP TABLE public.we4all_town_state"), true);
+  assert.equal(realtimeMigration.includes("DROP TABLE public.we4all_orders_ledger"), true);
 });
