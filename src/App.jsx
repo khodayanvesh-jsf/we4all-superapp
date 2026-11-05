@@ -399,6 +399,7 @@ function AppContent() {
 
       const activation = await activateSupabaseAccount(user.id);
       if (!active) return;
+      if (!activation.ok) throw new Error(activation.reason || "Supabase account restore failed.");
       if (activation.changed) {
         // The activation step replaced any prior user's local snapshot with this user's private cloud snapshot.
         window.location.reload();
