@@ -4,6 +4,7 @@ import {
   GEO_ZONES,
   INITIAL_GEO_ADS,
   INITIAL_CATEGORIES,
+  CUSTOMER_QUICK_LINKS,
   SERVICE_CATEGORIES,
   LABOUR_TRADE_CATEGORIES,
   INITIAL_MERCHANTS,
@@ -778,6 +779,29 @@ function AppContent() {
                 ))}
               </div>
 
+              <div className="grid grid-cols-5 gap-1.5" aria-label="WE4ALL ten-category quick access">
+                {CUSTOMER_QUICK_LINKS
+                  .filter((link) =>
+                    !link.categoryId ||
+                    visibleCategories.some((category) => category.id === link.categoryId)
+                  )
+                  .map((link) => (
+                    <button
+                      key={link.id}
+                      type="button"
+                      aria-label={link.label}
+                      onClick={() => {
+                        setCustomerHomeSubTab(link.tab);
+                        if (link.categoryId) setSelectedCategory(link.categoryId);
+                      }}
+                      className="min-h-[68px] rounded-xl border border-emerald-700/50 bg-slate-900 px-1 py-2 text-white flex flex-col items-center justify-center gap-1 hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <span className="text-lg leading-none">{link.icon}</span>
+                      <span className="text-[9px] font-bold leading-tight text-center">{link.label}</span>
+                    </button>
+                  ))}
+              </div>
+
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -805,7 +829,7 @@ function AppContent() {
                             : "bg-slate-800 text-white")
                         }
                       >
-                        {cat.icon} {translateCategoryName(cat.id, cat.name, lang)}
+                        {cat.icon} {translateCategoryName(cat, lang)}
                       </button>
                     ))}
                   </div>
