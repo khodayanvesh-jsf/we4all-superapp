@@ -86,6 +86,9 @@ export default function FounderAdminSuite({
   const safeDecorators = Array.isArray(decorators) ? decorators : [];
   const safeRiders = Array.isArray(riders) ? riders : [];
   const safeLabourWorkers = Array.isArray(labourWorkers) ? labourWorkers : [];
+  const safePendingProductApprovals = safeProducts.filter((product) => product.status === "PENDING_ADMIN_APPROVAL");
+  const safePendingHallApprovals = safeHalls.filter((hall) => hall.status === "PENDING_ADMIN_APPROVAL");
+  const safePendingLabourApprovals = safeLabourWorkers.filter((worker) => worker.status === "PENDING_ADMIN_APPROVAL");
   const safeUsers = Array.isArray(registeredUsers) ? registeredUsers : [];
   const safeProducts = Array.isArray(products) ? products : [];
   const safeHalls = Array.isArray(functionHalls) ? functionHalls : [];
@@ -610,16 +613,19 @@ export default function FounderAdminSuite({
       ===================================================================== */}
       {founderTab === "approvals" && (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 md:grid-cols-7 gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
+          <div className="flex flex-wrap gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
             {[
               { id: "captains", label: `1. Captains (${safePendingRiders.length})` },
               { id: "decorators_halls", label: `2. Decor Partners (${safePendingDecorators.length})` },
               { id: "decor_requests", label: `3. Event Requests (${safeDecorRequests.length})` },
               { id: "service_providers", label: `3. Services (${safePendingServices.length})` },
               { id: "merchants", label: `4. Merchants (${safePendingMerchants.length})` },
-              { id: "brands", label: `5. Brands (${safePendingBrands.length})` },
-              { id: "rejected", label: `6. Rejected (${safeRejectedItems.length})` },
-              { id: "direct_add", label: "7. + Direct Add" }
+              { id: "brands", label: `5. Brand Requests (${safePendingBrands.length})` },
+              { id: "product_approvals", label: `6. Products (${safePendingProductApprovals.length})` },
+              { id: "function_halls", label: `7. Function Halls (${safePendingHallApprovals.length})` },
+              { id: "labour_workers", label: `8. Labour Workers (${safePendingLabourApprovals.length})` },
+              { id: "rejected", label: `9. Rejected (${safeRejectedItems.length})` },
+              { id: "direct_add", label: "10. + Direct Add" }
             ].map((sub) => (
               <button
                 key={sub.id}
@@ -744,6 +750,93 @@ export default function FounderAdminSuite({
               ) : (
                 safePendingMerchants.map((m) => renderPartnerApprovalCard(m, "merchant"))
               ))}
+
+            {approvalQueueSubTab === "product_approvals" && (
+              safePendingProductApprovals.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No new products are waiting for approval.</p>
+              ) : (
+                safePendingProductApprovals.map((product) => (
+                  <div key={product.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <strong className="text-white">{product.subCategoryBrand || product.name}</strong>
+                      <p className="text-[10px] text-slate-400">Merchant: {product.shopName || product.ownerUserId} · Category: {product.categoryId} · ₹{product.variants?.[0]?.price || product.price || 0}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => {
+                        const next = safeProducts.map((item) => item.id === product.id ? { ...item, status: "Approved", isPublished: true, inStock: true, approvedAt: new Date().toISOString() } : item);
+                        setProducts(next);
+                        saveCloudAndLocalState({ products: next });
+                        onTriggerToast("Product approved for customer discovery. Inventory and orders are still subject to server validation.");
+                      }} className="bg-emerald-500 text-slate-950 px-3 py-1.5 rounded-lg font-black text-[10px]">Approve product</button>
+                      <button type="button" onClick={() => {
+                        const next = safeProducts.map((item) => item.id === product.id ? { ...item, status: "REJECTED", inStock: false, rejectedAt: new Date().toISOString() } : item);
+                        setProducts(next);
+                        saveCloudAndLocalState({ products: next });
+                        onTriggerToast("Product marked rejected.");
+                      }} className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]">Reject</button>
+                    </div>
+                  </div>
+                ))
+              )
+            )}
+
+            {approvalQueueSubTab === "function_halls" && (
+              safePendingHallApprovals.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No function halls are waiting for approval.</p>
+              ) : (
+                safePendingHallApprovals.map((hall) => (
+                  <div key={hall.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <strong className="text-white">{hall.name}</strong>
+                      <p className="text-[10px] text-slate-400">Owner: {hall.ownerUserId || hall.ownerPhone || "Not linked"} · Capacity: {hall.capacity} · ₹{hall.dailyRent || hall.pricePerDay}/day · {hall.location}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => {
+                        const next = safeHalls.map((item) => item.id === hall.id ? { ...item, status: "Approved", isPublished: true, approvedAt: new Date().toISOString() } : item);
+                        setFunctionHalls(next);
+                        saveCloudAndLocalState({ functionHalls: next });
+                        onTriggerToast("Function hall approved for customer discovery. Date availability will still be checked at booking.");
+                      }} className="bg-emerald-500 text-slate-950 px-3 py-1.5 rounded-lg font-black text-[10px]">Approve hall</button>
+                      <button type="button" onClick={() => {
+                        const next = safeHalls.map((item) => item.id === hall.id ? { ...item, status: "REJECTED", isPublished: false, rejectedAt: new Date().toISOString() } : item);
+                        setFunctionHalls(next);
+                        saveCloudAndLocalState({ functionHalls: next });
+                        onTriggerToast("Function hall application rejected.");
+                      }} className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]">Reject</button>
+                    </div>
+                  </div>
+                ))
+              )
+            )}
+
+            {approvalQueueSubTab === "labour_workers" && (
+              safePendingLabourApprovals.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No Labour / Mistri registrations are waiting for approval.</p>
+              ) : (
+                safePendingLabourApprovals.map((worker) => (
+                  <div key={worker.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <strong className="text-white">{worker.name}</strong>
+                      <p className="text-[10px] text-slate-400">{worker.tradeName} · {worker.mode} · {worker.phone || "No phone"} · ₹{worker.fullDayWage}/day</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => {
+                        const next = safeLabourWorkers.map((item) => item.id === worker.id ? { ...item, status: "Approved", approvedAt: new Date().toISOString() } : item);
+                        setLabourWorkers(next);
+                        saveCloudAndLocalState({ labourWorkers: next });
+                        onTriggerToast("Labour worker approved for customer discovery. Attendance and wage settlement remain server-verified workflows.");
+                      }} className="bg-emerald-500 text-slate-950 px-3 py-1.5 rounded-lg font-black text-[10px]">Approve worker</button>
+                      <button type="button" onClick={() => {
+                        const next = safeLabourWorkers.map((item) => item.id === worker.id ? { ...item, status: "REJECTED", rejectedAt: new Date().toISOString() } : item);
+                        setLabourWorkers(next);
+                        saveCloudAndLocalState({ labourWorkers: next });
+                        onTriggerToast("Labour worker application rejected.");
+                      }} className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]">Reject</button>
+                    </div>
+                  </div>
+                ))
+              )
+            )}
 
             {approvalQueueSubTab === "brands" &&
               (safePendingBrands.length === 0 ? (
