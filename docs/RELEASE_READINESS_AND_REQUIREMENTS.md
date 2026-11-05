@@ -215,7 +215,9 @@ The review branch `fix/payment-safety-guest-default` contains:
 - UPI intent guard requiring a valid amount and explicitly verified VPA.
 - Fail-closed OTA verification until real signed-release verification is built.
 - Fixed undefined function in government-ID redaction.
-- Seven Node unit tests.
+- Ten-tile customer quick-entry grid is restored while retaining the existing five-tab navigation; Kisan Mandi is seeded as a catalogue category. The dedicated Kisan Mandi farmer onboarding/marketplace and MediHub pharmacy-specific workflows are still incomplete.
+- Fixed the customer category translation helper call to pass the category object and language code expected by the helper.
+- Ten Node unit tests (seven payment/security helpers plus three category registry/route checks).
 - Capacitor/Android package identity alignment, packaged web assets (no remote WebView override), HTTPS-only WebView traffic, conservative Android backup setting and foreground location permissions.
 - Reproducible Android CI build workflow and local Windows build instructions using JDK 21.
 - This requirements register and change-control/launch gate.
