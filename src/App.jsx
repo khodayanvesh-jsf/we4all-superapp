@@ -1020,7 +1020,7 @@ function AppContent() {
                     </select>
                   </div>
 
-                  {(serviceProviders || []).length === 0 ? (
+                  {(serviceProviders || []).filter((provider) => provider.status === "Approved" && provider.isPublished !== false).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
                       <p className="font-black text-xs">No Active 1-Hr Service Providers Yet</p>
                       <button
@@ -1035,7 +1035,17 @@ function AppContent() {
                       </button>
                     </div>
                   ) : (
-                    serviceProviders.map((sp) => (
+                    serviceProviders.filter((provider) => provider.status === "Approved" && provider.isPublished !== false).map((sp) => {
+                      const slotIsAvailable =
+                        Array.isArray(sp.availableSlots) &&
+                        sp.availableSlots.includes(serviceFilterSlot) &&
+                        !(serviceBookings || []).some((booking) =>
+                          booking.providerId === sp.id &&
+                          booking.bookedDate === serviceFilterDate &&
+                          booking.bookedSlot === serviceFilterSlot &&
+                          !["CANCELLED", "REJECTED", "COMPLETED"].includes(booking.status)
+                        );
+                      return (
                       <div
                         key={sp.id}
                         className="p-3 rounded-2xl border border-slate-200 bg-white text-slate-900 flex justify-between items-center"
@@ -1049,23 +1059,25 @@ function AppContent() {
                         </div>
                         <button
                           type="button"
+                          disabled={!slotIsAvailable}
                           onClick={() => {
                             setServiceCart([
                               ...serviceCart,
                               {
                                 ...sp,
+                                providerId: sp.id,
                                 bookingDate: serviceFilterDate,
                                 bookingSlot: serviceFilterSlot
                               }
                             ]);
-                            triggerToast("Booked " + sp.providerName + " into Service Cart!");
+                            triggerToast("Added an available provider slot to the service cart. It is not booked or paid yet.");
                           }}
-                          className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
+                          className="bg-amber-400 disabled:bg-slate-300 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                         >
-                          Book 1-Hr
+                          {slotIsAvailable ? "Add available slot" : "Slot unavailable"}
                         </button>
                       </div>
-                    ))
+                    )})
                   )}
                 </div>
               )}
@@ -1081,7 +1093,7 @@ function AppContent() {
                       className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold"
                     />
                   </div>
-                  {functionHalls.filter(isCustomerVisibleListing).map((hall) => {
+                  {functionHalls.filter((hall) => hall.status === "Approved" && hall.isPublished !== false).map((hall) => {
                     const advance = calculateDecoratorAdvance(hall.pricePerDay || hall.dailyRent, eventDate);
                     const isBooked = (hall.bookedDates || []).some((entry) => (typeof entry === "string" ? entry : entry.date) === eventDate);
                     return (
