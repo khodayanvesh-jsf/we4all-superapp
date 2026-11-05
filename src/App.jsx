@@ -1732,6 +1732,8 @@ function AppContent() {
               setDecorators={setDecorators}
               riders={riders}
               setRiders={setRiders}
+              labourWorkers={labourWorkers}
+              setLabourWorkers={setLabourWorkers}
               products={products}
               setProducts={setProducts}
               functionHalls={functionHalls}
@@ -1753,12 +1755,6 @@ function AppContent() {
               setPendingSubCategories={setPendingSubCategories}
               rejectedItems={rejectedItems}
               setRejectedItems={setRejectedItems}
-              appUpdateInfo={appUpdateInfo}
-              setAppUpdateInfo={setAppUpdateInfo}
-              monetizationConfig={monetizationConfig}
-              setMonetizationConfig={setMonetizationConfig}
-              geoAds={geoAds}
-              setGeoAds={setGeoAds}
               onBackToApp={() => setViewMode("mobile_app")}
               onTriggerToast={triggerToast}
             />
