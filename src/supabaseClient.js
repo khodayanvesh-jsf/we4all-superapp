@@ -148,7 +148,7 @@ async function invokeUserSync(method, payload) {
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   const activeUserId = getActiveSupabaseUserId();
   if (sessionError || !session?.access_token || !activeUserId || session.user?.id !== activeUserId) {
-    return { ok: false, reason: "A matching verified Supabase account is required for cloud sync" };
+    throw new Error("A matching verified Supabase account is required for cloud sync.");
   }
 
   const response = await fetch(`${SUPABASE_URL}/functions/v1/we4all-sync`, {
@@ -208,6 +208,9 @@ export async function activateSupabaseAccount(userId) {
   lastPushedFingerprint = "";
   try {
     const remote = await invokeUserSync("GET");
+    if (remote?.ok !== true) {
+      throw new Error(remote?.reason || "Supabase account restore failed.");
+    }
     const payload = remote?.state_payload;
     if (payload && typeof payload === "object" && Object.keys(payload).length > 0 && typeof window !== "undefined") {
       const serialized = JSON.stringify({
