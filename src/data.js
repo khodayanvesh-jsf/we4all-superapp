@@ -6,12 +6,12 @@
 // ============================================================================
 
 export const INITIAL_APP_UPDATE_INFO = {
-  currentVersion: "3.2.8",
-  latestAvailableVersion: "3.2.8",
+  currentVersion: "3.2.9",
+  latestAvailableVersion: "3.2.9",
   updateAvailable: false,
   adminWebUrl: "https://we-4-all-super-app.vercel.app/admin",
   apkDownloadUrl: "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-  releaseNotes: "WE4ALL v3.2.8 staging build: preserved ten customer entry points, Android hardening, fail-closed payment/authentication gates and expanded regression coverage."
+  releaseNotes: "WE4ALL v3.2.9 staging build: preserved ten customer entry points, Android hardening, fail-closed payment/authentication gates and expanded regression coverage."
 };
 
 export const GEO_ZONES = [
