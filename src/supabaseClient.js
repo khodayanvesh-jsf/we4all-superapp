@@ -224,7 +224,21 @@ export async function activateSupabaseAccount(userId) {
     return { ok: true, changed, hasRemoteState: Boolean(payload && Object.keys(payload).length) };
   } catch (error) {
     console.warn("WE4ALL account cloud restore unavailable:", error?.message || error);
-    return { ok: false, changed, reason: error?.message || "Cloud restore unavailable" };
+    try {
+      if (typeof window !== "undefined") {
+        if (previousUserId) {
+          localStorage.setItem(ACTIVE_SUPABASE_USER_KEY, previousUserId);
+        } else {
+          localStorage.removeItem(ACTIVE_SUPABASE_USER_KEY);
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(BACKUP_KEY);
+        }
+      }
+    } catch (rollbackError) {
+      console.warn("WE4ALL account activation rollback failed:", rollbackError?.message || rollbackError);
+    }
+    lastPushedFingerprint = "";
+    return { ok: false, changed: false, reason: error?.message || "Cloud restore unavailable" };
   }
 }
 
