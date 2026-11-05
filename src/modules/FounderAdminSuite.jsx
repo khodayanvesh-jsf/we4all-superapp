@@ -942,7 +942,7 @@ export default function FounderAdminSuite({
             {approvalQueueSubTab === "direct_add" && (
               <div className="bg-slate-950 p-4 rounded-2xl border border-emerald-500/40 space-y-3">
                 <h4 className="font-black text-emerald-400 text-sm">
-                  + Direct Founder Partner Onboarding (Instant Live Approval in Any Sector)
+                  + Founder Partner Intake (KYC Review Required)
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   <select
@@ -1012,109 +1012,84 @@ export default function FounderAdminSuite({
                 <button
                   type="button"
                   onClick={() => {
-                    if (!directPartnerForm.name.trim()) return;
-                    const id = `${directPartnerForm.partnerType}_${Date.now()}`;
+                    const name = String(directPartnerForm.name || "").trim();
+                    const phone = String(directPartnerForm.phone || "").replace(/\D/g, "").slice(-10);
+                    const area = String(directPartnerForm.area || "").trim();
+                    const priceOrFee = Number(directPartnerForm.priceOrFee || 0);
+                    if (!name || phone.length !== 10 || !area) {
+                      onTriggerToast("Enter partner name, valid 10-digit mobile number and service area. No partner was created.");
+                      return;
+                    }
+                    const id = `application_${globalThis.crypto?.randomUUID?.() || Date.now()}`;
+                    const submittedAt = new Date().toISOString();
+                    const baseApplication = {
+                      id,
+                      name,
+                      businessName: name,
+                      phone,
+                      area,
+                      upiId: String(directPartnerForm.upiId || "").trim(),
+                      status: "PENDING_ADMIN_APPROVAL",
+                      kycStatus: "NOT_VERIFIED",
+                      source: "FOUNDER_MANUAL_INTAKE",
+                      submittedAt
+                    };
+
                     if (directPartnerForm.partnerType === "merchant") {
-                      const next = [
-                        {
-                          id,
-                          businessName: directPartnerForm.name.trim(),
-                          owner: directPartnerForm.owner || "Verified Owner",
-                          categoryId: directPartnerForm.category || "daily_needs",
-                          phone: directPartnerForm.phone || "9848011101",
-                          upiId: directPartnerForm.upiId || "merchant@ybl",
-                          area: directPartnerForm.area,
-                          status: "Approved"
-                        },
-                        ...safeMerchants
-                      ];
-                      setMerchants(next);
-                      saveCloudAndLocalState({ merchants: next });
+                      const next = [baseApplication, ...safePendingMerchants];
+                      setPendingMerchants(next);
+                      saveCloudAndLocalState({ pendingMerchants: next });
                     } else if (directPartnerForm.partnerType === "service_provider") {
-                      const next = [
-                        {
-                          id,
-                          serviceCategoryId: "srv_plumbing",
-                          providerName: directPartnerForm.name.trim(),
-                          maskedId: `Verified Pro #${safeServiceProviders.length + 1}`,
-                          serviceCategory: "Home Services",
-                          specialization: "Verified Town Specialist",
-                          visitingFee: directPartnerForm.priceOrFee || 99,
-                          hourlyRate: 150,
-                          area: directPartnerForm.area,
-                          phone: directPartnerForm.phone || "9848022201",
-                          upiId: directPartnerForm.upiId || "service@ybl",
-                          rating: 4.9,
-                          status: "Approved",
-                          isPublished: true,
-                          isPublishedToPublic: true,
-                          availableSlots: ["09:00 AM - 10:00 AM", "11:00 AM - 12:00 PM", "03:00 PM - 04:00 PM"],
-                          image: directPartnerForm.image
-                        },
-                        ...safeServiceProviders
-                      ];
-                      setServiceProviders(next);
-                      saveCloudAndLocalState({ serviceProviders: next });
+                      const next = [{
+                        ...baseApplication,
+                        serviceCategoryId: "srv_plumbing",
+                        providerName: name,
+                        specialization: "",
+                        visitingFee: Number.isFinite(priceOrFee) && priceOrFee > 0 ? priceOrFee : 0,
+                        hourlyRate: 0,
+                        availableSlots: [],
+                        isPublished: false
+                      }, ...safePendingServices];
+                      setPendingServiceProviders(next);
+                      saveCloudAndLocalState({ pendingServiceProviders: next });
                     } else if (directPartnerForm.partnerType === "decorator") {
-                      const next = [
-                        {
-                          id,
-                          name: directPartnerForm.name.trim(),
-                          businessName: directPartnerForm.name.trim(),
-                          decoratorSubRole: "flower_decorator",
-                          expert: "Wedding, Haldi & Stage Decor",
-                          phone: directPartnerForm.phone || "9848044556",
-                          upiId: directPartnerForm.upiId || "decor@ybl",
-                          area: directPartnerForm.area,
-                          status: "Approved",
-                          image: directPartnerForm.image
-                        },
-                        ...safeDecorators
-                      ];
-                      setDecorators(next);
-                      saveCloudAndLocalState({ decorators: next });
+                      const next = [{
+                        ...baseApplication,
+                        decoratorSubRole: "flower_decorator",
+                        portfolioImages: [],
+                        isPublished: false
+                      }, ...safePendingDecorators];
+                      setPendingDecorators(next);
+                      saveCloudAndLocalState({ pendingDecorators: next });
                     } else if (directPartnerForm.partnerType === "hall") {
-                      const next = [
-                        {
-                          id,
-                          name: directPartnerForm.name.trim(),
-                          capacity: "800 Guests",
-                          pricePerDay: directPartnerForm.priceOrFee || 45000,
-                          collateralVerified: true,
-                          bookedDates: [],
-                          image: directPartnerForm.image
-                        },
-                        ...safeHalls
-                      ];
+                      const next = [{
+                        ...baseApplication,
+                        capacity: Number(directPartnerForm.capacity || 0),
+                        dailyRent: Number.isFinite(priceOrFee) && priceOrFee > 0 ? priceOrFee : 0,
+                        bookedDates: [],
+                        isPublished: false
+                      }, ...safeHalls];
                       setFunctionHalls(next);
                       saveCloudAndLocalState({ functionHalls: next });
                     } else if (directPartnerForm.partnerType === "captain") {
-                      const next = [
-                        {
-                          id,
-                          name: directPartnerForm.name.trim(),
-                          phone: directPartnerForm.phone || "9848055112",
-                          upiId: directPartnerForm.upiId || "captain@ybl",
-                          vehicleType: "2W",
-                          vehicleName: "Hero Splendor Bike",
-                          baseRate: directPartnerForm.priceOrFee || 25,
-                          perKm: 6,
-                          rating: 4.9,
-                          trips: 10,
-                          badge: "Admin Verified Captain",
-                          isPrimeCaptain: true
-                        },
-                        ...safeRiders
-                      ];
-                      setRiders(next);
-                      saveCloudAndLocalState({ riders: next });
+                      const next = [{
+                        ...baseApplication,
+                        vehicleCode: "",
+                        vehicleName: "",
+                        rcNumber: "",
+                        dlNumber: "",
+                        isPublished: false
+                      }, ...safePendingRiders];
+                      setPendingRiders(next);
+                      saveCloudAndLocalState({ pendingRiders: next });
                     }
-                    setDirectPartnerForm({ ...directPartnerForm, name: "", phone: "" });
-                    onTriggerToast("Partner directly onboarded, approved & synced to cloud!");
-                  }}
+
+                    setDirectPartnerForm({ ...directPartnerForm, name: "", phone: "", upiId: "", area: "" });
+                    onTriggerToast("Partner application saved as pending KYC and approval. No portal access, listing, payout or payment identity was activated.");
+                  }}}
                   className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
                 >
-                  &#x2713; Onboard &amp; Publish Partner Live Now
+                  Submit Pending Partner Application
                 </button>
               </div>
             )}
