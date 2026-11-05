@@ -71,7 +71,8 @@ test("account authentication and file upload are bound to verified user identity
 
 test("debounced writes cannot cross account boundaries or sync guest changes", () => {
   assert.equal(client.includes("const ownerUserId = getActiveSupabaseUserId();"), true);
-  assert.equal(client.includes("if (!ownerUserId) return; // Guest/local edits"), true);
+  assert.equal(client.includes("if (!ownerUserId) {"), true);
+  assert.equal(client.includes("Guest changes are kept on this device and are not uploaded."), true);
   assert.equal(client.includes("activeUserId !== ownerUserId"), true);
   assert.equal(client.includes("expectedUserId !== activeUserId"), true);
   assert.equal(client.includes("pushPayloadToCloudServers(merged, nowIso, ownerUserId)"), true);
