@@ -35,7 +35,7 @@ export const CUSTOMER_QUICK_LINKS = [
   { id: "vegetables", label: "Veg & Fruits", icon: "\uD83E\uDD6C", tab: "stores", categoryId: "veg_fruits" },
   { id: "meat", label: "Meat & Fish", icon: "\uD83C\uDF57", tab: "stores", categoryId: "non_veg" },
   { id: "construction", label: "Cement & Steel", icon: "\uD83E\uDDF1", tab: "stores", categoryId: "construction" },
-  { id: "medihub", label: "Medicines", icon: "\uD83D\uDC8A", tab: "stores", categoryId: "medicines" },
+  { id: "medihub", label: "MediHub", icon: "\uD83D\uDC8A", tab: "stores", categoryId: "medicines" },
   { id: "labour", label: "Labour Adda", icon: "\uD83D\uDC77", tab: "labour" },
   { id: "services", label: "1-Hour Services", icon: "\uD83D\uDD27", tab: "services" },
   { id: "events", label: "Decor & Halls", icon: "\uD83C\uDF89", tab: "events" },
