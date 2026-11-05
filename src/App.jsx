@@ -1399,7 +1399,53 @@ function AppContent() {
                     <button
                       type="button"
                       onClick={() => {
-                        triggerToast("Event booking cannot be confirmed until date availability, deposit rules and server-side payment/booking APIs are connected. Your cart is unchanged.");
+                        if (!currentUser || currentUser.isGuest || !currentUser.authUserId) {
+                          triggerToast("Secure customer sign-in is required before sending an event request. Your cart is unchanged.");
+                          setFooterTab("account");
+                          return;
+                        }
+                        const total = decorCart.reduce((sum, item) => sum + Number(item.price || 0), 0);
+                        const advanceTotal = decorCart.reduce((sum, item) => sum + Number(item.advanceAmount || 0), 0);
+                        if (!decorCart.length || !Number.isFinite(total) || total <= 0 || !Number.isFinite(advanceTotal)) {
+                          triggerToast("The event cart has invalid hall/package pricing.");
+                          return;
+                        }
+                        const requestKey = JSON.stringify({
+                          customerId: currentUser.id,
+                          events: decorCart.map((item) => ({
+                            hallId: item.id,
+                            eventDate: item.eventDate,
+                            amount: Number(item.price || 0),
+                            advanceAmount: Number(item.advanceAmount || 0)
+                          }))
+                        });
+                        const existing = (decorBids || []).find((request) =>
+                          request.recordType === "DECOR_REQUEST" &&
+                          request.requestKey === requestKey &&
+                          request.status === "PENDING_FOUNDER_AVAILABILITY_REVIEW"
+                        );
+                        if (existing) {
+                          triggerToast("This event request is already awaiting founder availability review.");
+                          return;
+                        }
+                        const request = {
+                          id: "DEC-" + (globalThis.crypto?.randomUUID?.() || Date.now()),
+                          recordType: "DECOR_REQUEST",
+                          requestKey,
+                          customerId: currentUser.id,
+                          customerName: currentUser.fullName || currentUser.name || "Customer",
+                          title: decorCart.map((item) => item.title).join(", "),
+                          events: decorCart,
+                          eventDate: decorCart[0]?.eventDate || eventDate,
+                          amount: total,
+                          requestedAdvanceAmount: advanceTotal,
+                          status: "PENDING_FOUNDER_AVAILABILITY_REVIEW",
+                          paymentStatus: "NOT_PAID",
+                          escrowStatus: "NOT_FUNDED",
+                          createdAt: new Date().toISOString()
+                        };
+                        setDecorBids([request, ...(decorBids || [])]);
+                        triggerToast("Event request saved pending Founder availability review. The hall is not reserved and no payment has been taken.");
                       }}
                       className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
                     >
