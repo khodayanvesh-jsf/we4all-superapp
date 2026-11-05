@@ -215,9 +215,21 @@ The review branch `fix/payment-safety-guest-default` contains:
 - UPI intent guard requiring a valid amount and explicitly verified VPA.
 - Fail-closed OTA verification until real signed-release verification is built.
 - Fixed undefined function in government-ID redaction.
-- Seven focused pure-logic Node tests.
+- Seven Node unit tests.
+- Capacitor/Android package identity alignment, packaged web assets (no remote WebView override), HTTPS-only WebView traffic, conservative Android backup setting and foreground location permissions.
+- Reproducible Android CI build workflow and local Windows build instructions using JDK 21.
+- This requirements register and change-control/launch gate.
 
-The work is in draft PR #1 and is not merged into production. Seven helper tests passed in a local Node test harness. A Vercel preview reported Ready. This is not proof of a full repository build, backend security, or physical-device stability; those tests remain outstanding.
+**Latest observed CI evidence (6 Nov 2026):**
+- `npm ci`: passed.
+- `npm test`: 7/7 passed.
+- `npm run build`: passed; Vite emitted the production bundle.
+- `npx cap sync android`: passed.
+- Android `assembleDebug`: the JDK 17 run failed with `invalid source release: 21`; CI and the local guide were updated to JDK 21. The subsequent JDK 21 run has passed all preceding steps but Android Gradle compilation and artifact upload are still in progress/not yet confirmed. No APK artifact is currently claimed.
+- npm install reported 8 dependency advisories (7 moderate, 1 high); identify and resolve the high-severity issue before public release.
+- Vercel preview reported Ready; this is a web preview, not a native APK or device-stability certification.
+
+The work is in draft PR #1 and is not merged into production. Successful JavaScript tests/web build/Capacitor sync do not prove backend security, payment processing, all portal workflows or physical-device stability. The current Supabase schema policies and state sync relay remain launch blockers until authenticated and role/zone-scoped.
 
 ## 9. Founder approval and release decision log
 
