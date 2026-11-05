@@ -1801,7 +1801,7 @@ function AppContent() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (adminPinInput === "9999" || adminPinInput === "1234") {
+                    if (adminPinInput === __getDynamicAdminCreds().pin || adminPinInput === "1234") {
                       setIsAdminAuthenticated(true);
                       setAdminLoginError("");
                     } else {
@@ -1959,6 +1959,19 @@ function AppContent() {
   );
 }
 
+const __getDynamicAdminCreds = () => {
+  try {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("we4all_founder_credentials_v1") : null;
+    const parsed = raw ? JSON.parse(raw) : {};
+    return {
+      username: String(parsed.username || "KhodayAnvesh"),
+      password: String(parsed.password || "22061969s!"),
+      pin: String(parsed.pin || "9999")
+    };
+  } catch (e) {
+    return { username: "KhodayAnvesh", password: "22061969s!", pin: "9999" };
+  }
+};
 export default function App() {
   return <AppContent />;
 }

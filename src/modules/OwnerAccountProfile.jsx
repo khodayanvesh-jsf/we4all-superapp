@@ -716,8 +716,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
     id: "guest_user",
     fullName: "Guest Consumer Shopper",
     phone: "9848011223",
-    role: resolvedRole,
-    portal: resolvedRole,
     decoratorSubRole: "flower_decorator",
     vehicleCode: "2W",
     isGuest: !rawProps.currentUser || Boolean(rawProps.currentUser?.isGuest),
