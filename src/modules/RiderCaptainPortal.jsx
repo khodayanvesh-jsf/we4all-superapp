@@ -52,7 +52,7 @@ export default function RiderCaptainPortal({
 
   const [isOnlineForDriving, setIsOnlineForDriving] = useState(false);
   const [locationConsent, setLocationConsent] = useState(false);
-  const [autoOnline9AmEnabled, setAutoOnline9AmEnabled] = useState(true);
+  const autoOnline9AmEnabled = false;
   const [showLockedOtherVehicleJobs, setShowLockedOtherVehicleJobs] =
     useState(true);
   const [dropOtpInputs, setDropOtpInputs] = useState({});
@@ -702,6 +702,7 @@ export default function RiderCaptainPortal({
                     ) : (
                       <button
                         type="button"
+                        disabled
                         onClick={() => {
                           onTriggerToast(
                             "Payout request cannot be submitted yet. WE4ALL needs an authenticated captain settlement API and payment-provider confirmation. No payout status was changed."
@@ -730,7 +731,7 @@ export default function RiderCaptainPortal({
                   4. {myVehicleRule.shortLabel} Earnings &amp; 09:00 AM Default Online Duty
                 </h4>
                 <p className="text-[10px] text-slate-400">
-                  Auto-Online every morning at 09:00 AM ({autoOnline9AmEnabled ? "Active" : "Paused"})
+                  09:00 AM auto-duty requires a server scheduler and explicit consent. Manual online mode is used until then.
                 </p>
               </div>
               <button
