@@ -690,13 +690,13 @@ function AppContent() {
     if (
       portalRole !== "customer" &&
       viewMode !== "multi_role_lab" &&
-      authenticatedPartnerRole !== portalRole
+      (authenticatedPartnerRole !== portalRole || currentUser?.role !== portalRole || currentUser?.status !== "Approved" || !currentUser?.authUserId)
     ) {
       return (
         <div className="p-4 bg-white text-slate-900 rounded-2xl border border-rose-300 space-y-3 text-xs text-center shadow">
           <p className="font-black text-rose-700 text-sm">Partner Portal Locked</p>
           <p className="text-[11px] text-slate-600">
-            Access to the {portalRole.toUpperCase()} desk requires a verified Partner Mobile Number + 4-Digit Secret PIN.
+            Access to the {portalRole.toUpperCase()} desk requires a server-authenticated account, approved partner status and a verified session. Local PINs do not unlock partner portals.
           </p>
           <button
             type="button"
@@ -1376,11 +1376,22 @@ function AppContent() {
               activePortal={activePortal}
               authenticatedPartnerRole={authenticatedPartnerRole}
               onPartnerAuthenticated={(role, partnerObj) => {
+                const allowedRoles = ["merchant", "service_provider", "decorator", "rider", "labour"];
+                if (
+                  !allowedRoles.includes(role) ||
+                  partnerObj?.role !== role ||
+                  partnerObj?.status !== "Approved" ||
+                  !partnerObj?.authUserId
+                ) {
+                  setAuthenticatedPartnerRole(null);
+                  triggerToast("Partner access denied: server identity, approved role and authenticated session are required.");
+                  return;
+                }
                 setAuthenticatedPartnerRole(role);
                 setCurrentUser({ ...currentUser, ...partnerObj });
                 setActivePortal(role);
                 setFooterTab("home");
-                triggerToast("Verified & Unlocked " + role.toUpperCase() + " Portal!");
+                triggerToast("Server-authenticated " + role.toUpperCase() + " portal session opened.");
               }}
               onLogoutPartner={() => {
                 setAuthenticatedPartnerRole(null);
