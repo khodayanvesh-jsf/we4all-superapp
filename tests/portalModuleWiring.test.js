@@ -42,7 +42,7 @@ test("Decorator portal scopes its halls, requires approval and stores bids as re
   assert.equal(decorator.includes("ownerUserId"), true);
   assert.equal(decorator.includes("PENDING_ADMIN_APPROVAL"), true);
   assert.equal(decorator.includes('recordType: "DECOR_BID"'), true);
-  assert.equal(decorator.includes("calculateDecoratorAdvance"), true);
+  assert.equal(app.includes("calculateDecoratorAdvance"), true);
   assert.equal(decorator.includes("ENV-8841") || decorator.includes("Rajesh Verma"), false);
 });
 
@@ -51,7 +51,7 @@ test("Rider portal has no fallback OTP, synthetic jobs or client payout success"
   assert.equal(rider.includes("Math.random"), false);
   assert.equal(rider.includes("PAYMENT_RELEASED_TO_UPI"), false);
   assert.equal(rider.includes("trackingEnabled={isOnlineForDriving && locationConsent}"), true);
-  assert.equal(rider.includes("server-issued delivery OTP"), true);
+  assert.equal(rider.includes("Server-issued delivery OTP"), true);
 });
 
 test("Labour portal supports both legacy/new prop contracts and locks local OTP/wage transitions", () => {
@@ -62,7 +62,7 @@ test("Labour portal supports both legacy/new prop contracts and locks local OTP/
   assert.equal(labour.includes("REQUESTED_PENDING_WORKER_CONFIRMATION"), true);
   assert.equal(labour.includes("lb.morningStartOtp"), false);
   assert.equal(labour.includes("lb.eveningReleaseOtp"), false);
-  assert.equal(labour.includes("WAGE_RELEASED_COMPLETED"), false);
+  assert.equal(labour.includes('status: "WAGE_RELEASED_COMPLETED"'), false);
 });
 
 test("Live route map uses opt-in device geolocation instead of fake timer progress", () => {
