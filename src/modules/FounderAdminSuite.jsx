@@ -1415,22 +1415,15 @@ export default function FounderAdminSuite({
               </div>
             </div>
 
+            <div className="bg-amber-950/50 border border-amber-500/50 rounded-xl p-3 text-[11px] text-amber-100">
+              Founder credentials are not editable in the browser. Configure the founder identity through the secured server-side authentication process; local PIN/password storage and cross-device credential syncing are disabled.
+            </div>
             <button
               type="button"
-              onClick={() => {
-                if (!adminCredsForm.username.trim() || !adminCredsForm.password.trim()) {
-                  alert("Username and Password cannot be empty!");
-                  return;
-                }
-                const saved = saveFounderCredentials(adminCredsForm);
-                setAdminCredsForm(saved);
-                onTriggerToast(
-                  `Admin Credentials updated! New Username: ${saved.username} | PIN: ${saved.pin}`
-                );
-              }}
-              className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
+              disabled
+              className="w-full bg-slate-700 text-slate-400 font-black py-2.5 rounded-xl cursor-not-allowed shadow"
             >
-              &#x2713; Save New Admin Credentials &amp; Sync Across Devices
+              Server-side founder authentication required
             </button>
           </div>
 
