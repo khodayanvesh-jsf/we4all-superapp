@@ -306,36 +306,43 @@ function AppContent() {
 
   const handleManualCheckForUpdate = async () => {
     setCheckingUpdate(true);
-    triggerToast("Checking WE4ALL Cloud Server for OTA updates...");
-    const latest = await checkLiveCloudOtaManifest((payload) => {
-      if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
-    });
-    setTimeout(() => {
+    try {
+      const latest = await checkLiveCloudOtaManifest((payload) => {
+        if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+      });
+      if (latest?.error) throw new Error(latest.error);
+      triggerToast(latest?.updateAvailable
+        ? "A Capgo update is available for this device."
+        : latest?.nativeUpdaterRequired
+          ? "OTA updates run inside the installed Android/iOS app."
+          : "WE4ALL is up to date on its Capgo channel.");
+    } catch (error) {
+      triggerToast(error?.message || "Could not check the Capgo update channel.");
+    } finally {
       setCheckingUpdate(false);
-      const targetVer =
-        latest?.latestAvailableVersion || appUpdateInfo?.latestAvailableVersion || "3.1.0";
-      setAppUpdateInfo((prev) => ({
-        ...prev,
-        ...(latest || {}),
-        latestAvailableVersion: targetVer
-      }));
-      triggerToast("Verified WE4ALL v" + targetVer + " with Code Security Guard!");
-    }, 500);
+    }
   };
 
-  const handleRunOtaUpdate = () => {
+  const handleRunOtaUpdate = async () => {
     const integrity = verifyModulePipelineIntegrity(savedCloud || {});
-    if (!integrity.valid) return;
-    performZeroLossOtaUpdate(
-      appUpdateInfo.latestAvailableVersion,
-      appUpdateInfo.releaseNotes,
-      (stage) => setOtaProgress(stage),
-      (updatedInfo) => {
-        setAppUpdateInfo(updatedInfo);
-        setOtaProgress(null);
-        triggerToast("Updated to v" + updatedInfo.currentVersion + " with zero data loss!");
-      }
-    );
+    if (!integrity.valid) {
+      triggerToast("Application integrity check failed. OTA installation was blocked.");
+      return;
+    }
+    setOtaProgress({ pct: 5, msg: "Preparing verified Capgo update..." });
+    try {
+      const updatedInfo = await performZeroLossOtaUpdate(
+        appUpdateInfo.latestAvailableVersion,
+        appUpdateInfo.releaseNotes,
+        (stage) => setOtaProgress(stage),
+        (info) => setAppUpdateInfo(info)
+      );
+      setOtaProgress(null);
+      triggerToast("Update downloaded and queued. It will activate at the next safe app background/relaunch.");
+    } catch (error) {
+      setOtaProgress(null);
+      triggerToast(error?.message || "OTA update failed. The current app bundle remains active.");
+    }
   };
 
   const [accountSecurity, setAccountSecurity] = useState(
