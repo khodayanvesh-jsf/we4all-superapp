@@ -107,6 +107,7 @@ let cloudSyncDebounceTimer = null;
 let lastAppliedCloudTimestamp = "";
 let lastPushedFingerprint = "";
 let isApplyingRemoteState = false;
+const localWindowSubscribers = new Set();
 
 function computeStateFingerprint(stateObj) {
   if (!stateObj || typeof stateObj !== "object") return "";
@@ -259,7 +260,7 @@ export function saveCloudAndLocalState(stateSlice) {
     lastPushedFingerprint = nextFingerprint;
     lastAppliedCloudTimestamp = nowIso;
 
-    if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", payload: merged });
+    if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", payload: merged }); localWindowSubscribers.forEach((fn) => { try { fn(merged); } catch (e) {} });
     if (cloudSyncDebounceTimer) clearTimeout(cloudSyncDebounceTimer);
     cloudSyncDebounceTimer = setTimeout(() => {
       pushPayloadToCloudServers(merged, nowIso);
@@ -462,7 +463,7 @@ export function subscribeToRealtimeUpdates(callback) {
       }, 250);
     }
   };
-  pullRemoteSupabaseState(applyIncomingPayload);
+  localWindowSubscribers.add(applyIncomingPayload); pullRemoteSupabaseState(applyIncomingPayload);
   const handler = (event) => {
     if (event.data && event.data.type === "STATE_UPDATED") {
       applyIncomingPayload(event.data.payload);
@@ -478,12 +479,12 @@ export function subscribeToRealtimeUpdates(callback) {
   if (syncChannel) syncChannel.addEventListener("message", handler);
   window.addEventListener("storage", storageHandler);
   const cloudPollTimer = setInterval(() => {
-    pullRemoteSupabaseState(applyIncomingPayload);
+    localWindowSubscribers.add(applyIncomingPayload); pullRemoteSupabaseState(applyIncomingPayload);
   }, 8000);
   return () => {
     if (syncChannel) syncChannel.removeEventListener("message", handler);
     window.removeEventListener("storage", storageHandler);
-    clearInterval(cloudPollTimer);
+    localWindowSubscribers.delete(applyIncomingPayload); clearInterval(cloudPollTimer);
   };
 }
 
