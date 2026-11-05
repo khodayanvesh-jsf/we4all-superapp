@@ -60,6 +60,9 @@ jobs:
       - name: Sync packaged web assets into Android
         run: npx cap sync android
 
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
       - name: Build Android debug APK
         working-directory: android
         run: ./gradlew --no-daemon --stacktrace clean assembleDebug
