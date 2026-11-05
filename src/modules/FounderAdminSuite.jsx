@@ -1086,7 +1086,7 @@ export default function FounderAdminSuite({
 
                     setDirectPartnerForm({ ...directPartnerForm, name: "", phone: "", upiId: "", area: "" });
                     onTriggerToast("Partner application saved as pending KYC and approval. No portal access, listing, payout or payment identity was activated.");
-                  }}}
+                  }}
                   className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
                 >
                   Submit Pending Partner Application
