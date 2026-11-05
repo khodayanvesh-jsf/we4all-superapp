@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
 const CURRENT_SCHEMA_VERSION = "3.2.8";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
@@ -16,44 +17,37 @@ export function normalizeSupabaseBaseUrl(rawUrl) {
     .replace(/\/+$/, "");
 }
 
+const SUPABASE_URL = normalizeSupabaseBaseUrl(
+  import.meta.env.VITE_SUPABASE_URL || "https://bdmbziwazpuzbukazmug.supabase.co"
+);
+const SUPABASE_PUBLISHABLE_KEY = String(
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  "sb_publishable_nNPwaseb81B8V05aVwmleg_JkBVNvzl"
+).trim();
+
+export const supabase = SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce"
+      }
+    })
+  : null;
+
 export function getServerConfig() {
-  let saved = {};
-  if (typeof window !== "undefined") {
-    try {
-      saved = JSON.parse(localStorage.getItem(SERVER_CONFIG_KEY) || "{}");
-    } catch (e) {}
-  }
-  const rawSupaUrl =
-    saved.supabaseUrl ||
-    import.meta.env.VITE_SUPABASE_URL ||
-    "https://rjwxsjdayublcmcciuww.supabase.co";
-  const supabaseUrl = normalizeSupabaseBaseUrl(rawSupaUrl);
-  const supabaseAnonKey = String(
-    saved.supabaseAnonKey || import.meta.env.VITE_SUPABASE_ANON_KEY || ""
-  ).trim();
-  const relayEndpoint = String(
-    saved.relayEndpoint || `${LIVE_CLOUD_ORIGIN}/api/sync`
-  ).trim();
   return {
-    supabaseUrl,
-    supabaseAnonKey,
-    relayEndpoint,
-    hasSupabaseKey: Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith("https://"))
+    supabaseUrl: SUPABASE_URL,
+    supabaseAnonKey: SUPABASE_PUBLISHABLE_KEY,
+    relayEndpoint: `${SUPABASE_URL}/functions/v1/we4all-sync`,
+    hasSupabaseKey: Boolean(supabase)
   };
 }
 
-export function saveServerConfig(newConfig = {}) {
-  if (typeof window === "undefined") return;
-  try {
-    const current = getServerConfig();
-    const merged = {
-      ...current,
-      ...newConfig,
-      supabaseUrl: normalizeSupabaseBaseUrl(newConfig.supabaseUrl || current.supabaseUrl),
-      updatedAt: new Date().toISOString()
-    };
-    localStorage.setItem(SERVER_CONFIG_KEY, JSON.stringify(merged));
-  } catch (e) {}
+export function saveServerConfig() {
+  // Connection settings are environment-controlled; never accept a key from browser storage.
+  return getServerConfig();
 }
 
 export function getFounderCredentials() {
@@ -82,7 +76,7 @@ export function saveFounderCredentials() {
   };
 }
 
-export const isLiveSupabaseConfigured = true;
+export const isLiveSupabaseConfigured = Boolean(supabase);
 
 const syncChannel =
   typeof window !== "undefined" && "BroadcastChannel" in window
@@ -113,70 +107,64 @@ export function getDeviceInstalledVersion(fallback = "3.2.8") {
 }
 
 export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploads") {
-  const cfg = getServerConfig();
-  if (!cfg.hasSupabaseKey) {
-    return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
-  }
+  if (!supabase) return "";
   try {
-    let bodyToUpload = fileOrDataUrl;
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return "";
+    let file = fileOrDataUrl;
     let contentType = "image/jpeg";
-    let ext = "jpg";
+    let extension = "jpg";
     if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("data:")) {
       const match = fileOrDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (!match) return fileOrDataUrl;
+      if (!match) return "";
       contentType = match[1];
-      ext = contentType.split("/")[1] || "png";
-      const byteCharacters = atob(match[2]);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      bodyToUpload = new Blob([new Uint8Array(byteNumbers)], { type: contentType });
-    } else if (fileOrDataUrl instanceof File) {
-      contentType = fileOrDataUrl.type || "image/jpeg";
-      ext = fileOrDataUrl.name.split(".").pop() || "jpg";
+      extension = contentType.split("/")[1] || "jpg";
+      const bytes = Uint8Array.from(atob(match[2]), (ch) => ch.charCodeAt(0));
+      file = new Blob([bytes], { type: contentType });
+    } else if (typeof File !== "undefined" && fileOrDataUrl instanceof File) {
+      contentType = fileOrDataUrl.type || contentType;
+      extension = fileOrDataUrl.name.split(".").pop() || extension;
     } else {
-      return String(fileOrDataUrl || "");
+      return "";
     }
-    const safeFileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const objectPath = `${folder}/${safeFileName}`;
-    const res = await fetch(`${cfg.supabaseUrl}/storage/v1/object/we4all-media/${objectPath}`, {
-      method: "POST",
-      headers: {
-        apikey: cfg.supabaseAnonKey,
-        Authorization: `Bearer ${cfg.supabaseAnonKey}`,
-        "Content-Type": contentType,
-        "x-upsert": "true"
-      },
-      body: bodyToUpload
+    const objectPath = `${user.id}/${folder}/${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage.from("we4all-media").upload(objectPath, file, {
+      contentType,
+      upsert: false
     });
-    if (!res.ok) return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
-    return `${cfg.supabaseUrl}/storage/v1/object/public/we4all-media/${objectPath}`;
-  } catch (e) {
-    return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
+    if (error) throw error;
+    const { data } = supabase.storage.from("we4all-media").getPublicUrl(objectPath);
+    return data?.publicUrl || "";
+  } catch (error) {
+    console.error("WE4ALL storage upload failed:", error?.message || error);
+    return "";
   }
 }
 
 async function pushPayloadToCloudServers(payload, nowIso) {
-  const cfg = getServerConfig();
+  if (!supabase) return { ok: false, reason: "Supabase client not configured" };
   try {
-    const relayUrl =
-      typeof window !== "undefined" && window.location.origin.includes("vercel.app")
-        ? `${window.location.origin}/api/sync`
-        : cfg.relayEndpoint;
-    await fetch(relayUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        zone_id: ZONE_MASTER_ID,
-        state_payload: payload,
-        app_version: CURRENT_SCHEMA_VERSION,
-        updated_at: nowIso,
-        customSupabaseUrl: cfg.supabaseUrl,
-        customSupabaseKey: cfg.supabaseAnonKey
-      })
-    });
-  } catch (e) {}
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return { ok: false, reason: "No authenticated user session" };
+
+    const safePayload = { ...payload, lastSyncedAt: nowIso };
+    delete safePayload.founderCredentials;
+    delete safePayload.supabaseSecretKey;
+    delete safePayload.serviceRoleKey;
+
+    const { error } = await supabase.from("we4all_user_state").upsert({
+      user_id: user.id,
+      state_payload: safePayload,
+      app_version: CURRENT_SCHEMA_VERSION,
+      updated_at: nowIso
+    }, { onConflict: "user_id" });
+
+    if (error) throw error;
+    return { ok: true, userId: user.id, lastSyncedAt: nowIso };
+  } catch (error) {
+    console.error("WE4ALL per-user sync failed:", error?.message || error);
+    return { ok: false, reason: error?.message || "Supabase sync failed" };
+  }
 }
 
 export async function wipeAllOnlineAndOfflineData() {
@@ -403,26 +391,27 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
 }
 
 export async function pullRemoteSupabaseState(applyIncomingPayload) {
-  const cfg = getServerConfig();
+  if (!supabase) return null;
   try {
-    const relayUrl =
-      typeof window !== "undefined" && window.location.origin.includes("vercel.app")
-        ? `${window.location.origin}/api/sync`
-        : cfg.relayEndpoint;
-    const r = await fetch(`${relayUrl}?_cb=${Date.now()}`, {
-      method: "GET",
-      cache: "no-store"
-    });
-    if (r.ok) {
-      const data = await r.json();
-      const remotePayload = data?.state_payload;
-      if (remotePayload && Object.keys(remotePayload).length > 0) {
-        if (applyIncomingPayload) applyIncomingPayload(remotePayload);
-        return remotePayload;
-      }
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return null;
+    const { data, error } = await supabase
+      .from("we4all_user_state")
+      .select("state_payload,updated_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (error) throw error;
+    const remotePayload = data?.state_payload;
+    if (remotePayload && typeof remotePayload === "object") {
+      const payload = { ...remotePayload, lastSyncedAt: data.updated_at || remotePayload.lastSyncedAt };
+      if (applyIncomingPayload) applyIncomingPayload(payload);
+      return payload;
     }
-  } catch (e) {}
-  return null;
+    return null;
+  } catch (error) {
+    console.error("WE4ALL per-user restore failed:", error?.message || error);
+    return null;
+  }
 }
 
 export function subscribeToRealtimeUpdates(callback) {
