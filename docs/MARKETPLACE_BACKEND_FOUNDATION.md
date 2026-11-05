@@ -32,3 +32,14 @@ These are additive, backward-compatible migrations. The legacy town-state/order-
 ## Not yet production-connected
 
 The current React portals still need their UI handlers migrated from in-memory arrays/local state to these database APIs. The migrations do not by themselves implement checkout, payment gateway webhooks, stock reservations, time-slot locking, rider dispatch, GPS or wage payouts. Those flows must be added and tested before the corresponding portal is enabled for live transactions.
+
+
+## First server-side checkout transaction (deployed)
+
+- Edge Function `we4all-create-order` is deployed with JWT verification enabled.
+- The Edge Function verifies the supplied access token through Supabase Auth, then confirms the caller has an approved `customer` role.
+- Only after those checks does it invoke the database transaction using a server-side service-role client. The service-role key is read from Supabase-managed Edge Function environment variables and is never returned to the mobile client.
+- The database function is executable only by `service_role`; anonymous and authenticated direct calls are revoked. Its search path is empty and all application objects are schema-qualified.
+- It verifies the merchant is approved, validates unique catalogue item IDs and quantities, locks approved active catalogue rows, calculates price from the database, checks available stock and writes order + line items + inventory reservation atomically. Retries with the same customer/idempotency key return the existing order.
+- New order status is `awaiting_payment` and payment status is `pending`. Tax and delivery fee are zero placeholders until correct merchant tax setup and live delivery quote configuration exist. The function does not mark payment complete, create a dispatch assignment, or settle a payout.
+- The client helper `createMarketplaceOrder` is ready to call the Edge Function, but the customer UI checkout and merchant product-publishing flows still need to be connected to the normalized catalogue IDs/partner IDs. Do not expose the existing local checkout draft as a completed server order.
