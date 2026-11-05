@@ -37,9 +37,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
     onTriggerToast = () => {}
   } = rawProps;
 
-  const [localUser, setLocalUser] = useState(() =>
-    currentUser?.authUserId ? currentUser : { isGuest: true, role: "customer", fullName: "Guest Visitor" }
-  );
+  const [localUser, setLocalUser] = useState({ isGuest: true, role: "customer", fullName: "Guest Visitor" });
 
   const isLoggedIn = Boolean(localUser?.authUserId && !localUser.isGuest);
 
@@ -69,20 +67,34 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
 
   useEffect(() => {
-    if (currentUser?.authUserId) {
-      setLocalUser(currentUser);
-      return;
-    }
     let active = true;
+    const guest = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
     (async () => {
-      if (!supabase) return;
+      if (!supabase) {
+        if (active) setLocalUser(guest);
+        return;
+      }
       const { data, error } = await supabase.auth.getUser();
-      if (error || !data?.user || !active) return;
+      if (error || !data?.user) {
+        if (active) {
+          setLocalUser(guest);
+          if (currentUser?.authUserId) {
+            setCurrentUser?.(guest);
+            setActivePortal?.("customer");
+            onSelectRole?.("customer");
+          }
+        }
+        return;
+      }
       const user = data.user;
-      const [{ data: profile }, { data: roles }] = await Promise.all([
+      const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
         supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
       ]);
+      if (profileError) throw profileError;
+      if (rolesError) throw rolesError;
+      const customerRole = (roles || []).find((item) => item.role === "customer" && item.status === "approved");
+      if (!customerRole) throw new Error("Verified Supabase session has no approved customer role.");
       const customer = {
         id: user.id,
         authUserId: user.id,
@@ -97,10 +109,16 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (!active) return;
       setLocalUser(customer);
       setCurrentUser?.(customer);
+      saveCloudAndLocalState({ currentUser: customer });
       setActivePortal?.("customer");
       onSelectRole?.("customer");
     })().catch((error) => {
       console.warn("WE4ALL session restore failed:", error?.message || error);
+      if (active) {
+        setLocalUser(guest);
+        setCurrentUser?.(guest);
+        setActivePortal?.("customer");
+      }
     });
     return () => { active = false; };
   }, [currentUser?.authUserId]);
@@ -209,6 +227,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
           const partnerUser = { ...baseUser, role: "customer", status: "Approved" };
           setLocalUser(partnerUser);
           setCurrentUser?.(partnerUser);
+          saveCloudAndLocalState({ currentUser: partnerUser });
           setActivePortal?.("customer");
           onSelectRole?.("customer");
           setFormFeedback({ type: "error", message: `Your customer account is active. The ${requestedRole.replace("_", " ")} portal is still pending Founder approval.` });
@@ -218,6 +237,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         const partnerUser = { ...baseUser, role: requestedRole, status: "Approved" };
         setLocalUser(partnerUser);
         setCurrentUser?.(partnerUser);
+        saveCloudAndLocalState({ currentUser: partnerUser });
         onPartnerAuthenticated?.(requestedRole, partnerUser);
         setFormFeedback({ type: "success", message: `${requestedRole.replace("_", " ")} portal access verified.` });
         setSubTab("account_details");
@@ -227,6 +247,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       const customer = { ...baseUser, role: "customer", status: "Approved" };
       setLocalUser(customer);
       setCurrentUser?.(customer);
+      saveCloudAndLocalState({ currentUser: customer });
       setActivePortal?.("customer");
       onSelectRole?.("customer");
       setFormFeedback({ type: "success", message: "Phone verified. Your WE4ALL customer account is connected to Supabase." });
@@ -289,6 +310,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
       setLocalUser(customer);
       setCurrentUser?.(customer);
+      saveCloudAndLocalState({ currentUser: customer });
       setActivePortal?.("customer");
       onSelectRole?.("customer");
       setSubTab("account_details");
