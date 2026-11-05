@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
 
 export default function MerchantPortal({
   footerTab,
@@ -23,12 +24,7 @@ export default function MerchantPortal({
     product.ownerUserId === merchantId ||
     (merchantName && product.shopName === merchantName)
   );
-  const merchantOrders = (orders || []).filter((order) =>
-    order.merchantId === merchantId ||
-    order.merchantOwnerId === merchantId ||
-    (merchantName && (order.merchantName === merchantName || order.shopName === merchantName ||
-      (order.items || []).some((item) => item.merchantId === merchantId || item.merchantName === merchantName || item.shopName === merchantName)))
-  );
+  const merchantOrders = (orders || []).filter((order) => isMerchantOrderOwned(order, currentUser));
   const [heavyLaborFees, setHeavyLaborFees] = useState({});
   const [newProdForm, setNewProdForm] = useState({
     categoryId: "daily_needs",
@@ -192,7 +188,12 @@ export default function MerchantPortal({
                     </button>
                     <button
                       type="button"
+                      disabled={!canMarkOrderPacked(ord)}
                       onClick={() => {
+                        if (!canMarkOrderPacked(ord)) {
+                          onTriggerToast("Packing is locked until payment is verified by the server.");
+                          return;
+                        }
                         setOrders(
                           orders.map((o) =>
                             o.id === ord.id
@@ -200,11 +201,9 @@ export default function MerchantPortal({
                               : o
                           )
                         );
-                        if (onTriggerToast) {
-                          onTriggerToast(`Order #${ord.id} packing state updated locally. Dispatch is not confirmed by the server.`);
-                        }
+                        onTriggerToast(`Order #${ord.id} marked packed locally. Dispatch still requires server confirmation.`);
                       }}
-                      className="bg-amber-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
+                      className="bg-amber-400 disabled:bg-slate-700 disabled:text-slate-300 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
                     >
                       Packed &amp; Ready &rarr; Alert Rider
                     </button>
