@@ -671,7 +671,7 @@ function AppContent() {
       grandTotal,
       riderName: riders[0]?.name || "Assigned Captain",
       status: "MERCHANT_APPROVED_AWAITING_PAYMENT",
-      secretOtp: String(Math.floor(1000 + Math.random() * 9000))
+      deliveryVerificationStatus: "AWAITING_SERVER_OTP"
     };
 
     setOrders([newOrder, ...orders]);
@@ -689,7 +689,6 @@ function AppContent() {
     // STRICT RBAC LOCK: Block any non-customer portal unless authenticated for that exact role (or in Founder Split Lab)
     if (
       portalRole !== "customer" &&
-      viewMode !== "multi_role_lab" &&
       (authenticatedPartnerRole !== portalRole || currentUser?.role !== portalRole || currentUser?.status !== "Approved" || !currentUser?.authUserId)
     ) {
       return (
@@ -717,6 +716,7 @@ function AppContent() {
         (c) => !(killedCategoriesByZone[selectedZoneFilter] || []).includes(c.id)
       );
       const filteredProducts = products.filter((p) => {
+        if (p.status && !["Approved", "ACTIVE"].includes(p.status)) return false;
         const matchCat = selectedCategory === "all" || p.categoryId === selectedCategory;
         const matchSearch =
           !searchQuery.trim() ||
@@ -1064,8 +1064,8 @@ function AppContent() {
                       className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold"
                     />
                   </div>
-                  {functionHalls.map((hall) => {
-                    const isBooked = (hall.bookedDates || []).includes(eventDate);
+                  {functionHalls.filter((hall) => !hall.status || hall.status === "Approved").map((hall) => {
+                    const isBooked = (hall.bookedDates || []).some((entry) => (typeof entry === "string" ? entry : entry.date) === eventDate);
                     return (
                       <div
                         key={hall.id}
@@ -1310,12 +1310,11 @@ function AppContent() {
                     <button
                       type="button"
                       onClick={() => {
-                        setDecorCart([]);
-                        triggerToast("Event & Hall Reservation Confirmed!");
+                        triggerToast("Event booking cannot be confirmed until date availability, deposit rules and server-side payment/booking APIs are connected. Your cart is unchanged.");
                       }}
                       className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
                     >
-                      Confirm Event Booking
+                      Check booking requirements
                     </button>
                   )}
                 </div>
@@ -1335,12 +1334,11 @@ function AppContent() {
                     <button
                       type="button"
                       onClick={() => {
-                        setTaxiCart([]);
-                        triggerToast("Captain Dispatched for Your Ride!");
+                        triggerToast("Ride request has not been dispatched. Live captain allocation and fare confirmation are not yet connected. Your ride cart is unchanged.");
                       }}
                       className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
                     >
-                      Dispatch Ride Captain Now
+                      Request ride (dispatch pending)
                     </button>
                   )}
                 </div>
@@ -1776,7 +1774,7 @@ function AppContent() {
           <div className="bg-slate-900 border-2 border-amber-400 rounded-3xl p-4 w-full max-w-md space-y-3">
             <div className="flex justify-between items-center">
               <h3 className="font-black text-amber-400 text-xs">
-                LIVE ORDER #{activeOrder.id} | OTP: {activeOrder.secretOtp}
+                LIVE ORDER #{activeOrder.id} | Delivery verification pending
               </h3>
               <button
                 type="button"
