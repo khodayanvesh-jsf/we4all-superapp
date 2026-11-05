@@ -4,7 +4,7 @@ This project is a React/Vite web app packaged with Capacitor.
 
 ## Requirements
 - Node.js 22 LTS (20+ may work, 22 is used in CI)
-- Java 17 (Temurin recommended)
+- Java 21 (Temurin recommended; required by the current Capacitor Android toolchain)
 - Android Studio / Android SDK Platform and Build Tools
 - Windows: PowerShell; macOS/Linux: bash
 
@@ -19,7 +19,7 @@ npm run build
 ```powershell
 npx cap sync android
 cd android
-.gradlew.bat --no-daemon --stacktrace clean assembleDebug
+.\gradlew.bat --no-daemon --stacktrace clean assembleDebug
 ```
 
 APK output:
