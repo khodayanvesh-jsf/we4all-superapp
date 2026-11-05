@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [main, config, client, app, pkg, workflow] = await Promise.all([
+const [main, configText, client, app, pkgText, workflow] = await Promise.all([
   read("../src/main.jsx"),
   read("../capacitor.config.json"),
   read("../src/supabaseClient.js"),
@@ -11,6 +11,8 @@ const [main, config, client, app, pkg, workflow] = await Promise.all([
   read("../package.json"),
   read("../.github/workflows/we4all-capgo-ota.yml")
 ]);
+const config = JSON.parse(configText);
+const pkg = JSON.parse(pkgText);
 
 test("Capgo updater is installed for the Capacitor 8 runtime", () => {
   assert.equal(pkg.dependencies["@capgo/capacitor-updater"], "8.54.2");
