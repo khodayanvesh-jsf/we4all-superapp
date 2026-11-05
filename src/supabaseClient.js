@@ -57,43 +57,29 @@ export function saveServerConfig(newConfig = {}) {
 }
 
 export function getFounderCredentials() {
-  const defaults = {
-    username: "KhodayAnvesh",
-    password: "22061969s!",
-    pin: "9999",
-    recoveryPhone: "9848011223",
-    updatedAt: null
-  };
-  if (typeof window === "undefined") return defaults;
-  try {
-    const raw = localStorage.getItem(ADMIN_CREDS_KEY);
-    if (!raw) return defaults;
-    const parsed = JSON.parse(raw);
-    return {
-      username: String(parsed.username || defaults.username),
-      password: String(parsed.password || defaults.password),
-      pin: String(parsed.pin || defaults.pin),
-      recoveryPhone: String(parsed.recoveryPhone || defaults.recoveryPhone),
-      updatedAt: parsed.updatedAt || null
-    };
-  } catch (e) {
-    return defaults;
+  // Founder credentials must never be stored in the browser or shared state.
+  // Keep this compatibility function for the Founder UI, but expose no secret.
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem(ADMIN_CREDS_KEY);
+    } catch (e) {}
   }
+  return {
+    username: "",
+    password: "",
+    pin: "",
+    recoveryPhone: "",
+    updatedAt: null,
+    configured: false
+  };
 }
 
-export function saveFounderCredentials(newCreds = {}) {
-  if (typeof window === "undefined") return getFounderCredentials();
-  const current = getFounderCredentials();
-  const updated = {
-    ...current,
-    ...newCreds,
-    updatedAt: new Date().toLocaleString()
+export function saveFounderCredentials() {
+  return {
+    ...getFounderCredentials(),
+    error:
+      "Founder credentials must be provisioned and verified by the server. Browser-side credential editing is disabled."
   };
-  try {
-    localStorage.setItem(ADMIN_CREDS_KEY, JSON.stringify(updated));
-    saveCloudAndLocalState({ founderCredentials: updated });
-  } catch (e) {}
-  return updated;
 }
 
 export const isLiveSupabaseConfigured = true;
@@ -237,11 +223,12 @@ export function saveCloudAndLocalState(stateSlice) {
     const existing = loadCloudAndLocalState() || {};
     const nowIso = new Date().toISOString();
     const merged = { ...existing, ...stateSlice, lastSyncedAt: nowIso };
-    if (merged.founderCredentials) {
-      try {
-        localStorage.setItem(ADMIN_CREDS_KEY, JSON.stringify(merged.founderCredentials));
-      } catch (e) {}
-    }
+    // Never persist founder credentials in local storage, backups or the cloud
+    // state snapshot. This also scrubs legacy records on the next write.
+    delete merged.founderCredentials;
+    try {
+      localStorage.removeItem(ADMIN_CREDS_KEY);
+    } catch (e) {}
 
     const serialized = JSON.stringify(merged);
     try {
@@ -278,6 +265,18 @@ export function loadCloudAndLocalState() {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(BACKUP_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      const hadLegacyFounderCredentials = Object.prototype.hasOwnProperty.call(parsed, "founderCredentials");
+      delete parsed.founderCredentials;
+      try {
+        localStorage.removeItem(ADMIN_CREDS_KEY);
+        if (hadLegacyFounderCredentials) {
+          const sanitized = JSON.stringify(parsed);
+          localStorage.setItem(STORAGE_KEY, sanitized);
+          localStorage.setItem(BACKUP_KEY, sanitized);
+        }
+      } catch (e) {}
+    }
     if (parsed && parsed.appUpdateInfo) {
       parsed.appUpdateInfo.currentVersion = CURRENT_SCHEMA_VERSION;
       parsed.appUpdateInfo.latestAvailableVersion = CURRENT_SCHEMA_VERSION;
@@ -444,14 +443,14 @@ export function subscribeToRealtimeUpdates(callback) {
       lastAppliedCloudTimestamp = remotePayload.lastSyncedAt;
     }
     lastPushedFingerprint = incomingFp;
-    if (remotePayload.founderCredentials) {
-      try {
-        localStorage.setItem(
-          ADMIN_CREDS_KEY,
-          JSON.stringify(remotePayload.founderCredentials)
-        );
-      } catch (e) {}
+    // Reject legacy founder credentials arriving through old shared snapshots.
+    if (Object.prototype.hasOwnProperty.call(remotePayload, "founderCredentials")) {
+      remotePayload = { ...remotePayload };
+      delete remotePayload.founderCredentials;
     }
+    try {
+      localStorage.removeItem(ADMIN_CREDS_KEY);
+    } catch (e) {}
     try {
       isApplyingRemoteState = true;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(remotePayload));
