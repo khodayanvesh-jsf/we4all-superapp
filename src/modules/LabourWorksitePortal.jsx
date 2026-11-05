@@ -36,6 +36,11 @@ export default function LabourWorksitePortal({
     toolsIncluded: "Trowel, Spirit Level, Measuring Tape"
   });
   const [otpInputMap, setOtpInputMap] = useState({});
+  const [customerRequestForm, setCustomerRequestForm] = useState({
+    siteAddress: "",
+    workDate: new Date().toISOString().slice(0, 10),
+    shift: "FULL_DAY"
+  });
 
   return (
     <div className="space-y-3 text-xs text-white">
@@ -140,6 +145,29 @@ export default function LabourWorksitePortal({
           <p className="text-[10px] text-slate-300">
             Requests are sent to the worker for confirmation. Attendance and wage release remain pending until secure server verification is available.
           </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-slate-950 border border-slate-800 rounded-xl p-2">
+            <input
+              value={customerRequestForm.siteAddress}
+              onChange={(e) => setCustomerRequestForm({ ...customerRequestForm, siteAddress: e.target.value })}
+              placeholder="Worksite full address *"
+              className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white"
+            />
+            <input
+              type="date"
+              min={new Date().toISOString().slice(0, 10)}
+              value={customerRequestForm.workDate}
+              onChange={(e) => setCustomerRequestForm({ ...customerRequestForm, workDate: e.target.value })}
+              className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white"
+            />
+            <select
+              value={customerRequestForm.shift}
+              onChange={(e) => setCustomerRequestForm({ ...customerRequestForm, shift: e.target.value })}
+              className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white"
+            >
+              <option value="FULL_DAY">Full day · 9:00 AM–5:30 PM</option>
+              <option value="HALF_DAY">Half day</option>
+            </select>
+          </div>
           {resolvedWorkers.filter((worker) => ["Approved", "ACTIVE", "AVAILABLE_AT_ADDA"].includes(worker.status)).map((worker) => (
             <div key={worker.id} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex justify-between items-center gap-2">
               <div>
@@ -151,27 +179,37 @@ export default function LabourWorksitePortal({
                 type="button"
                 disabled={resolvedBookings.some((b) => b.workerId === worker.id && b.customerId === currentUser?.id && !["CANCELLED","REJECTED","WAGE_RELEASED_COMPLETED"].includes(b.status))}
                 onClick={() => {
-                  if (!currentUser || currentUser.isGuest) {
+                  if (!currentUser || currentUser.isGuest || !currentUser.authUserId) {
                     notify("Sign in before requesting a worker. Your request has not been created.");
                     return;
                   }
+                  if (!customerRequestForm.siteAddress.trim() || !customerRequestForm.workDate) {
+                    notify("Enter the worksite address and date before requesting a worker.");
+                    return;
+                  }
+                  if (customerRequestForm.workDate < new Date().toISOString().slice(0, 10)) {
+                    notify("The work date cannot be in the past.");
+                    return;
+                  }
                   const booking = {
-                    id: `LAB-${Date.now()}`,
+                    id: `LAB-${globalThis.crypto?.randomUUID?.() || Date.now()}`,
                     workerId: worker.id,
                     workerName: worker.name,
                     tradeId: worker.tradeId,
                     tradeName: worker.tradeName,
                     customerId: currentUser.id,
                     customerName: currentUser.fullName || currentUser.name || "Customer",
-                    siteAddress: "Add worksite address in checkout",
-                    totalWage: Number(worker.fullDayWage || 0),
+                    siteAddress: customerRequestForm.siteAddress.trim(),
+                    workDate: customerRequestForm.workDate,
+                    shift: customerRequestForm.shift,
+                    totalWage: Number(worker.fullDayWage || 0) * (customerRequestForm.shift === "HALF_DAY" ? 0.5 : 1),
                     requestedAt: new Date().toISOString(),
                     status: "REQUESTED_PENDING_WORKER_CONFIRMATION",
                     attendanceVerification: "NOT_STARTED",
                     wagePaymentStatus: "NOT_PAID"
                   };
                   updateBookings([booking, ...resolvedBookings]);
-                  notify("Worker request created and awaiting worker confirmation. No attendance OTP or wage payment has been generated.");
+                  notify("Worker request saved in this app state and awaiting worker response. Server notification, attendance and payment are not confirmed.");
                 }}
                 className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black px-3 py-2 rounded-lg text-[10px]"
               >
@@ -204,8 +242,41 @@ export default function LabourWorksitePortal({
                 <span className="text-emerald-400">Rs.{lb.totalWage}/day</span>
               </div>
               <p className="text-[10px] text-slate-400">
-                Site: {lb.siteAddress} | Shift: 9:00 AM - 5:30 PM | Status: {lb.status}
+                Site: {lb.siteAddress} · Work date: {lb.workDate || "Not set"} · Shift: {lb.shift || "FULL_DAY"} · Status: {lb.status}
               </p>
+
+              {mode !== "customer" && lb.status === "REQUESTED_PENDING_WORKER_CONFIRMATION" && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateBookings(resolvedBookings.map((booking) =>
+                        booking.id === lb.id
+                          ? { ...booking, status: "WORKER_ACCEPTANCE_RECORDED_PENDING_SERVER", workerRespondedAt: new Date().toISOString() }
+                          : booking
+                      ));
+                      notify("Worker response saved locally. Customer notification and booking confirmation require server sync.");
+                    }}
+                    className="bg-emerald-500 text-slate-950 font-black px-3 py-2 rounded-lg text-[10px]"
+                  >
+                    Confirm availability
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateBookings(resolvedBookings.map((booking) =>
+                        booking.id === lb.id
+                          ? { ...booking, status: "REJECTED_BY_WORKER", workerRespondedAt: new Date().toISOString() }
+                          : booking
+                      ));
+                      notify("Request marked declined in the current app state. Server notification is not confirmed.");
+                    }}
+                    className="bg-rose-700 text-white font-black px-3 py-2 rounded-lg text-[10px]"
+                  >
+                    Decline
+                  </button>
+                </div>
+              )}
 
               {lb.status === "BOOKED_AWAITING_MORNING_OTP" && (
                 <div className="flex gap-1.5">
