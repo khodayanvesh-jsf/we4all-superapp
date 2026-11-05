@@ -556,7 +556,11 @@ export function subscribeToRealtimeUpdates(callback) {
     } catch (e) {}
     try {
       isApplyingRemoteState = true;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(remotePayload));
+      const serialized = JSON.stringify(remotePayload);
+      localStorage.setItem(STORAGE_KEY, serialized);
+      localStorage.setItem(BACKUP_KEY, serialized);
+      const activeUserId = getActiveSupabaseUserId();
+      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
       callback(remotePayload);
     } catch (e) {
     } finally {
@@ -580,13 +584,44 @@ export function subscribeToRealtimeUpdates(callback) {
   };
   if (syncChannel) syncChannel.addEventListener("message", handler);
   window.addEventListener("storage", storageHandler);
+
+  const activeUserId = getActiveSupabaseUserId();
+  let realtimeChannel = null;
+  if (supabase && activeUserId) {
+    realtimeChannel = supabase
+      .channel(`we4all-user-state-${activeUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "we4all_user_state",
+          filter: `user_id=eq.${activeUserId}`
+        },
+        (event) => {
+          const row = event.new;
+          if (!row?.state_payload || typeof row.state_payload !== "object") return;
+          applyIncomingPayload({
+            ...row.state_payload,
+            lastSyncedAt: row.updated_at || row.state_payload.lastSyncedAt
+          });
+        }
+      )
+      .subscribe((status, error) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("WE4ALL Supabase Realtime unavailable; polling fallback remains active.", error?.message || status);
+        }
+      });
+  }
   const cloudPollTimer = setInterval(() => {
     localWindowSubscribers.add(applyIncomingPayload); pullRemoteSupabaseState(applyIncomingPayload);
   }, 8000);
   return () => {
     if (syncChannel) syncChannel.removeEventListener("message", handler);
     window.removeEventListener("storage", storageHandler);
-    localWindowSubscribers.delete(applyIncomingPayload); clearInterval(cloudPollTimer);
+    localWindowSubscribers.delete(applyIncomingPayload);
+    if (realtimeChannel && supabase) supabase.removeChannel(realtimeChannel);
+    clearInterval(cloudPollTimer);
   };
 }
 
