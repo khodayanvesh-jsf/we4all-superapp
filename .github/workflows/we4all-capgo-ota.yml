@@ -54,7 +54,7 @@ jobs:
           grep -q 'CapacitorUpdater.notifyAppReady' src/main.jsx
 
       - name: Set up Node.js
-        uses: actions/setup-node@1e60f620b9541d1b7a8d0d8cdd2d1d2bf4a5d1c8
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
