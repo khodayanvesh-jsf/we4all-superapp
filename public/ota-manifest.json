@@ -1,9 +1,9 @@
 {
-  "currentVersion": "3.2.3",
-  "latestAvailableVersion": "3.2.3",
+  "currentVersion": "3.2.4",
+  "latestAvailableVersion": "3.2.4",
   "updateAvailable": false,
-  "publishedAt": "2026-11-05T18:22:00Z",
+  "publishedAt": "2026-11-05T18:50:00Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.2.3",
-  "releaseNotes": "WE4ALL v3.2.3: Fixed PGRST125 Supabase URL path, stopped background sync loop, added 1-Click Automated App Self-Tester."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.2.4",
+  "releaseNotes": "WE4ALL v3.2.4: Consumer & Partner Registration Gate with live field validation, auto-OTP & Cloud Sync."
 }

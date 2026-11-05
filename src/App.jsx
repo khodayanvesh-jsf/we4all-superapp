@@ -1339,7 +1339,7 @@ function AppContent() {
           )}
 
           {footerTab === "account" && (
-            <OwnerAccountProfile
+            <OwnerAccountProfile registeredUsers={registeredUsers} setRegisteredUsers={setRegisteredUsers} pendingMerchants={pendingMerchants} setPendingMerchants={setPendingMerchants} pendingServiceProviders={pendingServiceProviders} setPendingServiceProviders={setPendingServiceProviders} pendingDecorators={pendingDecorators} setPendingDecorators={setPendingDecorators} pendingRiders={pendingRiders} setPendingRiders={setPendingRiders} setCurrentUser={setCurrentUser} setActivePortal={setActivePortal} onEnterFounderAdmin={() => setShowAdminSuite(true)}
               currentUser={currentUser}
               setCurrentUser={setCurrentUser}
               accountSecurity={accountSecurity}
