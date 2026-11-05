@@ -435,59 +435,10 @@ export default function RiderCaptainPortal({
               {job.status === "OPEN_ON_RADAR" ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    if ((job.requiredVehicleCode || "2W") !== myVehicleCode) {
-                      onReportError(
-                        "Cross-Vehicle Interference Blocked",
-                        `Order #${job.id} requires ${job.requiredVehicleCode}, but you are logged in as ${myVehicleCode}.`,
-                        "Switch to the matching vehicle login or accept an order allocated to your vehicle."
-                      );
-                      return;
-                    }
-                    const exists = captainRadarJobs.some((x) => x.id === job.id);
-                    if (exists) {
-                      setCaptainRadarJobs(
-                        captainRadarJobs.map((x) =>
-                          x.id === job.id
-                            ? {
-                                ...x,
-                                status: "ACCEPTED_BY_CAPTAIN",
-                                assignedCaptain:
-                                  currentUser?.fullName || "Raju Local Rider"
-                              }
-                            : x
-                        )
-                      );
-                    } else {
-                      setCaptainRadarJobs([
-                        {
-                          ...job,
-                          status: "ACCEPTED_BY_CAPTAIN",
-                          assignedCaptain:
-                            currentUser?.fullName || "Raju Local Rider"
-                        },
-                        ...captainRadarJobs
-                      ]);
-                    }
-                    setOrders(
-                      orders.map((o) =>
-                        o.id === job.id
-                          ? {
-                              ...o,
-                              status: "CAPTAIN_EN_ROUTE_TO_DROP",
-                              tokenHandedOver: true
-                            }
-                          : o
-                      )
-                    );
-                    setFooterTab("batch");
-                    onTriggerToast(
-                      `Accepted ${myVehicleRule.shortLabel} Order #${job.id}! Switched to Route Map.`
-                    );
-                  }}
-                  className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer shadow"
+                  disabled
+                  className="w-full bg-slate-700 text-slate-300 font-black py-2 rounded-xl cursor-not-allowed"
                 >
-                  Accept {myVehicleRule.shortLabel} Order (Rs.{job.captainPayout}) &rarr;
+                  Dispatch allocation service required
                 </button>
               ) : (
                 <button
@@ -495,7 +446,7 @@ export default function RiderCaptainPortal({
                   onClick={() => setFooterTab("batch")}
                   className="w-full bg-teal-500/20 border border-teal-400 text-teal-200 font-black py-1.5 rounded-xl cursor-pointer"
                 >
-                  Accepted &bull; Open 2. Route Map to Verify OTP &rarr;
+                  Assignment status must be confirmed by dispatch server
                 </button>
               )}
             </div>
