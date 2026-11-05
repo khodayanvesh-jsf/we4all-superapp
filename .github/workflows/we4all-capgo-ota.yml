@@ -52,7 +52,6 @@ jobs:
           test -n "${CAPGO_PRIVATE_KEY:?Set CAPGO_PRIVATE_KEY in the capgo GitHub environment}"
           test -n "${CAPGO_PUBLIC_KEY:?Set CAPGO_PUBLIC_KEY in the capgo GitHub environment}"
           [[ "$OTA_BUNDLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
-          grep -q '"publicKey"' capacitor.config.json
           grep -q 'CapacitorUpdater.notifyAppReady' src/main.jsx
 
       - name: Set up Node.js
@@ -65,7 +64,9 @@ jobs:
         run: npm ci
 
       - name: Embed Capgo public key for native compatibility checks
-        run: npx --yes @capgo/cli@latest key save --key-data "$CAPGO_PUBLIC_KEY"
+        run: |
+          npx --yes @capgo/cli@latest key save --key-data "$CAPGO_PUBLIC_KEY"
+          grep -q '"publicKey"' capacitor.config.json
 
       - name: Run application tests
         run: npm test
