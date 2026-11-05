@@ -80,7 +80,7 @@ export function PortalPowerToolsBar({
             type="button"
             onClick={() => {
               setSearchQuery("Atta");
-              onTriggerToast("1-Tap Reorder: Loaded your frequent essentials!");
+              onTriggerToast("Search term loaded. Review the catalogue and add items to your cart; no reorder was placed.");
             }}
             className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 px-2.5 py-1 rounded-xl font-black cursor-pointer"
           >
@@ -88,14 +88,29 @@ export function PortalPowerToolsBar({
           </button>
           <button
             type="button"
-            onClick={() => onTriggerToast("WhatsApp Live Tracking Link copied to share with family!")}
+            onClick={async () => {
+              try {
+                const shareUrl = typeof window !== "undefined" ? window.location.href : "";
+                if (navigator.share) {
+                  await navigator.share({ title: "WE4ALL Order Tracking", url: shareUrl });
+                  onTriggerToast("Share sheet opened. No WhatsApp delivery or live-tracking token is claimed.");
+                } else if (navigator.clipboard?.writeText) {
+                  await navigator.clipboard.writeText(shareUrl);
+                  onTriggerToast("WE4ALL page link copied. This is not a private live-order tracking link.");
+                } else {
+                  onTriggerToast("Link sharing is unavailable on this device. Copy the page address manually.");
+                }
+              } catch (error) {
+                if (error?.name !== "AbortError") onTriggerToast("Could not share the page link on this device.");
+              }
+            }}
             className="bg-teal-500/20 border border-teal-400 text-teal-200 px-2.5 py-1 rounded-xl font-black cursor-pointer"
           >
              Share Order on WhatsApp
           </button>
         </div>
         <span className="text-[9px] text-slate-400 font-bold">
-          Smart Substitution: Auto-Enabled
+          Substitutions require customer approval; live inventory API pending
         </span>
       </div>
     );
@@ -137,13 +152,16 @@ export function PortalPowerToolsBar({
             <button
               type="button"
               onClick={() => {
-                const code = barcodeInput.trim() || "8901058851243";
-                setBarcodeInput(code);
-                onTriggerToast(`Barcode #${code} Scanned! Matched in Stock Manual.`);
+                const code = barcodeInput.trim();
+                if (!code) {
+                  onTriggerToast("Camera barcode scanning is not configured. Enter a barcode manually first.");
+                  return;
+                }
+                onTriggerToast(`Barcode ${code} entered. Product lookup API is not connected, so no stock match is claimed.`);
               }}
               className="bg-teal-400 text-slate-950 font-black px-2.5 py-1 rounded-lg cursor-pointer"
             >
-               Scan Barcode
+               Lookup Barcode
             </button>
           </div>
         </div>
@@ -285,10 +303,23 @@ export default function DynamicPortalEngine({
     { id: "account", icon: "", label: "Account" }
   ];
 
-  const itemsList = portalConfig.items || [];
-  const bookingsList = portalConfig.bookings || [];
+  const allPortalItems = Array.isArray(portalConfig.items) ? portalConfig.items : [];
+  const itemsList = allPortalItems.filter((item) => {
+    if (activePortal === "customer") return !item.status || ["Approved", "ACTIVE"].includes(item.status);
+    return !item.ownerUserId || item.ownerUserId === currentUser?.id;
+  });
+  const allBookings = Array.isArray(portalConfig.bookings) ? portalConfig.bookings : [];
+  const bookingsList = allBookings.filter((booking) =>
+    activePortal === "customer"
+      ? booking.customerId === currentUser?.id
+      : booking.ownerUserId === currentUser?.id
+  );
 
   const handleAddCustomItem = () => {
+    if (!currentUser?.authUserId || !currentUser?.role || currentUser.role === "customer") {
+      onTriggerToast("A server-authenticated partner account is required to submit a dynamic catalogue item.");
+      return;
+    }
     if (!newItemForm.title.trim()) {
       onTriggerToast("Please enter an item or service title.");
       return;
@@ -300,8 +331,10 @@ export default function DynamicPortalEngine({
       price: Number(newItemForm.price) || 199,
       unit: newItemForm.unit,
       stockOrSlots: Number(newItemForm.stockOrSlots) || 20,
-      ownerName: currentUser?.fullName || "Verified Partner",
-      createdAt: new Date().toLocaleDateString()
+      ownerName: currentUser?.fullName || "Partner",
+      ownerUserId: currentUser.id,
+      status: "PENDING_ADMIN_APPROVAL",
+      createdAt: new Date().toISOString()
     };
     const updatedPortal = {
       ...portalConfig,
@@ -310,7 +343,7 @@ export default function DynamicPortalEngine({
     onUpdatePortalConfig(updatedPortal);
     setNewItemForm({ ...newItemForm, title: "", price: "" });
     setFooterTab(tabs[1]?.id || "catalog");
-    onTriggerToast(`Published "${created.title}" live to ${portalConfig.title}!`);
+    onTriggerToast(`"${created.title}" submitted for Founder approval. It is not visible to customers yet.`);
   };
 
   const handleSimulateBooking = () => {
@@ -396,22 +429,12 @@ export default function DynamicPortalEngine({
                 </div>
                 <p className="text-[11px] font-bold text-white">{bk.itemTitle}</p>
                 <p className="text-[10px] text-slate-400">
-                  Customer: {bk.customerName} | Amount: <strong className="text-emerald-300">Rs.{bk.amount}</strong> | OTP: <strong className="text-amber-300">{bk.otp}</strong>
+                  Customer: {bk.customerName} | Amount: <strong className="text-emerald-300">Rs.{bk.amount}</strong>
                 </p>
                 {bk.status !== "COMPLETED" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const updated = bookingsList.map((x) =>
-                        x.id === bk.id ? { ...x, status: "COMPLETED" } : x
-                      );
-                      onUpdatePortalConfig({ ...portalConfig, bookings: updated });
-                      onTriggerToast(`Verified OTP (${bk.otp}) & Completed #${bk.id}!`);
-                    }}
-                    className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
-                  >
-                    Accept, Verify OTP ({bk.otp}) &amp; Complete &rarr;
-                  </button>
+                  <p className="bg-amber-950/50 border border-amber-500/40 rounded-xl p-2 text-[10px] text-amber-100">
+                    Booking completion is locked until an order-bound server OTP, authenticated customer confirmation and server-persisted state transition are configured. No OTP is displayed or generated in this portal.
+                  </p>
                 )}
               </div>
             ))
@@ -456,7 +479,7 @@ export default function DynamicPortalEngine({
                       x.id === it.id ? { ...x, stockOrSlots: x.stockOrSlots + 5 } : x
                     );
                     onUpdatePortalConfig({ ...portalConfig, items: nextItems });
-                    onTriggerToast(`Added +5 availability to ${it.title}`);
+                    onTriggerToast(`+5 availability saved to this portal draft. Live stock/slot synchronization is not confirmed.`);
                   }}
                   className="bg-slate-800 text-emerald-300 font-black px-2.5 py-1 rounded-xl text-[10px] cursor-pointer"
                 >
