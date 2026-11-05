@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
+import { supabase } from "../supabaseClient";
 
 export default function MerchantPortal({
   footerTab,
@@ -26,6 +27,7 @@ export default function MerchantPortal({
   );
   const merchantOrders = (orders || []).filter((order) => isMerchantOrderOwned(order, currentUser));
   const [heavyLaborFees, setHeavyLaborFees] = useState({});
+  const [productSubmitting, setProductSubmitting] = useState(false);
   const [newProdForm, setNewProdForm] = useState({
     categoryId: "daily_needs",
     subCategoryBrand: "",
@@ -327,33 +329,70 @@ export default function MerchantPortal({
           </div>
           <button
             type="button"
-            onClick={() => {
+            disabled={productSubmitting}
+            onClick={async () => {
               const title = newProdForm.subCategoryBrand.trim();
               const price = Number(newProdForm.price);
               const mrp = Number(newProdForm.mrp || newProdForm.price);
-              if (!title || !merchantId || !Number.isFinite(price) || price <= 0 || !Number.isFinite(mrp) || mrp < price) {
-                onTriggerToast("Enter a product name, valid selling price and MRP greater than or equal to price.");
+              if (!title || !merchantId || !currentUser?.partnerId ||
+                  !Number.isFinite(price) || price <= 0 ||
+                  !Number.isFinite(mrp) || mrp < price) {
+                onTriggerToast("A verified partner profile, product name, valid price and MRP are required.");
                 return;
               }
-              const product = {
-                id: `prd_${globalThis.crypto?.randomUUID?.() || Date.now()}`,
-                ownerUserId: merchantId,
-                merchantId,
-                categoryId: newProdForm.categoryId,
-                subCategoryBrand: title,
-                shopName: merchantName,
-                variants: [{ id: `var_${Date.now()}`, label: newProdForm.unitLabel, price, mrp, weightGrams: 1000 }],
-                inStock: false,
-                status: "PENDING_ADMIN_APPROVAL",
-                createdAt: new Date().toISOString()
-              };
-              setProducts([product, ...(products || [])]);
-              setNewProdForm({ ...newProdForm, subCategoryBrand: "", price: 0, mrp: 0 });
-              onTriggerToast("Product saved as pending founder approval. It is not yet visible to customers.");
+              if (!supabase) {
+                onTriggerToast("WE4ALL backend is unavailable. Product was not saved.");
+                return;
+              }
+              setProductSubmitting(true);
+              try {
+                const sku = "WE4-" + (globalThis.crypto?.randomUUID?.() || Date.now()).toString().replace(/-/g, "").slice(0, 12).toUpperCase();
+                const { data: created, error } = await supabase
+                  .from("we4all_catalog_items")
+                  .insert({
+                    partner_id: currentUser.partnerId,
+                    sku,
+                    title,
+                    description: "",
+                    category_key: newProdForm.categoryId,
+                    item_type: "physical",
+                    price_inr: price,
+                    mrp_inr: mrp,
+                    stock_quantity: 0,
+                    unit_label: newProdForm.unitLabel || "unit",
+                    metadata: { image_url: newProdForm.image || "" }
+                  })
+                  .select("id,partner_id,title,sku,category_key,price_inr,mrp_inr,stock_quantity,unit_label,approval_status,is_active,created_at")
+                  .single();
+                if (error) throw error;
+                const product = {
+                  id: created.id,
+                  catalogItemId: created.id,
+                  ownerUserId: merchantId,
+                  merchantId,
+                  partnerId: created.partner_id,
+                  categoryId: created.category_key,
+                  subCategoryBrand: created.title,
+                  shopName: merchantName,
+                  sku: created.sku,
+                  variants: [{ id: created.id, label: created.unit_label, price: Number(created.price_inr), mrp: Number(created.mrp_inr), weightGrams: 1000 }],
+                  stockQuantity: created.stock_quantity,
+                  inStock: false,
+                  status: "PENDING_ADMIN_APPROVAL",
+                  createdAt: created.created_at
+                };
+                setProducts([product, ...(products || [])]);
+                setNewProdForm({ ...newProdForm, subCategoryBrand: "", price: 0, mrp: 0 });
+                onTriggerToast("Product saved to WE4ALL database as pending approval with zero stock. Founder approval and stock entry are required before customer sale.");
+              } catch (error) {
+                onTriggerToast(error?.message || "Could not save product to WE4ALL.");
+              } finally {
+                setProductSubmitting(false);
+              }
             }}
-            className="w-full bg-emerald-500 text-slate-950 font-black py-2 rounded-xl"
+            className="w-full bg-emerald-500 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
           >
-            Submit Product for Approval
+            {productSubmitting ? "Saving to WE4ALL…" : "Submit Product for Approval"}
           </button>
           <button
             type="button"
