@@ -7,6 +7,8 @@ const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
 const SCHEMA_MIGRATED_KEY = "we4all_schema_restored_apk_v323";
 const SERVER_CONFIG_KEY = "we4all_custom_server_config_v1";
 const ADMIN_CREDS_KEY = "we4all_founder_credentials_v1";
+const ACTIVE_SUPABASE_USER_KEY = "we4all_active_supabase_user_v1";
+const USER_CACHE_PREFIX = `${STORAGE_KEY}_user_`;
 const ZONE_MASTER_ID = "adilabad_master";
 
 export function normalizeSupabaseBaseUrl(rawUrl) {
@@ -170,8 +172,78 @@ async function invokeUserSync(method, payload) {
   return result;
 }
 
+export function getActiveSupabaseUserId() {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(ACTIVE_SUPABASE_USER_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function activateSupabaseAccount(userId) {
+  if (!supabase || typeof userId !== "string" || !userId) {
+    return { ok: false, changed: false, reason: "A verified Supabase user is required" };
+  }
+  const previousUserId = getActiveSupabaseUserId();
+  const changed = previousUserId !== userId;
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(ACTIVE_SUPABASE_USER_KEY, userId);
+      if (changed) {
+        const cached = localStorage.getItem(USER_CACHE_PREFIX + userId);
+        if (cached) {
+          localStorage.setItem(STORAGE_KEY, cached);
+          localStorage.setItem(BACKUP_KEY, cached);
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(BACKUP_KEY);
+        }
+      }
+    } catch (error) {
+      console.warn("WE4ALL local account cache activation failed:", error?.message || error);
+    }
+  }
+  lastPushedFingerprint = "";
+  try {
+    const remote = await invokeUserSync("GET");
+    const payload = remote?.state_payload;
+    if (payload && typeof payload === "object" && Object.keys(payload).length > 0 && typeof window !== "undefined") {
+      const serialized = JSON.stringify({
+        ...payload,
+        lastSyncedAt: remote.updated_at || payload.lastSyncedAt
+      });
+      localStorage.setItem(STORAGE_KEY, serialized);
+      localStorage.setItem(BACKUP_KEY, serialized);
+      const activeUserId = getActiveSupabaseUserId();
+      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
+      const activeUserId = getActiveSupabaseUserId();
+      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
+      localStorage.setItem(USER_CACHE_PREFIX + userId, serialized);
+    }
+    return { ok: true, changed, hasRemoteState: Boolean(payload && Object.keys(payload).length) };
+  } catch (error) {
+    console.warn("WE4ALL account cloud restore unavailable:", error?.message || error);
+    return { ok: false, changed, reason: error?.message || "Cloud restore unavailable" };
+  }
+}
+
+export function clearActiveSupabaseAccount() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(ACTIVE_SUPABASE_USER_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(BACKUP_KEY);
+  } catch (error) {
+    console.warn("WE4ALL active account cache clear failed:", error?.message || error);
+  }
+  lastPushedFingerprint = "";
+}
+
 async function pushPayloadToCloudServers(payload, nowIso) {
   try {
+    const activeUserId = getActiveSupabaseUserId();
+    if (!activeUserId) return { ok: false, reason: "No active verified account cache" };
     const safePayload = { ...payload, lastSyncedAt: nowIso };
     delete safePayload.founderCredentials;
     delete safePayload.supabaseSecretKey;
@@ -278,6 +350,8 @@ export function loadCloudAndLocalState() {
           const sanitized = JSON.stringify(parsed);
           localStorage.setItem(STORAGE_KEY, sanitized);
           localStorage.setItem(BACKUP_KEY, sanitized);
+          const activeUserId = getActiveSupabaseUserId();
+          if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, sanitized);
         }
       } catch (e) {}
     }
