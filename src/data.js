@@ -43,6 +43,19 @@ export const CUSTOMER_QUICK_LINKS = [
   { id: "kisan_mandi", label: "Kisan Mandi", icon: "\uD83C\uDF3E", tab: "stores", categoryId: "kisan_mandi" }
 ];
 
+// Keep required product categories available when restoring older/empty cloud snapshots.
+// Cloud-defined values can customize built-in categories; custom categories remain intact.
+export function mergeRequiredCategories(required = [], saved = []) {
+  const savedList = Array.isArray(saved) ? saved : [];
+  const byId = new Map(savedList.filter((item) => item && item.id).map((item) => [item.id, item]));
+  const requiredIds = new Set(required.filter((item) => item && item.id).map((item) => item.id));
+  const mergedRequired = required
+    .filter((item) => item && item.id)
+    .map((item) => ({ ...item, ...(byId.get(item.id) || {}) }));
+  const custom = savedList.filter((item) => item && item.id && !requiredIds.has(item.id));
+  return [...mergedRequired, ...custom];
+}
+
 export const SERVICE_CATEGORIES = [
   { id: "srv_plumbing", nameKey: "srv_plumbing", name: "Plumbers & Water Fix", icon: "\uD83D\uDD27", startingVisitFee: 99, badge: "40-Min Arrival" },
   { id: "srv_electrical", nameKey: "srv_electrical", name: "Electricians & Inverter", icon: "\u26A1", startingVisitFee: 99, badge: "Single/3-Phase Expert" },
