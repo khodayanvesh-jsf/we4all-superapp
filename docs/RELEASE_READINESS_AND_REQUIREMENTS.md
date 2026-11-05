@@ -265,3 +265,14 @@ Before enabling either method:
 3. For passkeys, create challenges server-side, verify signed WebAuthn assertions against registered credential public keys, and bind the assertion to the authenticated account/session.
 4. Audit account/role changes and revoke sessions on logout, suspension and account recovery.
 5. Add integration and abuse-case tests before removing the temporary unavailable state.
+
+### Additional fail-closed authentication changes (6 Nov 2026)
+- Removed hard-coded founder login/password/PIN fallback checks from the application gate. Founder Admin now remains locked until server-side identity and step-up authentication are available.
+- Founder credential reads now return an unconfigured state; browser-side save is disabled. Legacy founder credential objects are scrubbed from local and shared cloud snapshots on read/write and are not re-synced.
+- Guest checkout can no longer create a locally authenticated customer session from a phone number and arbitrary PIN. The cart remains intact; checkout reports that secure server authentication is not yet configured.
+- Added regression tests for founder bypass removal, browser credential storage, and checkout session fabrication.
+- These changes intentionally restrict staging functionality. They do not implement the missing server-side authentication provider.
+
+### Version identity for the next debug candidate
+- Version label: 3.2.8; Android version code: 328 (incremented from 3.2.7 / 327 so it can be installed as an update to the supplied APK).
+- The production OTA manifest is deliberately left at its currently published version until a signed release APK and verified OTA manifest are ready. A CI debug APK is not a production OTA release.
