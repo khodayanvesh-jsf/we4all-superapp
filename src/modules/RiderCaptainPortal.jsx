@@ -50,7 +50,8 @@ export default function RiderCaptainPortal({
   const myVehicleRule =
     VEHICLE_CONSORT_RULES[myVehicleCode] || VEHICLE_CONSORT_RULES["2W"];
 
-  const [isOnlineForDriving, setIsOnlineForDriving] = useState(true);
+  const [isOnlineForDriving, setIsOnlineForDriving] = useState(false);
+  const [locationConsent, setLocationConsent] = useState(false);
   const [autoOnline9AmEnabled, setAutoOnline9AmEnabled] = useState(true);
   const [showLockedOtherVehicleJobs, setShowLockedOtherVehicleJobs] =
     useState(true);
@@ -313,7 +314,19 @@ export default function RiderCaptainPortal({
           </span>
           <button
             type="button"
-            onClick={() => setIsOnlineForDriving(!isOnlineForDriving)}
+            onClick={() => {
+              if (isOnlineForDriving) {
+                setIsOnlineForDriving(false);
+                setLocationConsent(false);
+                return;
+              }
+              const accepted = window.confirm(
+                "Share this device's location while you are online as a WE4ALL captain? Location tracking remains on this device only until the secure server tracking service is configured."
+              );
+              if (!accepted) return;
+              setLocationConsent(true);
+              setIsOnlineForDriving(true);
+            }}
             className={`px-2.5 py-1 rounded-lg font-black text-[9px] cursor-pointer ${
               isOnlineForDriving
                 ? "bg-emerald-400 text-slate-950"
@@ -580,8 +593,9 @@ export default function RiderCaptainPortal({
                     pickupLabel={trip.pickupPin || trip.shopName}
                     dropLabel={trip.dropPin || trip.address}
                     riderName={currentUser?.fullName || "Raju Local Rider"}
-                    vehicle={`${myVehicleRule.shortLabel} (${currentUser?.rcPlate || "TS-01"})`}
-                    distanceKm={trip.distanceKm || 2.5}
+                    vehicle={`${myVehicleRule.shortLabel} (${currentUser?.rcPlate || "Vehicle pending"})`}
+                    distanceKm={trip.distanceKm || null}
+                    trackingEnabled={isOnlineForDriving && locationConsent}
                   />
                   <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 flex justify-between items-center text-[10px]">
                     <span className="text-slate-300">
@@ -689,31 +703,11 @@ export default function RiderCaptainPortal({
                       <button
                         type="button"
                         onClick={() => {
-                          setCaptainRadarJobs(
-                            captainRadarJobs.map((x) =>
-                              x.id === bk.id
-                                ? {
-                                    ...x,
-                                    paymentReqStatus: "PAYMENT_RELEASED_TO_UPI"
-                                  }
-                                : x
-                            )
-                          );
-                          setOrders(
-                            orders.map((o) =>
-                              o.id === bk.id
-                                ? {
-                                    ...o,
-                                    paymentReqStatus: "PAYMENT_RELEASED_TO_UPI"
-                                  }
-                                : o
-                            )
-                          );
                           onTriggerToast(
-                            `Payment Request Raised! Rs.${fare} sent to ${currentUser?.upiId || "captain@ybl"}.`
+                            "Payout request cannot be submitted yet. WE4ALL needs an authenticated captain settlement API and payment-provider confirmation. No payout status was changed."
                           );
                         }}
-                        className="bg-amber-400 text-slate-950 font-black px-3 py-1 rounded-lg text-[9px] cursor-pointer"
+                        className="bg-slate-700 text-slate-300 font-black px-3 py-1 rounded-lg text-[9px] cursor-not-allowed"
                       >
                         Payout integration required
                       </button>
