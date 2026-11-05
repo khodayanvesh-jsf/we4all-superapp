@@ -3,10 +3,11 @@ import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import {
   getFounderCredentials,
   saveFounderCredentials,
-  getServerConfig,
-  saveServerConfig,
   saveCloudAndLocalState,
-  pullRemoteSupabaseState
+  pullRemoteSupabaseState,
+  supabase,
+  isLiveSupabaseConfigured,
+  getActiveSupabaseUserId
 } from "../supabaseClient";
 
 export default function FounderAdminSuite({
@@ -181,9 +182,10 @@ export default function FounderAdminSuite({
   const [adminCredsForm, setAdminCredsForm] = useState(() => getFounderCredentials());
   const [showCredsPass, setShowCredsPass] = useState(false);
 
-  // Cloud Data Server Config State
-  const [serverCfgForm, setServerCfgForm] = useState(() => getServerConfig());
-  const [syncStatusMsg, setSyncStatusMsg] = useState("Live Cloud Relay & Local Vault Ready");
+  // Supabase status is verified against the active Auth session; config presence alone is not authentication.
+  const [syncStatusMsg, setSyncStatusMsg] = useState(
+    isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
+  );
 
   const [otaForm, setOtaForm] = useState({
     version: appUpdateInfo?.latestAvailableVersion || "3.2.2",
@@ -1583,10 +1585,10 @@ export default function FounderAdminSuite({
             <div className="flex flex-wrap justify-between items-center gap-2">
               <div>
                 <h3 className="font-black text-emerald-400 text-sm">
-                  \uD83C\uDF10 Live Cloud Data Server &amp; Cross-Device Sync Manager
+                  \uD83C\uDF10 Supabase Account Connection &amp; Private Sync
                 </h3>
                 <p className="text-[11px] text-slate-300">
-                  Ensures orders, partner approvals, stock changes, and categories reflect across all phones and web browsers.
+                  Checks the signed-in account connection and synchronizes that user's private saved state across devices.
                 </p>
               </div>
               <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 px-3 py-1 rounded-xl text-[10px] font-black">
@@ -1594,48 +1596,51 @@ export default function FounderAdminSuite({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">
-                  Supabase Database URL
-                </label>
-                <input
-                  type="text"
-                  value={serverCfgForm.supabaseUrl}
-                  onChange={(e) =>
-                    setServerCfgForm({ ...serverCfgForm, supabaseUrl: e.target.value })
-                  }
-                  placeholder="https://your-project.supabase.co"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-mono text-[11px]"
-                />
+            <div className="rounded-xl bg-slate-950 border border-slate-700 p-3 space-y-2">
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-400 text-[10px]">Project URL</span>
+                <span className="text-white font-mono text-[10px] break-all">https://bdmbziwazpuzbukazmug.supabase.co</span>
               </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">
-                  Supabase Public Anon Key (Optional — Relay Active by Default)
-                </label>
-                <input
-                  type="text"
-                  value={serverCfgForm.supabaseAnonKey}
-                  onChange={(e) =>
-                    setServerCfgForm({ ...serverCfgForm, supabaseAnonKey: e.target.value })
-                  }
-                  placeholder="Paste eyJhbGciOi... anon key here if using direct Supabase"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-emerald-300 font-mono text-[11px]"
-                />
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-400 text-[10px]">Frontend API key</span>
+                <span className="text-emerald-300 text-[10px] font-bold">Publishable key loaded</span>
               </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-400 text-[10px]">Private sync endpoint</span>
+                <span className="text-emerald-300 text-[10px] font-bold">JWT-protected Edge Function</span>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Secret keys are never entered in this panel or sent to the browser. Signed-in data is stored in the owner's private account row; this backup is not a shared marketplace database.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  saveServerConfig(serverCfgForm);
-                  setSyncStatusMsg("Server Links Saved & Active!");
-                  onTriggerToast("Cloud Data Server Configuration Saved!");
+                onClick={async () => {
+                  setSyncStatusMsg("Verifying Supabase session...");
+                  const { data: { user }, error } = await supabase.auth.getUser();
+                  if (error) {
+                    setSyncStatusMsg("Connection check failed");
+                    onTriggerToast("Supabase check failed: " + error.message);
+                    return;
+                  }
+                  if (!user) {
+                    setSyncStatusMsg("Project configured · sign-in required");
+                    onTriggerToast("The Supabase project client is configured. Sign in using verified phone OTP to enable private sync.");
+                    return;
+                  }
+                  if (getActiveSupabaseUserId() !== user.id) {
+                    setSyncStatusMsg("Session valid · account restore pending");
+                    onTriggerToast("Your Supabase session is valid, but this device's private account snapshot has not finished restoring.");
+                    return;
+                  }
+                  setSyncStatusMsg("Authenticated · private account sync ready");
+                  onTriggerToast("Supabase Auth verified. This account's private sync is ready.");
                 }}
                 className="bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
               >
-                Save Server Config
+                Check Supabase Session
               </button>
               <button
                 type="button"
@@ -1650,32 +1655,48 @@ export default function FounderAdminSuite({
                     riders: safeRiders,
                     orders: safeOrders,
                     serviceBookings: safeServiceBookings,
-                    geoAds: safeGeoAds,
-                    founderCredentials: adminCredsForm
+                    geoAds: safeGeoAds
                   });
-                  setSyncStatusMsg(`Pushed at ${new Date().toLocaleTimeString()}`);
-                  onTriggerToast("Forced Full State Push to Live Cloud Server!");
+                  setSyncStatusMsg("Private account backup queued");
+                  onTriggerToast("Current snapshot saved locally; authenticated cloud backup is queued for this account only.");
                 }}
                 className="bg-teal-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
               >
-                \u2B06 Force Push All Data to Cloud
+                Save My Account Backup
               </button>
               <button
                 type="button"
                 onClick={async () => {
-                  setSyncStatusMsg("Pulling from Cloud...");
-                  const remote = await pullRemoteSupabaseState();
-                  if (remote) {
-                    setSyncStatusMsg(`Pulled at ${new Date().toLocaleTimeString()}`);
-                    onTriggerToast("Pulled latest state from Cloud Server!");
-                  } else {
-                    setSyncStatusMsg("Cloud Server Up-to-Date");
-                    onTriggerToast("Cloud Server is already in sync!");
+                  setSyncStatusMsg("Restoring this account's private backup...");
+                  try {
+                    const remote = await pullRemoteSupabaseState((payload) => {
+                      if (payload.categories) setCategories(payload.categories);
+                      if (payload.products) setProducts(payload.products);
+                      if (payload.merchants) setMerchants(payload.merchants);
+                      if (payload.serviceProviders) setServiceProviders(payload.serviceProviders);
+                      if (payload.decorators) setDecorators(payload.decorators);
+                      if (payload.functionHalls) setFunctionHalls(payload.functionHalls);
+                      if (payload.riders) setRiders(payload.riders);
+                      if (payload.labourWorkers) setLabourWorkers(payload.labourWorkers);
+                      if (payload.orders) setOrders(payload.orders);
+                      if (payload.serviceBookings) setServiceBookings(payload.serviceBookings);
+                      if (payload.geoAds) setGeoAds(payload.geoAds);
+                    });
+                    if (remote) {
+                      setSyncStatusMsg("Private account backup restored");
+                      onTriggerToast("Restored this signed-in account's snapshot. Other users' data is not included.");
+                    } else {
+                      setSyncStatusMsg("No private cloud snapshot yet");
+                      onTriggerToast("No saved cloud snapshot exists for this account yet, or sign-in is required.");
+                    }
+                  } catch (error) {
+                    setSyncStatusMsg("Cloud restore failed");
+                    onTriggerToast("Could not restore this account: " + (error?.message || "unknown error"));
                   }
                 }}
                 className="bg-indigo-500 text-white font-black py-2 rounded-xl cursor-pointer"
               >
-                \u2B07 Pull Latest Data from Cloud
+                Restore My Account Backup
               </button>
             </div>
           </div>
