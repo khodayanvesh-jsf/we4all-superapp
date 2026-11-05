@@ -223,11 +223,14 @@ The review branch `fix/payment-safety-guest-default` contains:
 - This requirements register and change-control/launch gate.
 
 **Latest observed CI evidence (6 Nov 2026):**
+- Latest branch commit: `07c64ffd74e9f69fa0841ac2ed6c961f3cd93624`.
 - `npm ci`: passed.
-- `npm test`: 7/7 passed.
+- `npm test`: 10/10 passed (payment/security helpers plus ten-category registry/routing checks).
 - `npm run build`: passed; Vite emitted the production bundle.
 - `npx cap sync android`: passed.
-- Android `assembleDebug`: the JDK 17 run failed with `invalid source release: 21`; CI and the local guide were updated to JDK 21. The subsequent JDK 21 run has passed all preceding steps but Android Gradle compilation and artifact upload are still in progress/not yet confirmed. No APK artifact is currently claimed.
+- Android `assembleDebug`: passed with JDK 21; debug APK artifact was uploaded by GitHub Actions run 42100565545.
+- Artifact: `WE4ALL-debug-7d4100a27b1a2641502081e56da7becde910dea6`; APK SHA-256: `69fb2aa42f45ace3e5123cfca45f3c4f417485288202b530e8d30cd9bef06ef3`.
+- This is a debug/testing APK, not a production-signed release. It has not been installed and exercised on a physical Android device as part of this review.
 - npm install reported 8 dependency advisories (7 moderate, 1 high); identify and resolve the high-severity issue before public release.
 - Vercel preview reported Ready; this is a web preview, not a native APK or device-stability certification.
 
