@@ -1849,6 +1849,8 @@ function AppContent() {
               serviceBookings={serviceBookings || []}
               setServiceBookings={setServiceBookings}
               captainRadarJobs={captainRadarJobs}
+              decorBids={decorBids}
+              setDecorBids={setDecorBids}
               pendingMerchants={pendingMerchants}
               setPendingMerchants={setPendingMerchants}
               pendingServiceProviders={pendingServiceProviders}
