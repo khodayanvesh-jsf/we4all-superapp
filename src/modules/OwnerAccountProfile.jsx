@@ -242,6 +242,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         const partnerUser = { ...baseUser, role: requestedRole, status: "Approved" };
         setLocalUser(partnerUser);
         setCurrentUser?.(partnerUser);
+        onPartnerAuthenticated?.(requestedRole, partnerUser);
         setFormFeedback({ type: "success", message: `${requestedRole.replace("_", " ")} portal access verified.` });
         setSubTab("account_details");
         return;
@@ -312,7 +313,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
       setLocalUser(customer);
       setCurrentUser?.(customer);
-      saveCloudAndLocalState({ currentUser: customer });
       setActivePortal?.("customer");
       onSelectRole?.("customer");
       setSubTab("account_details");
