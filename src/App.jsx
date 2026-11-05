@@ -1961,6 +1961,8 @@ function AppContent() {
               setOrders={setOrders}
               serviceBookings={serviceBookings || []}
               setServiceBookings={setServiceBookings}
+              labourBookings={labourBookings || []}
+              setLabourBookings={setLabourBookings}
               captainRadarJobs={captainRadarJobs}
               decorBids={decorBids}
               setDecorBids={setDecorBids}
