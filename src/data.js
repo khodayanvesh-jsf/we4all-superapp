@@ -26,7 +26,21 @@ export const INITIAL_CATEGORIES = [
   { id: "veg_fruits", nameKey: "cat_veg_fruits", name: "Farm Veg & Fruits", icon: "\uD83E\uDD6C", badge: "Rytu Mandi Rate", partnerType: "merchant", flow: "instant_goods", minOrderValue: 99, baseDeliveryFee: 20 },
   { id: "non_veg", nameKey: "cat_non_veg", name: "Fresh Meat & Fish", icon: "\uD83C\uDF57", badge: "Live Cut 100% Fresh", partnerType: "merchant", flow: "instant_goods", minOrderValue: 149, baseDeliveryFee: 25 },
   { id: "construction", nameKey: "cat_construction", name: "Construction & Steel", icon: "\uD83E\uDDF1", badge: "3W/4W Heavy Dispatch", partnerType: "merchant", flow: "heavy_goods", minOrderValue: 350, baseDeliveryFee: 150 },
-  { id: "medicines", nameKey: "cat_medicines", name: "Medicines & Rx", icon: "\uD83D\uDC8A", badge: "Priority Pharmacy", partnerType: "merchant", flow: "instant_goods", minOrderValue: 49, baseDeliveryFee: 20 }
+  { id: "medicines", nameKey: "cat_medicines", name: "Medicines & Rx", icon: "\uD83D\uDC8A", badge: "Priority Pharmacy", partnerType: "merchant", flow: "instant_goods", minOrderValue: 49, baseDeliveryFee: 20 },
+  { id: "kisan_mandi", nameKey: "cat_kisan_mandi", name: "Kisan Mandi", icon: "\uD83C\uDF3E", badge: "Farmer Direct Market", partnerType: "merchant", flow: "mandi_goods", minOrderValue: 0, baseDeliveryFee: 20 }
+];
+
+export const CUSTOMER_QUICK_LINKS = [
+  { id: "groceries", label: "Groceries", icon: "\uD83D\uDED2", tab: "stores", categoryId: "daily_needs" },
+  { id: "vegetables", label: "Veg & Fruits", icon: "\uD83E\uDD6C", tab: "stores", categoryId: "veg_fruits" },
+  { id: "meat", label: "Meat & Fish", icon: "\uD83C\uDF57", tab: "stores", categoryId: "non_veg" },
+  { id: "construction", label: "Cement & Steel", icon: "\uD83E\uDDF1", tab: "stores", categoryId: "construction" },
+  { id: "medihub", label: "Medicines", icon: "\uD83D\uDC8A", tab: "stores", categoryId: "medicines" },
+  { id: "labour", label: "Labour Adda", icon: "\uD83D\uDC77", tab: "labour" },
+  { id: "services", label: "1-Hour Services", icon: "\uD83D\uDD27", tab: "services" },
+  { id: "events", label: "Decor & Halls", icon: "\uD83C\uDF89", tab: "events" },
+  { id: "rides", label: "2W/3W/4W Rides", icon: "\uD83D\uDE95", tab: "taxi" },
+  { id: "kisan_mandi", label: "Kisan Mandi", icon: "\uD83C\uDF3E", tab: "stores", categoryId: "kisan_mandi" }
 ];
 
 export const SERVICE_CATEGORIES = [
