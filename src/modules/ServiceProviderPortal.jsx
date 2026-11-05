@@ -35,39 +35,27 @@ export default function ServiceProviderPortal({
   const [partsFormMap, setPartsFormMap] = useState({});
 
   // Tab 2: 1-Hr Slots Matrix State
-  const [selectedSlotDate, setSelectedSlotDate] = useState("2026-10-29");
+  const [selectedSlotDate, setSelectedSlotDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Tab 3: Rate Card & Service Offering Builder State
   const activeProProfile =
-    serviceProviders.find(
+    (serviceProviders || []).find(
       (sp) =>
-        sp.phone === currentUser?.phone ||
-        sp.providerName?.toLowerCase() === currentUser?.fullName?.toLowerCase()
-    ) ||
-    serviceProviders[0] || {
-      id: "sp_default",
+        (sp.userId && sp.userId === currentUser?.id) ||
+        (sp.phone && sp.phone === currentUser?.phone)
+    ) || {
+      id: null,
       serviceCategoryId: "srv_plumbing",
-      providerName: currentUser?.fullName || "Raju Master Technician",
-      maskedId: "Verified Pro #108",
-      serviceCategory: "Plumbing, Electrical & AC Care",
-      specialization: "Certified Doorstep Repair & Fittings",
+      providerName: currentUser?.fullName || "Service Provider",
+      specialization: "",
       visitingFee: 99,
       hourlyRate: 150,
       emergencyFee: 199,
-      availableSlots: [
-        "09:00 AM - 10:00 AM",
-        "10:00 AM - 11:00 AM",
-        "11:00 AM - 12:00 PM",
-        "02:00 PM - 03:00 PM",
-        "04:00 PM - 05:00 PM"
-      ],
-      rateCardItems: [
-        { id: "rc_1", title: "Doorstep Inspection & Fault Diagnosis", price: 99, unit: "Visit Escrow" },
-        { id: "rc_2", title: "Standard 1-Hour Repair Labor", price: 150, unit: "Per Hour" },
-        { id: "rc_3", title: "Jet Pump AC Servicing / Deep Clean", price: 499, unit: "Per Unit" }
-      ],
-      image: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=300&auto=format&fit=crop&q=80"
+      availableSlots: [],
+      rateCardItems: [],
+      image: ""
     };
+
 
   const [rateCardConfig, setRateCardConfig] = useState({
     serviceCategoryId: activeProProfile.serviceCategoryId || "srv_plumbing",
@@ -91,17 +79,25 @@ export default function ServiceProviderPortal({
 
   // Check if current Service Provider is pending admin approval or published live
   const myPendingPro = (pendingServiceProviders || []).find(
-    (p) => p.phone === currentUser?.phone || p.providerName === currentUser?.fullName
+    (p) => (p.userId && p.userId === currentUser?.id) || (p.phone && p.phone === currentUser?.phone)
   );
-  const isPublishedLive =
-    !myPendingPro ||
-    (serviceProviders || []).some(
-      (p) =>
-        (p.phone === currentUser?.phone || p.providerName === currentUser?.fullName) &&
-        p.status === "Approved"
-    );
+  const isPublishedLive = Boolean(
+    currentUser?.authUserId &&
+    currentUser?.role === "service_provider" &&
+    currentUser?.status === "Approved" &&
+    activeProProfile.id &&
+    activeProProfile.status === "Approved"
+  );
+  const providerBookings = (serviceBookings || []).filter((booking) =>
+    (booking.providerId && booking.providerId === activeProProfile.id) ||
+    (booking.providerUserId && booking.providerUserId === currentUser?.id)
+  );
 
   const handleToggleSlotAvailability = (slotLabel) => {
+    if (!isPublishedLive || !activeProProfile.id) {
+      onTriggerToast("Slot management is locked until your own service-provider account is approved.");
+      return;
+    }
     const currentSlots = activeProProfile.availableSlots || [];
     const exists = currentSlots.includes(slotLabel);
     const updatedSlots = exists
@@ -121,6 +117,14 @@ export default function ServiceProviderPortal({
   const handleWorkPhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!isPublishedLive || !activeProProfile.id) {
+      onTriggerToast("Portfolio upload is locked until your own service-provider account is approved.");
+      return;
+    }
+    if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) {
+      onTriggerToast("Choose an image up to 5 MB.");
+      return;
+    }
     onTriggerToast(`Uploading ${file.name} to we4all-media/portfolio...`);
     const cloudUrl = await uploadFileToSupabaseStorage(file, "portfolio");
     if (cloudUrl && cloudUrl.startsWith("http")) {
@@ -135,6 +139,10 @@ export default function ServiceProviderPortal({
   };
 
   const handleSaveMasterRateCard = () => {
+    if (!isPublishedLive || !activeProProfile.id) {
+      onTriggerToast("Rate-card updates are locked until your own service-provider account is approved.");
+      return;
+    }
     if (!rateCardConfig.consortRulesAccepted) {
       alert("Please accept the WE4ALL Service Provider Consort Rules & SLA checkbox.");
       return;
@@ -309,7 +317,7 @@ export default function ServiceProviderPortal({
             <div className="flex justify-between items-center">
               <div>
                 <h4 className="font-black text-indigo-300 text-xs">
-                  1. Scheduled Doorstep Visits ({(serviceBookings || []).length})
+                  1. Scheduled Doorstep Visits ({providerBookings.length})
                 </h4>
                 <p className="text-[10px] text-slate-400">
                   Verify Geo-Fenced Happy Code to unlock Visiting Fee Escrow & bill spare parts
@@ -338,7 +346,7 @@ export default function ServiceProviderPortal({
             </div>
           </div>
 
-          {(serviceBookings || []).length === 0 ? (
+          {providerBookings.length === 0 ? (
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center space-y-2">
               <p className="font-bold text-slate-300">No active customer visits in your queue.</p>
               <p className="text-[10px] text-slate-400">
@@ -346,7 +354,7 @@ export default function ServiceProviderPortal({
               </p>
             </div>
           ) : (
-            serviceBookings.map((sb) => {
+            providerBookings.map((sb) => {
               const pForm = partsFormMap[sb.id] || {
                 extraHours: sb.extraHours || 0,
                 sparePartsDesc: sb.sparePartsDesc || "",
@@ -545,7 +553,7 @@ export default function ServiceProviderPortal({
               <div className="bg-amber-950/50 border border-amber-500/40 p-2 rounded-xl">
                 <p className="text-slate-400 text-[9px]">Booked Today</p>
                 <p className="font-black text-amber-300 text-sm">
-                  {serviceBookings.filter((b) => !b.bookedDate || b.bookedDate === selectedSlotDate).length}
+                  {providerBookings.filter((b) => !b.bookedDate || b.bookedDate === selectedSlotDate).length}
                 </p>
               </div>
               <div className="bg-slate-950 border border-slate-800 p-2 rounded-xl">
@@ -593,7 +601,7 @@ export default function ServiceProviderPortal({
           <div className="space-y-1.5">
             {MASTER_ONE_HOUR_SLOTS.map((slotLabel) => {
               const isEnabled = (activeProProfile.availableSlots || []).includes(slotLabel);
-              const bookingForSlot = serviceBookings.find(
+              const bookingForSlot = providerBookings.find(
                 (b) =>
                   b.bookedSlot === slotLabel &&
                   (!b.bookedDate || b.bookedDate === selectedSlotDate)
@@ -864,11 +872,11 @@ export default function ServiceProviderPortal({
               <button
                 type="button"
                 onClick={() => {
-                  if ((serviceBookings || []).length === 0) {
+                  if (providerBookings.length === 0) {
                     alert("No service bookings yet. Tap '+ Test Visit' in the Visits tab first!");
                     return;
                   }
-                  handleDownloadEscrowInvoicePdf(serviceBookings[0]);
+                  handleDownloadEscrowInvoicePdf(providerBookings[0]);
                 }}
                 className="bg-emerald-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[10px] cursor-pointer"
               >
@@ -899,7 +907,7 @@ export default function ServiceProviderPortal({
             </div>
 
             {(() => {
-              const filtered = serviceBookings.filter((b) => {
+              const filtered = providerBookings.filter((b) => {
                 if (billPeriodFilter !== "ALL" && b.periodTag && b.periodTag !== billPeriodFilter) {
                   return false;
                 }
