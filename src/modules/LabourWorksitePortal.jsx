@@ -33,6 +33,7 @@ export default function LabourWorksitePortal({
 
   return (
     <div className="space-y-3 text-xs text-white">
+      {mode !== "customer" && (
       <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-3 space-y-2">
         <h3 className="font-black text-amber-400 text-sm">
           \uD83E\uDDF1 Labour & Mistri Work-Site Adda (Daily-Wage & Toli Portal)
@@ -124,6 +125,56 @@ export default function LabourWorksitePortal({
           </button>
         </div>
       </div>
+
+      )}
+
+      {mode === "customer" && (
+        <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-3 space-y-2">
+          <h3 className="font-black text-emerald-300">Find Labour & Mistri Teams</h3>
+          <p className="text-[10px] text-slate-300">
+            Requests are sent to the worker for confirmation. Attendance and wage release remain pending until secure server verification is available.
+          </p>
+          {resolvedWorkers.filter((worker) => worker.status !== "PENDING_ADMIN_APPROVAL").map((worker) => (
+            <div key={worker.id} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex justify-between items-center gap-2">
+              <div>
+                <p className="font-bold text-white">{worker.name}</p>
+                <p className="text-[10px] text-slate-400">{worker.tradeName} · {worker.mode === "TOLI_GROUP" ? `Toli of ${worker.toliSize}` : "Individual"}</p>
+                <p className="text-[10px] text-emerald-300">₹{Number(worker.fullDayWage || 0).toLocaleString("en-IN")} / day</p>
+              </div>
+              <button
+                type="button"
+                disabled={resolvedBookings.some((b) => b.workerId === worker.id && b.customerId === currentUser?.id && !["CANCELLED","REJECTED","WAGE_RELEASED_COMPLETED"].includes(b.status))}
+                onClick={() => {
+                  if (!currentUser || currentUser.isGuest) {
+                    notify("Sign in before requesting a worker. Your request has not been created.");
+                    return;
+                  }
+                  const booking = {
+                    id: `LAB-${Date.now()}`,
+                    workerId: worker.id,
+                    workerName: worker.name,
+                    tradeId: worker.tradeId,
+                    tradeName: worker.tradeName,
+                    customerId: currentUser.id,
+                    customerName: currentUser.fullName || currentUser.name || "Customer",
+                    siteAddress: "Add worksite address in checkout",
+                    totalWage: Number(worker.fullDayWage || 0),
+                    requestedAt: new Date().toISOString(),
+                    status: "REQUESTED_PENDING_WORKER_CONFIRMATION",
+                    attendanceVerification: "NOT_STARTED",
+                    wagePaymentStatus: "NOT_PAID"
+                  };
+                  updateBookings([booking, ...resolvedBookings]);
+                  notify("Worker request created and awaiting worker confirmation. No attendance OTP or wage payment has been generated.");
+                }}
+                className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black px-3 py-2 rounded-lg text-[10px]"
+              >
+                Request worker
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 2-Step Muster Roll Bookings */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
