@@ -21,7 +21,7 @@ test("registration creates a verified customer and submits partner applications 
   assert.match(ownerAccountSource, /we4all_profiles/);
   assert.match(ownerAccountSource, /we4all_partner_applications/);
   assert.match(ownerAccountSource, /requested_role: selectedRoleKey/);
-  assert.match(ownerAccountSource, /Partner application was submitted as pending Founder approval/);
+  assert.match(ownerAccountSource, /supabase\.from\("we4all_partner_applications"\)\.insert/);
 });
 
 test("restored sessions are revalidated with Supabase rather than local identity storage", () => {
