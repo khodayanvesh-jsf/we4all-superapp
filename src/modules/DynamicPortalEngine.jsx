@@ -314,21 +314,9 @@ export default function DynamicPortalEngine({
   };
 
   const handleSimulateBooking = () => {
-    const sampleItem = itemsList[0] || { title: `${portalConfig.title} Standard Package`, price: 350 };
-    const newBk = {
-      id: `BK-${Math.floor(1000 + Math.random() * 9000)}`,
-      customerName: "Rameshwar Reddy (Adilabad)",
-      itemTitle: sampleItem.title,
-      amount: sampleItem.price || 350,
-      status: "NEW_REQUEST",
-      otp: String(Math.floor(1000 + Math.random() * 9000)),
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    };
-    onUpdatePortalConfig({
-      ...portalConfig,
-      bookings: [newBk, ...bookingsList]
-    });
-    onTriggerToast(`Simulated new booking #${newBk.id} in ${portalConfig.title}!`);
+    onTriggerToast(
+      "Live booking creation is not connected to the authenticated booking API. No test customer, booking or OTP was created."
+    );
   };
 
   return (
@@ -352,10 +340,11 @@ export default function DynamicPortalEngine({
         <div className="flex gap-1.5">
           <button
             type="button"
-            onClick={handleSimulateBooking}
+            disabled
+                onClick={handleSimulateBooking}
             className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[10px] cursor-pointer"
           >
-            + Simulate Order
+            Live booking API required
           </button>
           <button
             type="button"
@@ -388,7 +377,7 @@ export default function DynamicPortalEngine({
                 onClick={handleSimulateBooking}
                 className="bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
               >
-                + Simulate Test Booking Now
+                No live bookings API connection
               </button>
             </div>
           ) : (
