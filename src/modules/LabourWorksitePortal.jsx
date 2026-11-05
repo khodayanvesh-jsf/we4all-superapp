@@ -20,6 +20,12 @@ export default function LabourWorksitePortal({
   const updateWorkers = setLabourWorkers || setWorkers || (() => {});
   const updateBookings = setLabourBookings || setBookings || (() => {});
   const notify = onTriggerToast || onToast || (() => {});
+  const myWorkerIds = new Set(
+    resolvedWorkers.filter((worker) => worker.ownerUserId === currentUser?.id).map((worker) => worker.id)
+  );
+  const visibleBookings = mode === "customer"
+    ? resolvedBookings.filter((booking) => booking.customerId === currentUser?.id)
+    : resolvedBookings.filter((booking) => myWorkerIds.has(booking.workerId) || booking.workerUserId === currentUser?.id);
   const [newWorkerForm, setNewWorkerForm] = useState({
     name: "",
     tradeId: "lab_mason",
@@ -134,7 +140,7 @@ export default function LabourWorksitePortal({
           <p className="text-[10px] text-slate-300">
             Requests are sent to the worker for confirmation. Attendance and wage release remain pending until secure server verification is available.
           </p>
-          {resolvedWorkers.filter((worker) => worker.status !== "PENDING_ADMIN_APPROVAL").map((worker) => (
+          {resolvedWorkers.filter((worker) => ["Approved", "ACTIVE", "AVAILABLE_AT_ADDA"].includes(worker.status)).map((worker) => (
             <div key={worker.id} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex justify-between items-center gap-2">
               <div>
                 <p className="font-bold text-white">{worker.name}</p>
@@ -179,14 +185,14 @@ export default function LabourWorksitePortal({
       {/* 2-Step Muster Roll Bookings */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
         <h4 className="font-black text-emerald-400">
-          Active Work-Site Muster Roll Bookings ({(resolvedBookings || []).length})
+          Active Work-Site Muster Roll Bookings ({(visibleBookings || []).length})
         </h4>
-        {(resolvedBookings || []).length === 0 ? (
+        {(visibleBookings || []).length === 0 ? (
           <p className="text-[11px] text-slate-400 py-2">
             No active work-site bookings yet. Customers can hire workers from the Customer Portal.
           </p>
         ) : (
-          resolvedBookings.map((lb) => (
+          visibleBookings.map((lb) => (
             <div
               key={lb.id}
               className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2"
