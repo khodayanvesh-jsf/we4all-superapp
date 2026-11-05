@@ -31,6 +31,7 @@ import MerchantPortal from "./modules/MerchantPortal";
 import ServiceProviderPortal from "./modules/ServiceProviderPortal";
 import DecoratorPortal from "./modules/DecoratorPortal";
 import RiderCaptainPortal from "./modules/RiderCaptainPortal";
+import { canOpenPartnerPortal, isCustomerVisibleListing } from "./modules/workflows/portalRules";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
@@ -689,7 +690,7 @@ function AppContent() {
     // STRICT RBAC LOCK: Block any non-customer portal unless authenticated for that exact role (or in Founder Split Lab)
     if (
       portalRole !== "customer" &&
-      (authenticatedPartnerRole !== portalRole || currentUser?.role !== portalRole || currentUser?.status !== "Approved" || !currentUser?.authUserId)
+      !canOpenPartnerPortal({ authenticatedPartnerRole, user: currentUser }, portalRole)
     ) {
       return (
         <div className="p-4 bg-white text-slate-900 rounded-2xl border border-rose-300 space-y-3 text-xs text-center shadow">
@@ -716,7 +717,7 @@ function AppContent() {
         (c) => !(killedCategoriesByZone[selectedZoneFilter] || []).includes(c.id)
       );
       const filteredProducts = products.filter((p) => {
-        if (p.status && !["Approved", "ACTIVE"].includes(p.status)) return false;
+        if (!isCustomerVisibleListing(p)) return false;
         const matchCat = selectedCategory === "all" || p.categoryId === selectedCategory;
         const matchSearch =
           !searchQuery.trim() ||
@@ -1064,7 +1065,7 @@ function AppContent() {
                       className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold"
                     />
                   </div>
-                  {functionHalls.filter((hall) => !hall.status || hall.status === "Approved").map((hall) => {
+                  {functionHalls.filter(isCustomerVisibleListing).map((hall) => {
                     const isBooked = (hall.bookedDates || []).some((entry) => (typeof entry === "string" ? entry : entry.date) === eventDate);
                     return (
                       <div
