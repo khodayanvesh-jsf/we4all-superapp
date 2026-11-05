@@ -54,7 +54,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   const [loginForm, setLoginForm] = useState({
     identifier: "", // phone or username
-    pin: ""
   });
 
   const [regForm, setRegForm] = useState({
@@ -110,8 +109,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
     const digits = String(raw || "").replace(/\D/g, "");
     return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits.slice(0, 10);
   };
-
-  const cleanPinDigits = (raw) => String(raw || "").replace(/\D/g, "").slice(0, 4);
 
   const normalizeUpiId = (rawUpi, fallbackPhone) => {
     const trimmed = String(rawUpi || "").trim();
