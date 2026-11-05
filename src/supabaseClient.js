@@ -1,5 +1,5 @@
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "3.2.7";
+const CURRENT_SCHEMA_VERSION = "3.2.8";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
 const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
 const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
@@ -107,7 +107,7 @@ function computeStateFingerprint(stateObj) {
   }
 }
 
-export function getDeviceInstalledVersion(fallback = "3.2.3") {
+export function getDeviceInstalledVersion(fallback = "3.2.8") {
   if (typeof window === "undefined") return fallback;
   return localStorage.getItem(INSTALLED_VER_KEY) || fallback;
 }
