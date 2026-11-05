@@ -44,6 +44,8 @@ export default function FounderAdminSuite({
   setOrders = () => {},
   serviceBookings = [],
   setServiceBookings = () => {},
+  labourBookings = [],
+  setLabourBookings = () => {},
   captainRadarJobs = [],
   decorBids = [],
   setDecorBids = () => {},
@@ -1655,6 +1657,16 @@ export default function FounderAdminSuite({
                     riders: safeRiders,
                     orders: safeOrders,
                     serviceBookings: safeServiceBookings,
+                    labourBookings: labourBookings || [],
+                    decorBids: safeDecorBids,
+                    pendingMerchants: safePendingMerchants,
+                    pendingServiceProviders: safePendingServices,
+                    pendingDecorators: safePendingDecorators,
+                    pendingRiders: safePendingRiders,
+                    pendingSubCategories: safePendingSubCategories,
+                    rejectedItems: safeRejectedItems,
+                    monetizationConfig,
+                    appUpdateInfo,
                     geoAds: safeGeoAds
                   });
                   setSyncStatusMsg("Private account backup queued");
@@ -1680,6 +1692,16 @@ export default function FounderAdminSuite({
                       if (payload.labourWorkers) setLabourWorkers(payload.labourWorkers);
                       if (payload.orders) setOrders(payload.orders);
                       if (payload.serviceBookings) setServiceBookings(payload.serviceBookings);
+                      if (payload.labourBookings) setLabourBookings(payload.labourBookings);
+                      if (payload.decorBids) setDecorBids(payload.decorBids);
+                      if (payload.pendingMerchants) setPendingMerchants(payload.pendingMerchants);
+                      if (payload.pendingServiceProviders) setPendingServiceProviders(payload.pendingServiceProviders);
+                      if (payload.pendingDecorators) setPendingDecorators(payload.pendingDecorators);
+                      if (payload.pendingRiders) setPendingRiders(payload.pendingRiders);
+                      if (payload.pendingSubCategories) setPendingSubCategories(payload.pendingSubCategories);
+                      if (payload.rejectedItems) setRejectedItems(payload.rejectedItems);
+                      if (payload.monetizationConfig) setMonetizationConfig(payload.monetizationConfig);
+                      if (payload.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
                       if (payload.geoAds) setGeoAds(payload.geoAds);
                     });
                     if (remote) {
