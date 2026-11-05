@@ -214,6 +214,12 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (profileError) throw profileError;
       if (rolesError) throw rolesError;
 
+      const activation = await activateSupabaseAccount(user.id);
+      if (activation.changed && typeof window !== "undefined") {
+        window.location.reload();
+        return;
+      }
+
       const customerRole = (roles || []).find((r) => r.role === "customer" && r.status === "approved");
       const baseUser = {
         id: user.id,
@@ -309,6 +315,12 @@ export default function OwnerAccountProfile(rawProps = {}) {
           }
         });
         if (applicationError) throw applicationError;
+      }
+
+      const activation = await activateSupabaseAccount(user.id);
+      if (activation.changed && typeof window !== "undefined") {
+        window.location.reload();
+        return;
       }
 
       setLocalUser(customer);
