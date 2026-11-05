@@ -15,59 +15,59 @@ const [app, merchant, service, decorator, rider, labour, liveMap] = await Promis
 
 test("App routes authenticated roles to dedicated modules and owns shared portal state", () => {
   for (const component of ["MerchantPortal", "ServiceProviderPortal", "DecoratorPortal", "RiderCaptainPortal", "LabourWorksitePortal"]) {
-    assert.match(app, new RegExp(`<${component}\\b`));
+    assert.equal(app.includes(`<${component}`), true);
   }
   for (const state of ["decorBids", "captainRadarJobs", "pendingServiceProviders", "pendingDecorators", "pendingRiders", "labourBookings"]) {
-    assert.match(app, new RegExp(state));
+    assert.equal(app.includes(state), true);
   }
-  assert.match(app, /canOpenPartnerPortal/);
+  assert.equal(app.includes("canOpenPartnerPortal"), true);
 });
 
 test("Merchant portal filters own orders and blocks packing before verified payment", () => {
-  assert.match(merchant, /isMerchantOrderOwned/);
-  assert.match(merchant, /canMarkOrderPacked/);
-  assert.match(merchant, /PENDING_ADMIN_APPROVAL/);
-  assert.match(merchant, /PACKED_PENDING_SERVER_DISPATCH/);
+  assert.equal(merchant.includes("isMerchantOrderOwned"), true);
+  assert.equal(merchant.includes("canMarkOrderPacked"), true);
+  assert.equal(merchant.includes("PENDING_ADMIN_APPROVAL"), true);
+  assert.equal(merchant.includes("PACKED_PENDING_SERVER_DISPATCH"), true);
 });
 
 test("Service provider portal does not create simulated bookings or release escrow locally", () => {
-  assert.doesNotMatch(service, /simBooking/);
-  assert.doesNotMatch(service, /Math\\.random/);
-  assert.match(service, /providerBookings/);
-  assert.match(service, /Happy Code verification requires a server-issued/);
-  assert.match(service, /disabled className="flex-1 bg-slate-700/);
+  assert.equal(service.includes("simBooking"), false);
+  assert.equal(service.includes("Math.random"), false);
+  assert.equal(service.includes("providerBookings"), true);
+  assert.equal(service.includes("Happy Code verification requires a server-issued"), true);
+  assert.equal(service.includes('disabled className="flex-1 bg-slate-700'), true);
 });
 
 test("Decorator portal scopes its halls, requires approval and stores bids as records", () => {
-  assert.match(decorator, /ownerUserId/);
-  assert.match(decorator, /PENDING_ADMIN_APPROVAL/);
-  assert.match(decorator, /recordType: "DECOR_BID"/);
-  assert.match(decorator, /calculateDecoratorAdvance|advance/);
-  assert.doesNotMatch(decorator, /ENV-8841|Rajesh Verma/);
+  assert.equal(decorator.includes("ownerUserId"), true);
+  assert.equal(decorator.includes("PENDING_ADMIN_APPROVAL"), true);
+  assert.equal(decorator.includes('recordType: "DECOR_BID"'), true);
+  assert.equal(decorator.includes("calculateDecoratorAdvance"), true);
+  assert.equal(decorator.includes("ENV-8841") || decorator.includes("Rajesh Verma"), false);
 });
 
 test("Rider portal has no fallback OTP, synthetic jobs or client payout success", () => {
-  assert.doesNotMatch(rider, /4499/);
-  assert.doesNotMatch(rider, /Math\\.random/);
-  assert.doesNotMatch(rider, /PAYMENT_RELEASED_TO_UPI/);
-  assert.match(rider, /trackingEnabled=\{isOnlineForDriving && locationConsent\}/);
-  assert.match(rider, /server-issued delivery OTP/);
+  assert.equal(rider.includes("4499"), false);
+  assert.equal(rider.includes("Math.random"), false);
+  assert.equal(rider.includes("PAYMENT_RELEASED_TO_UPI"), false);
+  assert.equal(rider.includes("trackingEnabled={isOnlineForDriving && locationConsent}"), true);
+  assert.equal(rider.includes("server-issued delivery OTP"), true);
 });
 
 test("Labour portal supports both legacy/new prop contracts and locks local OTP/wage transitions", () => {
-  assert.match(labour, /workers,/);
-  assert.match(labour, /setWorkers,/);
-  assert.match(labour, /bookings,/);
-  assert.match(labour, /setBookings,/);
-  assert.match(labour, /REQUESTED_PENDING_WORKER_CONFIRMATION/);
-  assert.doesNotMatch(labour, /lb\\.morningStartOtp/);
-  assert.doesNotMatch(labour, /lb\\.eveningReleaseOtp/);
-  assert.doesNotMatch(labour, /WAGE_RELEASED_COMPLETED/);
+  assert.equal(labour.includes("workers,"), true);
+  assert.equal(labour.includes("setWorkers,"), true);
+  assert.equal(labour.includes("bookings,"), true);
+  assert.equal(labour.includes("setBookings,"), true);
+  assert.equal(labour.includes("REQUESTED_PENDING_WORKER_CONFIRMATION"), true);
+  assert.equal(labour.includes("lb.morningStartOtp"), false);
+  assert.equal(labour.includes("lb.eveningReleaseOtp"), false);
+  assert.equal(labour.includes("WAGE_RELEASED_COMPLETED"), false);
 });
 
 test("Live route map uses opt-in device geolocation instead of fake timer progress", () => {
-  assert.match(liveMap, /navigator\\.geolocation\\.watchPosition/);
+  assert.equal(liveMap.includes("navigator.geolocation.watchPosition"), true);
   assert.equal(liveMap.includes("clearWatch"), true);
-  assert.doesNotMatch(liveMap, /setInterval/);
-  assert.doesNotMatch(liveMap, /19\\.6641|78\\.5320/);
+  assert.equal(liveMap.includes("setInterval"), false);
+  assert.equal(liveMap.includes("19.6641") || liveMap.includes("78.5320"), false);
 });
