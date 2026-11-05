@@ -3,16 +3,18 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [client, edge, legacyApi, migration, storageMigration, realtimeMigration, envExample, packageJson, owner] = await Promise.all([
+const [client, edge, legacyApi, migration, storageMigration, realtimeMigration, leastPrivilegeMigration, envExample, packageJson, owner, founder] = await Promise.all([
   read("../src/supabaseClient.js"),
   read("../supabase/functions/we4all-sync/index.ts"),
   read("../api/sync.js"),
   read("../supabase/migrations/20261105190000_secure_user_state_partner_auth.sql"),
   read("../supabase/migrations/20261105210000_secure_we4all_media_uploads.sql"),
   read("../supabase/migrations/20261105220000_we4all_user_state_realtime_publication.sql"),
+  read("../supabase/migrations/20261105230000_we4all_least_privilege_authenticated_grants.sql"),
   read("../.env.example"),
   read("../package.json"),
-  read("../src/modules/OwnerAccountProfile.jsx")
+  read("../src/modules/OwnerAccountProfile.jsx"),
+  read("../src/modules/FounderAdminSuite.jsx")
 ]);
 
 test("browser connects to the correct Supabase project with publishable key only", () => {
@@ -73,6 +75,22 @@ test("debounced writes cannot cross account boundaries or sync guest changes", (
   assert.equal(client.includes("activeUserId !== ownerUserId"), true);
   assert.equal(client.includes("expectedUserId !== activeUserId"), true);
   assert.equal(client.includes("pushPayloadToCloudServers(merged, nowIso, ownerUserId)"), true);
+});
+
+test("authenticated database grants are restricted to the required operations", () => {
+  assert.equal(leastPrivilegeMigration.includes("REVOKE ALL PRIVILEGES ON TABLE public.we4all_user_roles FROM authenticated"), true);
+  assert.equal(leastPrivilegeMigration.includes("GRANT SELECT ON TABLE public.we4all_user_roles TO authenticated"), true);
+  assert.equal(leastPrivilegeMigration.includes("GRANT SELECT, INSERT ON TABLE public.we4all_partner_applications TO authenticated"), true);
+  assert.equal(leastPrivilegeMigration.includes("TRUNCATE"), false);
+});
+
+test("Founder connection panel reflects private account sync instead of the retired public relay", () => {
+  assert.equal(founder.includes("Check Supabase Session"), true);
+  assert.equal(founder.includes("Save My Account Backup"), true);
+  assert.equal(founder.includes("Restore My Account Backup"), true);
+  assert.equal(founder.includes("Supabase Public Anon Key"), false);
+  assert.equal(founder.includes("Force Push All Data to Cloud"), false);
+  assert.equal(founder.includes("saveServerConfig"), false);
 });
 
 test("per-user state changes are published through Supabase Realtime and filtered by owner", () => {
