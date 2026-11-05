@@ -382,39 +382,7 @@ export default function RiderCaptainPortal({
                   Showing orders allocated strictly to {myVehicleRule.label}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const weightForMyVeh =
-                    myVehicleCode === "2W" ? 8 : myVehicleCode === "3W" ? 120 : 550;
-                  const payoutForMyVeh =
-                    myVehicleCode === "2W" ? 45 : myVehicleCode === "3W" ? 165 : 480;
-                  const newJob = {
-                    id: `RDR-${Math.floor(1000 + Math.random() * 9000)}`,
-                    requiredVehicleCode: myVehicleCode,
-                    vehicleLabel: myVehicleRule.label,
-                    weightKg: weightForMyVeh,
-                    badge: `${myVehicleRule.shortLabel} Order (${weightForMyVeh} kg Load)`,
-                    bookedBy:
-                      "Customer: Srinivas Rao | Merchant: Sri Laxmi Supermart",
-                    pickupPin: "Main Bazar Supermart, Adilabad",
-                    dropPin: "Subhash Nagar Colony, Adilabad",
-                    distFromCaptainKm: 0.5,
-                    distanceKm: 2.8,
-                    captainPayout: payoutForMyVeh,
-                    secretOtp: String(Math.floor(1000 + Math.random() * 9000)),
-                    status: "OPEN_ON_RADAR",
-                    paymentReqStatus: "PENDING_TRIP_COMPLETION"
-                  };
-                  setCaptainRadarJobs([newJob, ...captainRadarJobs]);
-                  onTriggerToast(
-                    `Simulated ${myVehicleRule.shortLabel} Order #${newJob.id}!`
-                  );
-                }}
-                className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
-              >
-                + Test {myVehicleRule.shortLabel} Order
-              </button>
+              <p className="text-[10px] text-amber-200">Live dispatch jobs will appear here when the authenticated dispatch service allocates an order to this vehicle class.</p>
             </div>
           </div>
 
@@ -448,7 +416,7 @@ export default function RiderCaptainPortal({
                 </p>
                 <p className="text-amber-300 font-bold">
                   Drop: <span className="text-white">{job.dropPin}</span> ({job.distanceKm} km) | OTP:{" "}
-                  <strong className="text-white">{job.secretOtp || "4499"}</strong>
+                  <strong className="text-white">"Awaiting server verification"</strong>
                 </p>
               </div>
               {job.status === "OPEN_ON_RADAR" ? (
@@ -620,19 +588,7 @@ export default function RiderCaptainPortal({
                       Customer / Merchant OTP:{" "}
                       <strong className="text-amber-300 font-mono text-xs">{otpCode}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDropOtpInputs({
-                          ...dropOtpInputs,
-                          [trip.id]: otpCode
-                        });
-                        handleVerifyTripOtpAndComplete(trip, otpCode);
-                      }}
-                      className="bg-teal-500/20 border border-teal-400 text-teal-200 px-2.5 py-1 rounded-lg text-[9px] font-black cursor-pointer"
-                    >
-                      Demo-only: verification unavailable
-                    </button>
+                    <span className="text-[10px] text-amber-200">Server-issued delivery OTP required. Completion remains locked.</span>
                   </div>
                   <div className="flex gap-1.5">
                     <input
@@ -650,8 +606,9 @@ export default function RiderCaptainPortal({
                     />
                     <button
                       type="button"
+                      disabled
                       onClick={() => handleVerifyTripOtpAndComplete(trip)}
-                      className="flex-1 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black rounded-xl text-[10px] cursor-pointer shadow"
+                      className="flex-1 bg-slate-700 text-slate-300 font-black rounded-xl text-[10px] cursor-not-allowed shadow"
                     >
                       Server verification required
                     </button>
@@ -698,7 +655,7 @@ export default function RiderCaptainPortal({
             </h4>
             {allMyVehicleBookings.map((bk) => {
               const fare = Number(bk.captainPayout || bk.deliveryFee || 45);
-              const isPaid = bk.paymentReqStatus === "PAYMENT_RELEASED_TO_UPI";
+              const isPaid = bk.serverSettlementStatus === "VERIFIED";
               return (
                 <div
                   key={bk.id}
@@ -726,7 +683,7 @@ export default function RiderCaptainPortal({
                     </span>
                     {isPaid ? (
                       <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-lg text-[9px] font-black">
-                        SETTLED TO UPI 
+                        Settlement verification required 
                       </span>
                     ) : (
                       <button
@@ -758,7 +715,7 @@ export default function RiderCaptainPortal({
                         }}
                         className="bg-amber-400 text-slate-950 font-black px-3 py-1 rounded-lg text-[9px] cursor-pointer"
                       >
-                        Raise Payment Request (Rs.{fare}) &rarr;
+                        Payout integration required
                       </button>
                     )}
                   </div>
