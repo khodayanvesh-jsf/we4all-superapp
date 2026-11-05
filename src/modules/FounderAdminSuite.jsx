@@ -31,6 +31,8 @@ export default function FounderAdminSuite({
   setDecorators = () => {},
   riders = [],
   setRiders = () => {},
+  labourWorkers = [],
+  setLabourWorkers = () => {},
   registeredUsers = [],
   setRegisteredUsers = () => {},
   products = [],
@@ -81,6 +83,7 @@ export default function FounderAdminSuite({
   const safeServiceProviders = Array.isArray(serviceProviders) ? serviceProviders : [];
   const safeDecorators = Array.isArray(decorators) ? decorators : [];
   const safeRiders = Array.isArray(riders) ? riders : [];
+  const safeLabourWorkers = Array.isArray(labourWorkers) ? labourWorkers : [];
   const safeUsers = Array.isArray(registeredUsers) ? registeredUsers : [];
   const safeProducts = Array.isArray(products) ? products : [];
   const safeHalls = Array.isArray(functionHalls) ? functionHalls : [];
@@ -560,6 +563,7 @@ export default function FounderAdminSuite({
     if (adminDbTab === "decorators") return safeDecorators;
     if (adminDbTab === "halls") return safeHalls;
     if (adminDbTab === "captains") return safeRiders;
+    if (adminDbTab === "labour_workers") return safeLabourWorkers;
     if (adminDbTab === "orders") return safeOrders;
     return [];
   };
@@ -586,6 +590,9 @@ export default function FounderAdminSuite({
     } else if (adminDbTab === "captains") {
       setRiders(nextList);
       saveCloudAndLocalState({ riders: nextList });
+    } else if (adminDbTab === "labour_workers") {
+      setLabourWorkers(nextList);
+      saveCloudAndLocalState({ labourWorkers: nextList });
     } else if (adminDbTab === "orders") {
       setOrders(nextList);
       saveCloudAndLocalState({ orders: nextList });
@@ -980,7 +987,8 @@ export default function FounderAdminSuite({
                 { id: "decorators", label: `5. Decorators (${safeDecorators.length})` },
                 { id: "halls", label: `6. Function Halls (${safeHalls.length})` },
                 { id: "captains", label: `7. Captains (${safeRiders.length})` },
-                { id: "orders", label: `8. Orders (${safeOrders.length})` }
+                { id: "labour_workers", label: `8. Labour Workers (${safeLabourWorkers.length})` },
+                { id: "orders", label: `9. Orders (${safeOrders.length})` }
               ].map((t) => (
                 <button
                   key={t.id}
