@@ -63,9 +63,10 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Embed Capgo public key for native compatibility checks
+      - name: Embed Capgo public key and sync native config
         run: |
           npx --yes @capgo/cli@latest key save --key-data "$CAPGO_PUBLIC_KEY"
+          npx cap sync
           grep -q '"publicKey"' capacitor.config.json
 
       - name: Run application tests
