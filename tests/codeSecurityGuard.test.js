@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   verifyModulePipelineIntegrity,
   redactSensitiveGovId
@@ -20,4 +21,11 @@ test("redacts a government ID without throwing", () => {
   assert.equal(redactSensitiveGovId("1234 5678 9012"), "[Government ID redacted]");
   assert.equal(redactSensitiveGovId("1234"), "[Partial ID redacted]");
   assert.equal(redactSensitiveGovId(""), "[Not provided]");
+});
+
+test("main UI contains no undefined StringString helper calls", async () => {
+  const app = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
+  const guard = await readFile(new URL("../src/modules/security/CodeSecurityGuard.js", import.meta.url), "utf8");
+  assert.doesNotMatch(app, /StringString\\s*\\(/);
+  assert.doesNotMatch(guard, /StringString\\s*\\(/);
 });
