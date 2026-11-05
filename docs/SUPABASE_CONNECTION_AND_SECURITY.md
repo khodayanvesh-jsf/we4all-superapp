@@ -6,6 +6,7 @@
 - Authentication: Supabase Phone OTP (SMS); no local PIN or browser-generated OTP is used.
 - Session restoration: every restored user is revalidated with `supabase.auth.getUser()`.
 - Per-user cloud backup: the authenticated app calls the `we4all-sync` Edge Function.
+- Same-account device sync: `we4all_user_state` is included in the `supabase_realtime` publication; clients subscribe to changes filtered by their authenticated `user_id`, with an 8-second polling fallback.
 - Backend sync: `supabase/functions/we4all-sync/index.ts` uses `@supabase/server` 1.9.2 with `auth: "user"`, validates the bearer JWT, and reads/writes only the caller's `we4all_user_state` row.
 - RLS: profiles, account state, role records, partner applications, and media uploads are owner-scoped.
 - Legacy global API: `/api/sync` is retired and returns HTTP 410. Legacy state/order rows are preserved, but direct anonymous access is revoked.
