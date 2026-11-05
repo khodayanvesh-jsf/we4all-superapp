@@ -1,9 +1,9 @@
 {
-  "currentVersion": "3.2.4",
-  "latestAvailableVersion": "3.2.4",
+  "currentVersion": "3.2.6",
+  "latestAvailableVersion": "3.2.6",
   "updateAvailable": false,
-  "publishedAt": "2026-11-05T18:50:00Z",
+  "publishedAt": "2026-11-05T17:34:03Z",
   "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.2.4",
-  "releaseNotes": "WE4ALL v3.2.4: Consumer & Partner Registration Gate with live field validation, auto-OTP & Cloud Sync."
+  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.2.6",
+  "releaseNotes": "WE4ALL v3.2.6 - Fixed Gradle Java 17/21 source release compatibility and versioned APK build."
 }
