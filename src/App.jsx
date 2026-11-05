@@ -1484,6 +1484,8 @@ function AppContent() {
           currentUser={currentUser}
           functionHalls={functionHalls}
           setFunctionHalls={setFunctionHalls}
+          decorators={decorators}
+          setDecorators={setDecorators}
           decorBids={decorBids}
           setDecorBids={setDecorBids}
           onSwitchToPersonalShop={() => {
