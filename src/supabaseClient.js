@@ -278,6 +278,7 @@ async function pushPayloadToCloudServers(payload, nowIso, ownerUserId) {
 }
 
 export async function wipeAllOnlineAndOfflineData() {
+  const ownerUserId = getActiveSupabaseUserId();
   const freshTimestamp = new Date().toISOString();
   const cleanState = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -310,7 +311,7 @@ export async function wipeAllOnlineAndOfflineData() {
     if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, JSON.stringify(cleanState));
   }
   lastPushedFingerprint = computeStateFingerprint(cleanState);
-  await pushPayloadToCloudServers(cleanState, freshTimestamp);
+  if (ownerUserId) await pushPayloadToCloudServers(cleanState, freshTimestamp, ownerUserId);
   if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", payload: cleanState });
   return cleanState;
 }
