@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { Capacitor } from "@capacitor/core";
+import { CapacitorUpdater } from "@capgo/capacitor-updater";
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
 const CURRENT_SCHEMA_VERSION = "3.2.8";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
@@ -555,31 +557,46 @@ export function loadCloudAndLocalState() {
 }
 
 export async function checkLiveCloudOtaManifest(callback) {
-  try {
-    const res = await fetch(`${LIVE_CLOUD_ORIGIN}/ota-manifest.json?_cb=${Date.now()}`, {
-      method: "GET",
-      cache: "no-store"
-    });
-    if (!res.ok) return null;
-    const remoteOta = await res.json();
-    const installedVer = getDeviceInstalledVersion(CURRENT_SCHEMA_VERSION);
-    if (remoteOta?.latestAvailableVersion) {
-      const hasNewer =
-        remoteOta.latestAvailableVersion !== installedVer &&
-        remoteOta.latestAvailableVersion > installedVer;
-      const updatedInfo = {
-        ...remoteOta,
-        currentVersion: installedVer,
-        latestAvailableVersion: remoteOta.latestAvailableVersion,
-        updateAvailable: Boolean(hasNewer)
-      };
-      if (callback) callback({ appUpdateInfo: updatedInfo });
-      return updatedInfo;
-    }
-  } catch (e) {
-    return null;
+  if (!Capacitor.isNativePlatform()) {
+    const info = {
+      currentVersion: CURRENT_SCHEMA_VERSION,
+      latestAvailableVersion: CURRENT_SCHEMA_VERSION,
+      updateAvailable: false,
+      nativeUpdaterRequired: true,
+      releaseNotes: "Automatic updates are available in the installed Android/iOS app."
+    };
+    if (callback) callback({ appUpdateInfo: info });
+    return info;
   }
-  return null;
+
+  try {
+    const [latest, current] = await Promise.all([
+      CapacitorUpdater.getLatest(),
+      CapacitorUpdater.current()
+    ]);
+    const currentVersion =
+      current?.bundle?.version || current?.native || CURRENT_SCHEMA_VERSION;
+    const latestVersion = latest?.version || currentVersion;
+    const available = Boolean(latest?.url && latest?.version && latest.version !== currentVersion);
+    const info = {
+      currentVersion,
+      latestAvailableVersion: latestVersion,
+      updateAvailable: available,
+      releaseNotes: latest?.message || "",
+      downloadUrl: available ? latest.url : "",
+      nativeUpdater: "Capgo"
+    };
+    if (callback) callback({ appUpdateInfo: info });
+    return info;
+  } catch (error) {
+    return {
+      currentVersion: CURRENT_SCHEMA_VERSION,
+      latestAvailableVersion: CURRENT_SCHEMA_VERSION,
+      updateAvailable: false,
+      nativeUpdater: "Capgo",
+      error: error?.message || "Could not check the Capgo update channel."
+    };
+  }
 }
 
 export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetryPush) {
@@ -795,38 +812,41 @@ export function subscribeToRealtimeUpdates(callback) {
   };
 }
 
-export function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress, onComplete) {
-  const ver = targetVersion || CURRENT_SCHEMA_VERSION;
-  const currentData = loadCloudAndLocalState() || {};
-  const updatedAppInfo = {
-    ...(currentData.appUpdateInfo || {}),
-    currentVersion: ver,
-    latestAvailableVersion: ver,
-    updateAvailable: false,
-    releaseNotes
-  };
-  localStorage.setItem(INSTALLED_VER_KEY, ver);
-  localStorage.setItem(SCHEMA_MIGRATED_KEY, ver);
-  if (typeof window !== "undefined" && "caches" in window) {
-    caches.keys().then((names) => names.forEach((n) => caches.delete(n))).catch(() => {});
+export async function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress, onComplete) {
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error("OTA bundle installation is supported only inside the native WE4ALL app.");
   }
-  let step = 0;
-  const stages = [
-    { pct: 25, msg: "1/4: Backing up Orders, Escrow & KYC Vault..." },
-    { pct: 60, msg: `2/4: Downloading WE4ALL v${ver} Modules In-App...` },
-    { pct: 90, msg: "3/4: Applying Update Inside App WebView..." },
-    { pct: 100, msg: `4/4: WE4ALL v${ver} Installed! Restarting In-App...` }
-  ];
-  const interval = setInterval(() => {
-    if (step < stages.length) {
-      if (onProgress) onProgress(stages[step]);
-      step++;
-    } else {
-      clearInterval(interval);
-      if (onComplete) onComplete(updatedAppInfo);
-      setTimeout(() => {
-        if (typeof window !== "undefined") window.location.reload();
-      }, 300);
-    }
-  }, 350);
+
+  const latest = await CapacitorUpdater.getLatest();
+  if (!latest?.url || !latest?.version) {
+    throw new Error(latest?.message || "No verified Capgo update is available for this device.");
+  }
+  if (targetVersion && latest.version !== targetVersion) {
+    throw new Error("The available OTA version changed. Check for updates again before installing.");
+  }
+
+  onProgress?.({ pct: 20, msg: "Downloading update from the configured Capgo channel..." });
+  const bundle = await CapacitorUpdater.download({
+    url: latest.url,
+    version: latest.version
+  });
+  if (!bundle?.id) {
+    throw new Error("Capgo did not return a valid downloaded bundle identifier.");
+  }
+
+  onProgress?.({ pct: 80, msg: "Bundle downloaded. Queueing it for safe activation..." });
+  await CapacitorUpdater.next({ id: bundle.id });
+
+  const current = await CapacitorUpdater.current();
+  const updatedInfo = {
+    currentVersion: current?.bundle?.version || current?.native || CURRENT_SCHEMA_VERSION,
+    latestAvailableVersion: latest.version,
+    updateAvailable: false,
+    releaseNotes: releaseNotes || latest.message || "",
+    status: "QUEUED_FOR_NEXT_BACKGROUND",
+    nativeUpdater: "Capgo"
+  };
+  onProgress?.({ pct: 100, msg: "Update queued. It will activate on the next safe app background/relaunch." });
+  onComplete?.(updatedInfo);
+  return updatedInfo;
 }
