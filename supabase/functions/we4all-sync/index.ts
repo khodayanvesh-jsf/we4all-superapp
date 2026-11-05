@@ -1,4 +1,4 @@
-import { withSupabase } from "npm:@supabase/server@1";
+import { withSupabase } from "npm:@supabase/server@1.9.2";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
