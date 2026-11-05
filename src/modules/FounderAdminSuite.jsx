@@ -1774,7 +1774,7 @@ export default function FounderAdminSuite({
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   saveCloudAndLocalState({
                     categories: safeCategories,
                     products: safeProducts,
