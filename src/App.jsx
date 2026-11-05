@@ -429,7 +429,7 @@ function AppContent() {
   const [selectedMerchantByProduct, setSelectedMerchantByProduct] = useState({});
   const [expandedCompareProdId, setExpandedCompareProdId] = useState(null);
 
-  const [serviceFilterDate, setServiceFilterDate] = useState("2026-11-05");
+  const [serviceFilterDate, setServiceFilterDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [serviceFilterSlot, setServiceFilterSlot] = useState("10:00 AM - 11:00 AM");
 
   const [merchantCart, setMerchantCart] = useState(savedCloud?.merchantCart || []);
