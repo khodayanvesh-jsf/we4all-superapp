@@ -64,7 +64,8 @@ export default function RiderCaptainPortal({
       r.captainName === currentUser?.fullName
   );
   const isPublishedLive =
-    !myPendingCaptain || myPendingCaptain.status === "Approved";
+    currentUser?.status === "Approved" &&
+    (!myPendingCaptain || myPendingCaptain.status === "Approved");
 
   // Merge store orders from Merchant Portal into Radar if not already in captainRadarJobs
   const radarJobIds = new Set((captainRadarJobs || []).map((j) => j.id));
@@ -93,7 +94,7 @@ export default function RiderCaptainPortal({
       distFromCaptainKm: 0.5,
       distanceKm: o.distanceKm || 2.2,
       captainPayout: o.deliveryFee || 45,
-      secretOtp: String(o.secretOtp || "4499"),
+      secretOtp: "",
       status:
         o.status === "CAPTAIN_EN_ROUTE_TO_DROP" ||
         o.status === "OUT_FOR_DELIVERY_LIVE_MAP"
@@ -142,7 +143,7 @@ export default function RiderCaptainPortal({
           pickupPin: o.shopName || "Sri Laxmi Supermart",
           dropPin: o.address || "Subhash Nagar, Adilabad",
           captainPayout: o.deliveryFee || 45,
-          secretOtp: String(o.secretOtp || "4499")
+          secretOtp: ""
         });
       }
     });
@@ -170,105 +171,12 @@ export default function RiderCaptainPortal({
   const allMyVehicleBookings = Array.from(bookingsMap.values());
 
   // COMPLETE OTP VERIFICATION HANDLER (Updates BOTH captainRadarJobs AND orders)
-  const handleVerifyTripOtpAndComplete = (trip, forceOtpValue = null) => {
-    try {
-      const expectedOtp = String(trip.secretOtp || "4499").trim();
-      const rawInput =
-        forceOtpValue !== null
-          ? String(forceOtpValue).trim()
-          : String(dropOtpInputs[trip.id] ?? "").trim();
-
-      if ((rawInput || []).length === 0) {
-        onReportError(
-          `4-Digit OTP Required for Order #${trip.id}`,
-          `The OTP input box is empty. Customer/Merchant Doorstep OTP for #${trip.id} is "${expectedOtp}".`,
-          `Tap "Auto-Fill & Verify OTP (${expectedOtp})" below or type ${expectedOtp} in the box.`,
-          () => handleVerifyTripOtpAndComplete(trip, expectedOtp)
-        );
-        return;
-      }
-
-      if (rawInput !== expectedOtp) {
-        onReportError(
-          `Incorrect OTP Entered for Order #${trip.id}`,
-          `You entered "${rawInput}", which does not match the required 4-digit OTP "${expectedOtp}".`,
-          `Tap "Auto-Fix & Verify OTP (${expectedOtp})" below to complete delivery immediately.`,
-          () => handleVerifyTripOtpAndComplete(trip, expectedOtp)
-        );
-        return;
-      }
-
-      const completedAtTime = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-
-      // 1. Update captainRadarJobs (or insert if it originated from store orders)
-      const existsInRadar = captainRadarJobs.some((x) => x.id === trip.id);
-      if (existsInRadar) {
-        setCaptainRadarJobs(
-          captainRadarJobs.map((x) =>
-            x.id === trip.id
-              ? {
-                  ...x,
-                  status: "COMPLETED_DELIVERED",
-                  completedAt: completedAtTime,
-                  paymentReqStatus: "ELIGIBLE_FOR_PAYOUT_REQ"
-                }
-              : x
-          )
-        );
-      } else {
-        setCaptainRadarJobs([
-          {
-            ...trip,
-            status: "COMPLETED_DELIVERED",
-            completedAt: completedAtTime,
-            paymentReqStatus: "ELIGIBLE_FOR_PAYOUT_REQ"
-          },
-          ...captainRadarJobs
-        ]);
-      }
-
-      // 2. Update orders array so Merchant & Customer portals see DELIVERED_REVIEW_POPUP!
-      setOrders(
-        orders.map((o) =>
-          o.id === trip.id
-            ? {
-                ...o,
-                status: "DELIVERED_REVIEW_POPUP",
-                completedAt: completedAtTime,
-                paymentReqStatus: "ELIGIBLE_FOR_PAYOUT_REQ"
-              }
-            : o
-        )
-      );
-
-      // 3. Clear OTP input & display instant visual confirmation card
-      const nextInputs = { ...dropOtpInputs };
-      delete nextInputs[trip.id];
-      setDropOtpInputs(nextInputs);
-
-      const payoutAmt = trip.captainPayout || trip.deliveryFee || 45;
-      setOtpVerifiedBanner({
-        id: trip.id,
-        otp: expectedOtp,
-        payout: payoutAmt,
-        route: `${trip.pickupPin || trip.shopName} -> ${
-          trip.dropPin || trip.address
-        }`
-      });
-
-      onTriggerToast(
-        `OTP (${expectedOtp}) Verified! Order #${trip.id} Delivered & Rs.${payoutAmt} added to Earnings.`
-      );
-    } catch (err) {
-      onReportError(
-        "OTP Verification Exception",
-        err?.message || String(err),
-        "Verify order state in RiderCaptainPortal.jsx"
-      );
-    }
+  const handleVerifyTripOtpAndComplete = () => {
+    onReportError(
+      "Delivery verification unavailable",
+      "The backend has not issued a customer-bound, expiring delivery OTP. No delivery status or payout was changed.",
+      "Complete the secure OTP endpoint and provider-side verification before enabling delivery completion."
+    );
   };
 
   const handleDownloadCaptainStatementPdf = () => {
@@ -686,7 +594,7 @@ export default function RiderCaptainPortal({
             </div>
           ) : (
             activeAcceptedTrips.map((trip) => {
-              const otpCode = String(trip.secretOtp || "4499").trim();
+              const otpCode = "";
               return (
                 <div
                   key={trip.id}
@@ -723,14 +631,14 @@ export default function RiderCaptainPortal({
                       }}
                       className="bg-teal-500/20 border border-teal-400 text-teal-200 px-2.5 py-1 rounded-lg text-[9px] font-black cursor-pointer"
                     >
-                      Auto-Fill &amp; Verify ({otpCode})
+                      Demo-only: verification unavailable
                     </button>
                   </div>
                   <div className="flex gap-1.5">
                     <input
                       type="text"
                       maxLength={4}
-                      placeholder={`Enter OTP (${otpCode})`}
+                      placeholder="Server-issued delivery OTP (not configured)"
                       value={dropOtpInputs[trip.id] ?? ""}
                       onChange={(e) =>
                         setDropOtpInputs({
@@ -745,7 +653,7 @@ export default function RiderCaptainPortal({
                       onClick={() => handleVerifyTripOtpAndComplete(trip)}
                       className="flex-1 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black rounded-xl text-[10px] cursor-pointer shadow"
                     >
-                      Verify OTP &amp; Complete Delivery &rarr;
+                      Server verification required
                     </button>
                   </div>
                 </div>
