@@ -95,23 +95,30 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (rolesError) throw rolesError;
       const customerRole = (roles || []).find((item) => item.role === "customer" && item.status === "approved");
       if (!customerRole) throw new Error("Verified Supabase session has no approved customer role.");
-      const customer = {
+      const preferredRole = currentUser?.authUserId === user.id ? currentUser.role : "customer";
+      const approvedRole = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
+      const resolvedRole = approvedRole?.role || "customer";
+      const signedInUser = {
         id: user.id,
         authUserId: user.id,
         phone: user.phone || profile?.phone || "",
         fullName: profile?.full_name || user.user_metadata?.full_name || "",
         businessName: profile?.business_name || "",
         area: profile?.area || "",
-        role: "customer",
+        role: resolvedRole,
         status: "Approved",
         isGuest: false
       };
       if (!active) return;
-      setLocalUser(customer);
-      setCurrentUser?.(customer);
-      saveCloudAndLocalState({ currentUser: customer });
-      setActivePortal?.("customer");
-      onSelectRole?.("customer");
+      setLocalUser(signedInUser);
+      setCurrentUser?.(signedInUser);
+      saveCloudAndLocalState({ currentUser: signedInUser });
+      if (resolvedRole !== "customer") {
+        onPartnerAuthenticated?.(resolvedRole, signedInUser);
+      } else {
+        setActivePortal?.("customer");
+        onSelectRole?.("customer");
+      }
     })().catch((error) => {
       console.warn("WE4ALL session restore failed:", error?.message || error);
       if (active) {
@@ -238,7 +245,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
         setLocalUser(partnerUser);
         setCurrentUser?.(partnerUser);
         saveCloudAndLocalState({ currentUser: partnerUser });
-        onPartnerAuthenticated?.(requestedRole, partnerUser);
         setFormFeedback({ type: "success", message: `${requestedRole.replace("_", " ")} portal access verified.` });
         setSubTab("account_details");
         return;
