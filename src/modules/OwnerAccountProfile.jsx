@@ -59,7 +59,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
     businessName: "",
     phone: "",
     upiId: "",
-    pin: "",
     area: "Subhash Nagar, Adilabad"
   });
 
