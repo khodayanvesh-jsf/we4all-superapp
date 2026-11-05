@@ -1,12 +1,20 @@
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "3.2.2";
+const CURRENT_SCHEMA_VERSION = "3.2.3";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
 const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
 const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
-const SCHEMA_MIGRATED_KEY = "we4all_schema_restored_apk_v1";
+const SCHEMA_MIGRATED_KEY = "we4all_schema_restored_apk_v323";
 const SERVER_CONFIG_KEY = "we4all_custom_server_config_v1";
 const ADMIN_CREDS_KEY = "we4all_founder_credentials_v1";
 const ZONE_MASTER_ID = "adilabad_master";
+
+export function normalizeSupabaseBaseUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") return "";
+  return rawUrl
+    .trim()
+    .replace(/\/rest\/v1\/?.*$/i, "")
+    .replace(/\/+$/, "");
+}
 
 export function getServerConfig() {
   let saved = {};
@@ -15,17 +23,21 @@ export function getServerConfig() {
       saved = JSON.parse(localStorage.getItem(SERVER_CONFIG_KEY) || "{}");
     } catch (e) {}
   }
-  const supabaseUrl =
+  const rawSupaUrl =
     saved.supabaseUrl ||
     import.meta.env.VITE_SUPABASE_URL ||
     "https://rjwxsjdayublcmcciuww.supabase.co";
-  const supabaseAnonKey =
-    saved.supabaseAnonKey || import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-  const relayEndpoint = saved.relayEndpoint || `${LIVE_CLOUD_ORIGIN}/api/sync`;
+  const supabaseUrl = normalizeSupabaseBaseUrl(rawSupaUrl);
+  const supabaseAnonKey = String(
+    saved.supabaseAnonKey || import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+  ).trim();
+  const relayEndpoint = String(
+    saved.relayEndpoint || `${LIVE_CLOUD_ORIGIN}/api/sync`
+  ).trim();
   return {
-    supabaseUrl: String(supabaseUrl || "").trim(),
-    supabaseAnonKey: String(supabaseAnonKey || "").trim(),
-    relayEndpoint: String(relayEndpoint || `${LIVE_CLOUD_ORIGIN}/api/sync`).trim(),
+    supabaseUrl,
+    supabaseAnonKey,
+    relayEndpoint,
     hasSupabaseKey: Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith("https://"))
   };
 }
@@ -34,7 +46,12 @@ export function saveServerConfig(newConfig = {}) {
   if (typeof window === "undefined") return;
   try {
     const current = getServerConfig();
-    const merged = { ...current, ...newConfig, updatedAt: new Date().toISOString() };
+    const merged = {
+      ...current,
+      ...newConfig,
+      supabaseUrl: normalizeSupabaseBaseUrl(newConfig.supabaseUrl || current.supabaseUrl),
+      updatedAt: new Date().toISOString()
+    };
     localStorage.setItem(SERVER_CONFIG_KEY, JSON.stringify(merged));
   } catch (e) {}
 }
@@ -88,8 +105,22 @@ const syncChannel =
 
 let cloudSyncDebounceTimer = null;
 let lastAppliedCloudTimestamp = "";
+let lastPushedFingerprint = "";
+let isApplyingRemoteState = false;
 
-export function getDeviceInstalledVersion(fallback = "3.2.2") {
+function computeStateFingerprint(stateObj) {
+  if (!stateObj || typeof stateObj !== "object") return "";
+  try {
+    const clone = { ...stateObj };
+    delete clone.lastSyncedAt;
+    delete clone.liveDeviceTelemetry;
+    return JSON.stringify(clone);
+  } catch (e) {
+    return "";
+  }
+}
+
+export function getDeviceInstalledVersion(fallback = "3.2.3") {
   if (typeof window === "undefined") return fallback;
   return localStorage.getItem(INSTALLED_VER_KEY) || fallback;
 }
@@ -141,7 +172,6 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
 
 async function pushPayloadToCloudServers(payload, nowIso) {
   const cfg = getServerConfig();
-  // 1. Push to Vercel Live Multi-Device Relay (/api/sync) - works across all devices with zero config
   try {
     const relayUrl =
       typeof window !== "undefined" && window.location.origin.includes("vercel.app")
@@ -160,27 +190,6 @@ async function pushPayloadToCloudServers(payload, nowIso) {
       })
     });
   } catch (e) {}
-
-  // 2. Push directly to Supabase PostgreSQL if Anon Key is configured
-  if (cfg.hasSupabaseKey) {
-    try {
-      await fetch(`${cfg.supabaseUrl}/rest/v1/we4all_town_state?on_conflict=zone_id`, {
-        method: "POST",
-        headers: {
-          apikey: cfg.supabaseAnonKey,
-          Authorization: `Bearer ${cfg.supabaseAnonKey}`,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates"
-        },
-        body: JSON.stringify({
-          zone_id: ZONE_MASTER_ID,
-          state_payload: payload,
-          app_version: CURRENT_SCHEMA_VERSION,
-          updated_at: nowIso
-        })
-      });
-    } catch (e) {}
-  }
 }
 
 export async function wipeAllOnlineAndOfflineData() {
@@ -213,13 +222,16 @@ export async function wipeAllOnlineAndOfflineData() {
     ].forEach((k) => localStorage.removeItem(k));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
   }
+  lastPushedFingerprint = computeStateFingerprint(cleanState);
   await pushPayloadToCloudServers(cleanState, freshTimestamp);
   if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", payload: cleanState });
   return cleanState;
 }
 
+export const wipeAllPreinstalledServerData = wipeAllOnlineAndOfflineData;
+
 export function saveCloudAndLocalState(stateSlice) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || isApplyingRemoteState) return;
   try {
     const existing = loadCloudAndLocalState() || {};
     const nowIso = new Date().toISOString();
@@ -229,7 +241,7 @@ export function saveCloudAndLocalState(stateSlice) {
         localStorage.setItem(ADMIN_CREDS_KEY, JSON.stringify(merged.founderCredentials));
       } catch (e) {}
     }
-    lastAppliedCloudTimestamp = nowIso;
+
     const serialized = JSON.stringify(merged);
     try {
       localStorage.setItem(STORAGE_KEY, serialized);
@@ -238,11 +250,20 @@ export function saveCloudAndLocalState(stateSlice) {
       localStorage.removeItem(BACKUP_KEY);
       localStorage.setItem(STORAGE_KEY, serialized);
     }
+
+    // Only push over network if business data actually changed (stops 1-second infinite POST loop)
+    const nextFingerprint = computeStateFingerprint(merged);
+    if (nextFingerprint && nextFingerprint === lastPushedFingerprint) {
+      return;
+    }
+    lastPushedFingerprint = nextFingerprint;
+    lastAppliedCloudTimestamp = nowIso;
+
     if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", payload: merged });
     if (cloudSyncDebounceTimer) clearTimeout(cloudSyncDebounceTimer);
     cloudSyncDebounceTimer = setTimeout(() => {
       pushPayloadToCloudServers(merged, nowIso);
-    }, 300);
+    }, 650);
   } catch (e) {}
 }
 
@@ -256,6 +277,11 @@ export function loadCloudAndLocalState() {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(BACKUP_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
+    if (parsed && parsed.appUpdateInfo) {
+      parsed.appUpdateInfo.currentVersion = CURRENT_SCHEMA_VERSION;
+      parsed.appUpdateInfo.latestAvailableVersion = CURRENT_SCHEMA_VERSION;
+      parsed.appUpdateInfo.updateAvailable = false;
+    }
     return parsed && typeof parsed === "object" ? parsed : null;
   } catch (e) {
     return null;
@@ -270,14 +296,16 @@ export async function checkLiveCloudOtaManifest(callback) {
     });
     if (!res.ok) return null;
     const remoteOta = await res.json();
-    const installedVer = getDeviceInstalledVersion("3.2.2");
+    const installedVer = getDeviceInstalledVersion(CURRENT_SCHEMA_VERSION);
     if (remoteOta?.latestAvailableVersion) {
-      const hasNewer = remoteOta.latestAvailableVersion !== installedVer;
+      const hasNewer =
+        remoteOta.latestAvailableVersion !== installedVer &&
+        remoteOta.latestAvailableVersion > installedVer;
       const updatedInfo = {
         ...remoteOta,
         currentVersion: installedVer,
         latestAvailableVersion: remoteOta.latestAvailableVersion,
-        updateAvailable: Boolean(hasNewer || remoteOta.updateAvailable)
+        updateAvailable: Boolean(hasNewer)
       };
       if (callback) callback({ appUpdateInfo: updatedInfo });
       return updatedInfo;
@@ -293,7 +321,7 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
   let watchId = null;
   let currentCoords = {
     lat: 19.6641,
-    lng: 78.5320,
+    lng: 78.532,
     accuracyMeters: 10,
     speedKmh: 0,
     source: "Adilabad Town GPS"
@@ -359,12 +387,12 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
           pushPing();
         },
         () => pushPing(),
-        { enableHighAccuracy: true, maximumAge: 8000, timeout: 10000 }
+        { enableHighAccuracy: true, maximumAge: 15000, timeout: 12000 }
       );
     } catch (e) {}
   }
-  const initTimer = setTimeout(pushPing, 200);
-  const heartbeat = setInterval(pushPing, 12000);
+  const initTimer = setTimeout(pushPing, 400);
+  const heartbeat = setInterval(pushPing, 25000);
   return () => {
     clearTimeout(initTimer);
     if (watchId !== null && "geolocation" in navigator) {
@@ -376,32 +404,6 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
 
 export async function pullRemoteSupabaseState(applyIncomingPayload) {
   const cfg = getServerConfig();
-  // 1. Try Supabase REST first if Anon Key is configured
-  if (cfg.hasSupabaseKey) {
-    try {
-      const res = await fetch(
-        `${cfg.supabaseUrl}/rest/v1/we4all_town_state?zone_id=eq.${ZONE_MASTER_ID}&select=state_payload,updated_at`,
-        {
-          method: "GET",
-          headers: {
-            apikey: cfg.supabaseAnonKey,
-            Authorization: `Bearer ${cfg.supabaseAnonKey}`
-          },
-          cache: "no-store"
-        }
-      );
-      if (res.ok) {
-        const rows = await res.json();
-        const remotePayload = rows?.[0]?.state_payload;
-        if (remotePayload && Object.keys(remotePayload).length > 0) {
-          if (applyIncomingPayload) applyIncomingPayload(remotePayload);
-          return remotePayload;
-        }
-      }
-    } catch (e) {}
-  }
-
-  // 2. Pull from Live Vercel Cloud Relay (/api/sync) so all devices sync even without Supabase key
   try {
     const relayUrl =
       typeof window !== "undefined" && window.location.origin.includes("vercel.app")
@@ -433,9 +435,14 @@ export function subscribeToRealtimeUpdates(callback) {
     ) {
       return;
     }
+    const incomingFp = computeStateFingerprint(remotePayload);
+    if (incomingFp && incomingFp === lastPushedFingerprint) {
+      return;
+    }
     if (remotePayload.lastSyncedAt) {
       lastAppliedCloudTimestamp = remotePayload.lastSyncedAt;
     }
+    lastPushedFingerprint = incomingFp;
     if (remotePayload.founderCredentials) {
       try {
         localStorage.setItem(
@@ -445,21 +452,26 @@ export function subscribeToRealtimeUpdates(callback) {
       } catch (e) {}
     }
     try {
+      isApplyingRemoteState = true;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(remotePayload));
-    } catch (e) {}
-    callback(remotePayload);
+      callback(remotePayload);
+    } catch (e) {
+    } finally {
+      setTimeout(() => {
+        isApplyingRemoteState = false;
+      }, 250);
+    }
   };
   pullRemoteSupabaseState(applyIncomingPayload);
-  checkLiveCloudOtaManifest(callback);
   const handler = (event) => {
     if (event.data && event.data.type === "STATE_UPDATED") {
-      callback(event.data.payload);
+      applyIncomingPayload(event.data.payload);
     }
   };
   const storageHandler = (e) => {
     if (e.key === STORAGE_KEY && e.newValue) {
       try {
-        callback(JSON.parse(e.newValue));
+        applyIncomingPayload(JSON.parse(e.newValue));
       } catch (err) {}
     }
   };
@@ -467,8 +479,7 @@ export function subscribeToRealtimeUpdates(callback) {
   window.addEventListener("storage", storageHandler);
   const cloudPollTimer = setInterval(() => {
     pullRemoteSupabaseState(applyIncomingPayload);
-    checkLiveCloudOtaManifest(callback);
-  }, 4000);
+  }, 8000);
   return () => {
     if (syncChannel) syncChannel.removeEventListener("message", handler);
     window.removeEventListener("storage", storageHandler);
@@ -477,7 +488,7 @@ export function subscribeToRealtimeUpdates(callback) {
 }
 
 export function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress, onComplete) {
-  const ver = targetVersion || "3.2.2";
+  const ver = targetVersion || CURRENT_SCHEMA_VERSION;
   const currentData = loadCloudAndLocalState() || {};
   const updatedAppInfo = {
     ...(currentData.appUpdateInfo || {}),
@@ -511,4 +522,3 @@ export function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress
     }
   }, 350);
 }
-export const wipeAllPreinstalledServerData = wipeAllOnlineAndOfflineData;

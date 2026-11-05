@@ -1,8 +1,16 @@
 globalThis.__WE4ALL_CLOUD_STATE__ = globalThis.__WE4ALL_CLOUD_STATE__ || {
   lastSyncedAt: new Date().toISOString(),
-  app_version: "3.2.2",
+  app_version: "3.2.3",
   state_payload: {}
 };
+
+function normalizeSupabaseBaseUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") return "";
+  return rawUrl
+    .trim()
+    .replace(/\/rest\/v1\/?.*$/i, "")
+    .replace(/\/+$/, "");
+}
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -14,8 +22,10 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  const supaUrl = process.env.VITE_SUPABASE_URL || "https://rjwxsjdayublcmcciuww.supabase.co";
-  const supaKey = process.env.VITE_SUPABASE_ANON_KEY || "";
+  const supaUrl = normalizeSupabaseBaseUrl(
+    process.env.VITE_SUPABASE_URL || "https://rjwxsjdayublcmcciuww.supabase.co"
+  );
+  const supaKey = (process.env.VITE_SUPABASE_ANON_KEY || "").trim();
 
   if (req.method === "GET") {
     if (supaUrl && supaKey) {
@@ -49,7 +59,7 @@ export default async function handler(req, res) {
 
       globalThis.__WE4ALL_CLOUD_STATE__ = {
         lastSyncedAt: nowIso,
-        app_version: body.app_version || "3.2.2",
+        app_version: body.app_version || "3.2.3",
         state_payload: {
           ...(globalThis.__WE4ALL_CLOUD_STATE__?.state_payload || {}),
           ...incoming,
@@ -57,11 +67,13 @@ export default async function handler(req, res) {
         }
       };
 
-      const targetSupaUrl = body.customSupabaseUrl || supaUrl;
-      const targetSupaKey = body.customSupabaseKey || supaKey;
+      const targetSupaUrl = normalizeSupabaseBaseUrl(body.customSupabaseUrl || supaUrl);
+      const targetSupaKey = (body.customSupabaseKey || supaKey || "").trim();
+
+      let supabaseSynced = false;
       if (targetSupaUrl && targetSupaKey) {
         try {
-          await fetch(`${targetSupaUrl}/rest/v1/we4all_town_state?on_conflict=zone_id`, {
+          const sr = await fetch(`${targetSupaUrl}/rest/v1/we4all_town_state?on_conflict=zone_id`, {
             method: "POST",
             headers: {
               apikey: targetSupaKey,
@@ -72,15 +84,17 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               zone_id: "adilabad_master",
               state_payload: globalThis.__WE4ALL_CLOUD_STATE__.state_payload,
-              app_version: "3.2.2",
+              app_version: "3.2.3",
               updated_at: nowIso
             })
           });
+          supabaseSynced = sr.ok;
         } catch (e) {}
       }
 
       return res.status(200).json({
         ok: true,
+        supabaseSynced,
         lastSyncedAt: nowIso,
         state_payload: globalThis.__WE4ALL_CLOUD_STATE__.state_payload
       });
