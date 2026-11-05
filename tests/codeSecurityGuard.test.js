@@ -26,6 +26,6 @@ test("redacts a government ID without throwing", () => {
 test("main UI contains no undefined StringString helper calls", async () => {
   const app = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
   const guard = await readFile(new URL("../src/modules/security/CodeSecurityGuard.js", import.meta.url), "utf8");
-  assert.doesNotMatch(app, /StringString\\s*\\(/);
+  assert.doesNotMatch(app, /StringString\s*\(/);
   assert.doesNotMatch(guard, /StringString\\s*\\(/);
 });
