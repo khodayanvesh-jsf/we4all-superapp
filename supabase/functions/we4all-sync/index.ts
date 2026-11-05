@@ -1,6 +1,13 @@
 import { withSupabase } from "npm:@supabase/server@1.9.2";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Max-Age": "86400"
+};
 const JSON_HEADERS = {
+  ...CORS_HEADERS,
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store, no-cache, must-revalidate"
 };
@@ -9,7 +16,7 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
 
-Deno.serve(withSupabase({ auth: "user" }, async (req, ctx) => {
+const authenticatedHandler = withSupabase({ auth: "user" }, async (req, ctx) => {
   if (!["GET", "PUT", "POST"].includes(req.method)) {
     return json({ ok: false, error: "Method not allowed" }, 405);
   }
@@ -76,4 +83,20 @@ Deno.serve(withSupabase({ auth: "user" }, async (req, ctx) => {
   }
 
   return json({ ok: true, user_id: userId, updated_at: data.updated_at });
-}));
+});
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { status: 204, headers: CORS_HEADERS });
+  }
+  const response = await authenticatedHandler(req);
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(CORS_HEADERS)) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+});
