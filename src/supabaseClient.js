@@ -143,11 +143,17 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
   }
 }
 
-async function invokeUserSync(method, payload) {
+async function invokeUserSync(method, payload, expectedUserId = null) {
   if (!supabase) return { ok: false, reason: "Supabase is not configured" };
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   const activeUserId = getActiveSupabaseUserId();
-  if (sessionError || !session?.access_token || !activeUserId || session.user?.id !== activeUserId) {
+  if (
+    sessionError ||
+    !session?.access_token ||
+    !activeUserId ||
+    session.user?.id !== activeUserId ||
+    (expectedUserId && expectedUserId !== activeUserId)
+  ) {
     throw new Error("A matching verified Supabase account is required for cloud sync.");
   }
 
@@ -254,15 +260,17 @@ export function clearActiveSupabaseAccount() {
   lastPushedFingerprint = "";
 }
 
-async function pushPayloadToCloudServers(payload, nowIso) {
+async function pushPayloadToCloudServers(payload, nowIso, ownerUserId) {
   try {
     const activeUserId = getActiveSupabaseUserId();
-    if (!activeUserId) return { ok: false, reason: "No active verified account cache" };
+    if (!ownerUserId || !activeUserId || activeUserId !== ownerUserId) {
+      return { ok: false, reason: "Save belongs to a different or unauthenticated account" };
+    }
     const safePayload = { ...payload, lastSyncedAt: nowIso };
     delete safePayload.founderCredentials;
     delete safePayload.supabaseSecretKey;
     delete safePayload.serviceRoleKey;
-    return await invokeUserSync("PUT", safePayload);
+    return await invokeUserSync("PUT", safePayload, ownerUserId);
   } catch (error) {
     console.error("WE4ALL authenticated cloud save failed:", error?.message || error);
     return { ok: false, reason: error?.message || "Cloud save failed" };
@@ -322,6 +330,7 @@ export function saveCloudAndLocalState(stateSlice) {
       localStorage.removeItem(ADMIN_CREDS_KEY);
     } catch (e) {}
 
+    const ownerUserId = getActiveSupabaseUserId();
     const serialized = JSON.stringify(merged);
     try {
       localStorage.setItem(STORAGE_KEY, serialized);
@@ -345,8 +354,9 @@ export function saveCloudAndLocalState(stateSlice) {
 
     if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", userId: getActiveSupabaseUserId(), payload: merged }); localWindowSubscribers.forEach((fn) => { try { fn(merged); } catch (e) {} });
     if (cloudSyncDebounceTimer) clearTimeout(cloudSyncDebounceTimer);
+    if (!ownerUserId) return; // Guest/local edits must never sync into the next signed-in user's account.
     cloudSyncDebounceTimer = setTimeout(() => {
-      pushPayloadToCloudServers(merged, nowIso);
+      pushPayloadToCloudServers(merged, nowIso, ownerUserId);
     }, 650);
   } catch (e) {}
 }
@@ -505,7 +515,8 @@ export async function pullRemoteSupabaseState(applyIncomingPayload) {
   try {
     const activeUserId = getActiveSupabaseUserId();
     if (!activeUserId) return null;
-    const remote = await invokeUserSync("GET");
+    const remote = await invokeUserSync("GET", undefined, activeUserId);
+    if (getActiveSupabaseUserId() !== activeUserId) return null;
     const payload = remote?.state_payload;
     if (payload && typeof payload === "object" && Object.keys(payload).length) {
       const nextPayload = { ...payload, lastSyncedAt: remote.updated_at || payload.lastSyncedAt };
@@ -599,6 +610,7 @@ export function subscribeToRealtimeUpdates(callback) {
           filter: `user_id=eq.${activeUserId}`
         },
         (event) => {
+          if (getActiveSupabaseUserId() !== activeUserId) return;
           const row = event.new;
           if (!row?.state_payload || typeof row.state_payload !== "object") return;
           applyIncomingPayload({
