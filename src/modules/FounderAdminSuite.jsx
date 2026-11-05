@@ -44,6 +44,8 @@ export default function FounderAdminSuite({
   serviceBookings = [],
   setServiceBookings = () => {},
   captainRadarJobs = [],
+  decorBids = [],
+  setDecorBids = () => {},
   decorPortfolio = [],
   setDecorPortfolio = () => {},
   pendingMerchants = [],
@@ -88,6 +90,8 @@ export default function FounderAdminSuite({
   const safeProducts = Array.isArray(products) ? products : [];
   const safeHalls = Array.isArray(functionHalls) ? functionHalls : [];
   const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeDecorBids = Array.isArray(decorBids) ? decorBids : [];
+  const safeDecorRequests = safeDecorBids.filter((record) => record.recordType === "DECOR_REQUEST" && record.status === "PENDING_FOUNDER_AVAILABILITY_REVIEW");
   const safeServiceBookings = Array.isArray(serviceBookings) ? serviceBookings : [];
   const safePendingMerchants = Array.isArray(pendingMerchants) ? pendingMerchants : [];
   const safePendingServices = Array.isArray(pendingServiceProviders) ? pendingServiceProviders : [];
@@ -609,7 +613,8 @@ export default function FounderAdminSuite({
           <div className="grid grid-cols-3 md:grid-cols-7 gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
             {[
               { id: "captains", label: `1. Captains (${safePendingRiders.length})` },
-              { id: "decorators_halls", label: `2. Decor (${safePendingDecorators.length})` },
+              { id: "decorators_halls", label: `2. Decor Partners (${safePendingDecorators.length})` },
+              { id: "decor_requests", label: `3. Event Requests (${safeDecorRequests.length})` },
               { id: "service_providers", label: `3. Services (${safePendingServices.length})` },
               { id: "merchants", label: `4. Merchants (${safePendingMerchants.length})` },
               { id: "brands", label: `5. Brands (${safePendingBrands.length})` },
@@ -649,6 +654,76 @@ export default function FounderAdminSuite({
               ) : (
                 safePendingDecorators.map((d) => renderPartnerApprovalCard(d, "decorator"))
               ))}
+
+            {approvalQueueSubTab === "decor_requests" && (
+              safeDecorRequests.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No customer event requests are waiting for availability review.</p>
+              ) : (
+                safeDecorRequests.map((request) => {
+                  const events = Array.isArray(request.events) ? request.events : [];
+                  const availability = events.map((event) => {
+                    const hall = safeHalls.find((item) => item.id === event.id);
+                    const date = event.eventDate;
+                    const booked = (hall?.bookedDates || []).some((entry) =>
+                      (typeof entry === "string" ? entry : entry.date) === date
+                    );
+                    return { event, hall, date, available: Boolean(hall && hall.status === "Approved" && date && !booked) };
+                  });
+                  const allAvailable = availability.length > 0 && availability.every((entry) => entry.available);
+                  return (
+                    <div key={request.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 space-y-2">
+                      <div className="flex justify-between gap-2">
+                        <strong className="text-amber-200">{request.title || request.id}</strong>
+                        <span className="text-[10px] text-amber-300">PENDING AVAILABILITY REVIEW</span>
+                      </div>
+                      <p className="text-[10px] text-slate-300">
+                        Customer: {request.customerName} · Event total ₹{Number(request.amount || 0).toLocaleString("en-IN")} · Requested advance ₹{Number(request.requestedAdvanceAmount || 0).toLocaleString("en-IN")}
+                      </p>
+                      {availability.map(({ event, hall, date, available }) => (
+                        <p key={event.id} className={available ? "text-emerald-300 text-[10px]" : "text-rose-300 text-[10px]"}>
+                          {event.title || hall?.name || event.id} · {date} · {available ? "Approved hall and date available" : "Hall not approved, missing, or date already blocked"}
+                        </p>
+                      ))}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={!allAvailable}
+                          onClick={() => {
+                            const next = safeDecorBids.map((entry) =>
+                              entry.id === request.id
+                                ? { ...entry, status: "OPEN_FOR_BIDS", availabilityReviewedAt: new Date().toISOString(), availabilityReviewedBy: "founder" }
+                                : entry
+                            );
+                            setDecorBids(next);
+                            saveCloudAndLocalState({ decorBids: next });
+                            onTriggerToast("Availability reviewed. Request opened for competitive decorator bids; no hall booking or payment is confirmed.");
+                          }}
+                          className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
+                        >
+                          Approve availability & open bids
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = safeDecorBids.map((entry) =>
+                              entry.id === request.id
+                                ? { ...entry, status: "REJECTED_FOUNDER_REVIEW", rejectedAt: new Date().toISOString() }
+                                : entry
+                            );
+                            setDecorBids(next);
+                            saveCloudAndLocalState({ decorBids: next });
+                            onTriggerToast("Event request declined with a recorded review status.");
+                          }}
+                          className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]"
+                        >
+                          Decline request
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )
+            )}
 
             {approvalQueueSubTab === "service_providers" &&
               (safePendingServices.length === 0 ? (
