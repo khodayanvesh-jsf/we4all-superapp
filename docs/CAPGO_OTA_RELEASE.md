@@ -16,7 +16,7 @@ The app is configured for background application (`atBackground`). A bundle is d
    ```bash
    npx @capgo/cli@latest key create
    npx @capgo/cli@latest key save --key ./.capgo_key_v2.pub
-   npx cap sync android
+   npx cap sync
    ```
 
 5. Commit the updated `capacitor.config.json` containing the Capgo public key. The public key is not a secret; the private `.capgo_key_v2` must never be committed, uploaded as an artifact, or sent in chat.
