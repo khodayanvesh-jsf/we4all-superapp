@@ -519,7 +519,23 @@ export default function FounderAdminSuite({
               setPendingMerchants(nextPending);
               saveCloudAndLocalState({ merchants: nextMer, pendingMerchants: nextPending });
             }
-            onTriggerToast(`Approved & Synced "${displayName}" LIVE across all devices!`);
+            const nextRegisteredUsersAfterApproval = safeUsers.map((u) =>
+              u?.id === partner.id || (u?.phone && u.phone === partner.phone)
+                ? { ...u, status: "Approved", isPublished: true, approvedAt: approvedObj.approvedAt }
+                : u
+            );
+            setRegisteredUsers(nextRegisteredUsersAfterApproval);
+            saveCloudAndLocalState({
+              registeredUsers: nextRegisteredUsersAfterApproval,
+              lastApprovedPartnerNotification: {
+                partnerId: partner.id,
+                phone: partner.phone,
+                name: displayName,
+                role: partnerType,
+                approvedAt: approvedObj.approvedAt
+              }
+            });
+            onTriggerToast(`Approved & Notified "${displayName}" LIVE across all devices!`);
           }}
           className={`w-full font-black py-2.5 rounded-xl text-xs ${
             allFiveChecked
