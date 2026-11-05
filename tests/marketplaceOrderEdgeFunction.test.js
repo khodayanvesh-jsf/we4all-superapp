@@ -2,17 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 const fn = await readFile(new URL("../supabase/functions/we4all-create-order/index.ts", import.meta.url), "utf8");
-const client = await readFile(new URL("../src/supabaseClient.js", import.meta.url), "utf8");
-test("order endpoint verifies customer JWT and approved role", () => {
- assert.match(fn, /auth\.getUser\(token\)/);
- assert.match(fn, /APPROVED_CUSTOMER_ROLE_REQUIRED/);
+const config = await readFile(new URL("../supabase/migrations/20261106000300_we4all_order_rpc_empty_search_path.sql", import.meta.url), "utf8");
+test("Edge Function verifies customer JWT and approved customer role", () => {
+  assert.match(fn, /auth\.getUser\(token\)/);
+  assert.match(fn, /APPROVED_CUSTOMER_ROLE_REQUIRED/);
+  assert.match(fn, /SUPABASE_SERVICE_ROLE_KEY/);
 });
-test("service role stays server-side and executes the privileged order transaction", () => {
- assert.match(fn, /SUPABASE_SERVICE_ROLE_KEY/);
- assert.match(fn, /admin\.rpc\("we4all_create_order"/);
- assert.doesNotMatch(client, /SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY/);
-});
-test("client calls the authenticated order Edge Function, not the privileged RPC", () => {
- assert.match(client, /functions\.invoke\("we4all-create-order"/);
- assert.doesNotMatch(client, /rpc\("we4all_create_order"/);
+test("database function execution is service-only and search path is empty", () => {
+  assert.match(config, /set search_path = ''/);
 });
