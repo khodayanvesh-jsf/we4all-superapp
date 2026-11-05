@@ -1319,43 +1319,60 @@ function AppContent() {
                             triggerToast("The service cart has an invalid visiting-fee total.");
                             return;
                           }
-                          const bookingKey = JSON.stringify(
-                            serviceCart.map((item) => ({
-                              providerId: item.providerId || "",
-                              providerName: item.providerName || "",
-                              bookingDate: item.bookingDate || serviceFilterDate,
-                              bookingSlot: item.bookingSlot || "",
-                              visitingFee: Number(item.visitingFee || 0)
-                            })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-                          );
-                          const pendingExisting = (serviceBookings || []).find((booking) =>
-                            booking.customerId === currentUser.id &&
-                            booking.bookingKey === bookingKey &&
-                            ["AWAITING_VERIFIED_PAYMENT", "PAYMENT_SETUP_REQUIRED"].includes(booking.status)
-                          );
-                          const booking = pendingExisting || {
-                            id: "SRV-" + (globalThis.crypto?.randomUUID?.() || Date.now()),
-                            bookingKey,
-                            customerId: currentUser.id,
-                            customerName: currentUser.fullName || currentUser.name || "Customer",
-                            bookingItems: serviceCart,
-                            providerId: serviceCart[0]?.providerId || null,
-                            providerName: serviceCart.map((item) => item.providerName).join(", "),
-                            bookedDate: serviceCart[0]?.bookingDate || serviceFilterDate,
-                            bookedSlot: serviceCart.map((item) => item.bookingSlot).join(", "),
-                            visitingFee: total,
-                            escrowVisitingAmount: total,
-                            escrowStatus: "NOT_FUNDED",
-                            paymentStatus: "PENDING",
-                            happyCodeStatus: "NOT_ISSUED",
-                            status: "AWAITING_VERIFIED_PAYMENT",
-                            createdAt: new Date().toISOString()
-                          };
-                          if (!pendingExisting) setServiceBookings([booking, ...(serviceBookings || [])]);
+                          const grouped = new Map();
+                          for (const item of serviceCart) {
+                            const providerId = item.providerId || item.id || item.providerName;
+                            if (!providerId) continue;
+                            const current = grouped.get(providerId) || [];
+                            current.push(item);
+                            grouped.set(providerId, current);
+                          }
+                          if (!grouped.size) {
+                            triggerToast("The service cart does not contain a provider identity. No booking request was created.");
+                            return;
+                          }
+                          const pendingBookings = [];
+                          for (const [providerId, items] of grouped.entries()) {
+                            const bookingKey = JSON.stringify(
+                              items.map((item) => ({
+                                providerId,
+                                providerName: item.providerName || "",
+                                bookingDate: item.bookingDate || serviceFilterDate,
+                                bookingSlot: item.bookingSlot || "",
+                                visitingFee: Number(item.visitingFee || 0)
+                              })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+                            );
+                            const existing = (serviceBookings || []).find((booking) =>
+                              booking.customerId === currentUser.id &&
+                              booking.bookingKey === bookingKey &&
+                              ["AWAITING_VERIFIED_PAYMENT", "PAYMENT_SETUP_REQUIRED"].includes(booking.status)
+                            );
+                            pendingBookings.push(existing || {
+                              id: "SRV-" + (globalThis.crypto?.randomUUID?.() || Date.now() + "-" + providerId),
+                              bookingKey,
+                              customerId: currentUser.id,
+                              customerName: currentUser.fullName || currentUser.name || "Customer",
+                              bookingItems: items,
+                              providerId,
+                              providerName: items[0]?.providerName || "Service provider",
+                              bookedDate: items[0]?.bookingDate || serviceFilterDate,
+                              bookedSlot: items.map((item) => item.bookingSlot).join(", "),
+                              visitingFee: items.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0),
+                              escrowVisitingAmount: items.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0),
+                              escrowStatus: "NOT_FUNDED",
+                              paymentStatus: "PENDING",
+                              happyCodeStatus: "NOT_ISSUED",
+                              status: "AWAITING_VERIFIED_PAYMENT",
+                              createdAt: new Date().toISOString()
+                            });
+                          }
+                          const knownIds = new Set((serviceBookings || []).map((booking) => booking.id));
+                          const newBookings = pendingBookings.filter((booking) => !knownIds.has(booking.id));
+                          if (newBookings.length) setServiceBookings([...newBookings, ...(serviceBookings || [])]);
                           setPendingUpiPayment({
                             type: "SERVICE_ESCROW",
-                            orderId: booking.id,
-                            title: "Service booking " + booking.id + " — visiting fee",
+                            orderId: pendingBookings.map((booking) => booking.id).join(","),
+                            title: "Service visiting-fee payment",
                             amount: total
                           });
                         }}
