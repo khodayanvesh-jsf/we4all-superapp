@@ -860,3 +860,43 @@ export async function performZeroLossOtaUpdate(targetVersion, releaseNotes, onPr
   onComplete?.(updatedInfo);
   return updatedInfo;
 }
+
+export async function createMarketplaceOrder({
+  partnerId,
+  items,
+  zoneId,
+  deliveryAddress,
+  idempotencyKey
+}) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) {
+    throw new Error("Sign in with a verified WE4ALL customer account before checkout.");
+  }
+  if (!partnerId || !Array.isArray(items) || !items.length) {
+    throw new Error("A live approved merchant and at least one catalogue item are required.");
+  }
+  if (!idempotencyKey || String(idempotencyKey).length < 8) {
+    throw new Error("A stable checkout idempotency key is required.");
+  }
+  const safeItems = items.map((item) => ({
+    catalog_item_id: String(item.catalogItemId || ""),
+    quantity: Number(item.quantity)
+  }));
+  if (safeItems.some((item) => !/^[0-9a-f-]{36}$/i.test(item.catalog_item_id) ||
+    !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100)) {
+    throw new Error("Your cart contains an item that has not been published to the live WE4ALL catalogue.");
+  }
+  const { data, error } = await supabase.rpc("we4all_create_order", {
+    p_partner_id: partnerId,
+    p_items: safeItems,
+    p_zone_id: zoneId,
+    p_delivery_address: deliveryAddress,
+    p_idempotency_key: String(idempotencyKey)
+  });
+  if (error) throw new Error(error.message || "The server could not create your order.");
+  if (!data?.ok || !data?.order_id || data?.payment_status !== "pending") {
+    throw new Error("Order creation did not return a valid pending-payment record.");
+  }
+  return data;
+}
