@@ -1663,7 +1663,7 @@ export default function FounderAdminSuite({
                     pendingServiceProviders: safePendingServices,
                     pendingDecorators: safePendingDecorators,
                     pendingRiders: safePendingRiders,
-                    pendingSubCategories: safePendingSubCategories,
+                    pendingSubCategories: safePendingBrands,
                     rejectedItems: safeRejectedItems,
                     monetizationConfig,
                     appUpdateInfo,
