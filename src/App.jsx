@@ -31,7 +31,7 @@ import MerchantPortal from "./modules/MerchantPortal";
 import ServiceProviderPortal from "./modules/ServiceProviderPortal";
 import DecoratorPortal from "./modules/DecoratorPortal";
 import RiderCaptainPortal from "./modules/RiderCaptainPortal";
-import { canOpenPartnerPortal, isCustomerVisibleListing } from "./modules/workflows/portalRules";
+import { canOpenPartnerPortal, isCustomerVisibleListing, calculateDecoratorAdvance } from "./modules/workflows/portalRules";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
@@ -479,7 +479,7 @@ function AppContent() {
   });
 
   const [providerHappyCodeInput, setProviderHappyCodeInput] = useState("");
-  const [eventDate, setEventDate] = useState("2026-11-10");
+  const [eventDate, setEventDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [captainOtpInput, setCaptainOtpInput] = useState("");
 
   useEffect(() => {
@@ -654,11 +654,26 @@ function AppContent() {
     const gst = Number(((itemsTotal + deliveryFee + silentFee) * 0.05).toFixed(2));
     const grandTotal = Number((itemsTotal + deliveryFee + silentFee + gst).toFixed(2));
 
-    const newOrder = {
-      id: "VFL-" + Math.floor(1000 + Math.random() * 9000),
+    const checkoutKey = JSON.stringify(
+      merchantCart.map((item) => ({
+        merchantId: item.merchantId || "",
+        merchantName: item.merchantName || "",
+        name: item.name || "",
+        price: Number(item.price || 0),
+        qty: Number(item.qty || 1)
+      })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+    );
+    const existingDraft = (orders || []).find((order) =>
+      order.checkoutKey === checkoutKey &&
+      ["AWAITING_VERIFIED_PAYMENT", "PAYMENT_SETUP_REQUIRED"].includes(order.status)
+    );
+    const newOrder = existingDraft || {
+      id: "VFL-" + (globalThis.crypto?.randomUUID?.() || Date.now()),
+      checkoutKey,
       dateStr: new Date().toISOString().slice(0, 10),
-      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      createdAt: new Date().toISOString(),
       periodTag: "TODAY",
+      customerId: currentUser?.id || null,
       customerName: currentUser.fullName,
       address: activeAddressObj.fullAddress,
       distanceKm: totalRouteKm,
@@ -670,14 +685,15 @@ function AppContent() {
       deliveryFee,
       gst,
       grandTotal,
-      riderName: riders[0]?.name || "Assigned Captain",
-      status: "MERCHANT_APPROVED_AWAITING_PAYMENT",
+      riderName: null,
+      status: "AWAITING_VERIFIED_PAYMENT",
+      paymentStatus: "PENDING",
       deliveryVerificationStatus: "AWAITING_SERVER_OTP"
     };
 
-    setOrders([newOrder, ...orders]);
+    if (!existingDraft) setOrders([newOrder, ...(orders || [])]);
     setActiveOrderId(newOrder.id);
-    setMerchantCart([]);
+    // Keep the customer's cart until the payment provider confirms success server-side.
     setPendingUpiPayment({
       type: "APPROVED_MERCHANT_ORDER",
       orderId: newOrder.id,
@@ -1066,6 +1082,7 @@ function AppContent() {
                     />
                   </div>
                   {functionHalls.filter(isCustomerVisibleListing).map((hall) => {
+                    const advance = calculateDecoratorAdvance(hall.pricePerDay || hall.dailyRent, eventDate);
                     const isBooked = (hall.bookedDates || []).some((entry) => (typeof entry === "string" ? entry : entry.date) === eventDate);
                     return (
                       <div
@@ -1075,7 +1092,10 @@ function AppContent() {
                         <div>
                           <h4 className="font-black text-xs">{hall.name}</h4>
                           <p className="text-[10px] text-slate-600">
-                            {hall.capacity} | Rs.{hall.pricePerDay}/day
+                            {hall.capacity} | Rs.{hall.pricePerDay || hall.dailyRent}/day
+                          </p>
+                          <p className="text-[10px] text-amber-700 font-bold">
+                            Required advance: {advance ? `${Math.round(advance.rate * 100)}% · ₹${advance.amount.toLocaleString("en-IN")}` : "Date unavailable"}
                           </p>
                         </div>
                         <button
@@ -1084,7 +1104,15 @@ function AppContent() {
                           onClick={() => {
                             setDecorCart([
                               ...decorCart,
-                              { id: hall.id, title: hall.name, eventDate, price: hall.pricePerDay }
+                              {
+                                id: hall.id,
+                                title: hall.name,
+                                eventDate,
+                                price: Number(hall.pricePerDay || hall.dailyRent || 0),
+                                advanceRate: advance?.rate ?? null,
+                                advanceAmount: advance?.amount ?? null,
+                                hallStatus: hall.status || "Approved"
+                              }
                             ]);
                             triggerToast("Reserved " + hall.name + " in Event Cart!");
                           }}
