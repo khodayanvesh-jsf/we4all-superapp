@@ -27,6 +27,10 @@ import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
 import OrdersHistoryAndInvoice from "./modules/OrdersHistoryAndInvoice";
 import OwnerAccountProfile from "./modules/OwnerAccountProfile";
+import MerchantPortal from "./modules/MerchantPortal";
+import ServiceProviderPortal from "./modules/ServiceProviderPortal";
+import DecoratorPortal from "./modules/DecoratorPortal";
+import RiderCaptainPortal from "./modules/RiderCaptainPortal";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
@@ -372,7 +376,7 @@ function AppContent() {
   const [serviceProviders, setServiceProviders] = useState(
     savedCloud?.serviceProviders || INITIAL_SERVICE_PROVIDERS
   );
-  const [decorators] = useState(savedCloud?.decorators || INITIAL_DECORATORS);
+  const [decorators, setDecorators] = useState(savedCloud?.decorators || INITIAL_DECORATORS);
   const [labourWorkers, setLabourWorkers] = useState(
     savedCloud?.labourWorkers || INITIAL_LABOUR_WORKERS
   );
@@ -380,11 +384,11 @@ function AppContent() {
   const [functionHalls, setFunctionHalls] = useState(
     savedCloud?.functionHalls || INITIAL_FUNCTION_HALLS
   );
-  const [riders] = useState(savedCloud?.riders || INITIAL_RIDERS);
+  const [riders, setRiders] = useState(savedCloud?.riders || INITIAL_RIDERS);
 
-  const [pendingMerchants] = useState(savedCloud?.pendingMerchants || []);
-  const [pendingSubCategories] = useState(savedCloud?.pendingSubCategories || []);
-  const [rejectedItems] = useState(savedCloud?.rejectedItems || []);
+  const [pendingMerchants, setPendingMerchants] = useState(savedCloud?.pendingMerchants || []);
+  const [pendingSubCategories, setPendingSubCategories] = useState(savedCloud?.pendingSubCategories || []);
+  const [rejectedItems, setRejectedItems] = useState(savedCloud?.rejectedItems || []);
   const [monetizationConfig, setMonetizationConfig] = useState(
     savedCloud?.monetizationConfig || {
       globalPlatformFee: 0,
@@ -444,6 +448,12 @@ function AppContent() {
   const [liveOrderDrawerOpen, setLiveOrderDrawerOpen] = useState(false);
   const [serviceBookings, setServiceBookings] = useState(savedCloud?.serviceBookings || []);
   const [labourBookings, setLabourBookings] = useState(savedCloud?.labourBookings || []);
+  const [decorBids, setDecorBids] = useState(savedCloud?.decorBids || []);
+  const [captainRadarJobs, setCaptainRadarJobs] = useState(savedCloud?.captainRadarJobs || []);
+  const [pendingServiceProviders, setPendingServiceProviders] = useState(savedCloud?.pendingServiceProviders || []);
+  const [pendingDecorators, setPendingDecorators] = useState(savedCloud?.pendingDecorators || []);
+  const [pendingRiders, setPendingRiders] = useState(savedCloud?.pendingRiders || []);
+
 
   const [newMerchantProd, setNewMerchantProd] = useState({
     categoryId: "daily_needs",
@@ -499,7 +509,12 @@ function AppContent() {
       taxiCart,
       orders,
       serviceBookings,
-      labourBookings
+      labourBookings,
+      decorBids,
+      captainRadarJobs,
+      pendingServiceProviders,
+      pendingDecorators,
+      pendingRiders
     });
   }, [
     lang,
@@ -528,7 +543,12 @@ function AppContent() {
     taxiCart,
     orders,
     serviceBookings,
-    labourBookings
+    labourBookings,
+    decorBids,
+    captainRadarJobs,
+    pendingServiceProviders,
+    pendingDecorators,
+    pendingRiders
   ]);
 
   useEffect(() => {
@@ -536,6 +556,16 @@ function AppContent() {
       if (remoteState.orders) setOrders(remoteState.orders);
       if (remoteState.serviceBookings) setServiceBookings(remoteState.serviceBookings);
       if (remoteState.labourBookings) setLabourBookings(remoteState.labourBookings);
+      if (remoteState.decorBids) setDecorBids(remoteState.decorBids);
+      if (remoteState.captainRadarJobs) setCaptainRadarJobs(remoteState.captainRadarJobs);
+      if (remoteState.pendingServiceProviders) setPendingServiceProviders(remoteState.pendingServiceProviders);
+      if (remoteState.pendingDecorators) setPendingDecorators(remoteState.pendingDecorators);
+      if (remoteState.pendingRiders) setPendingRiders(remoteState.pendingRiders);
+      if (remoteState.decorators) setDecorators(remoteState.decorators);
+      if (remoteState.riders) setRiders(remoteState.riders);
+      if (remoteState.pendingMerchants) setPendingMerchants(remoteState.pendingMerchants);
+      if (remoteState.pendingSubCategories) setPendingSubCategories(remoteState.pendingSubCategories);
+      if (remoteState.rejectedItems) setRejectedItems(remoteState.rejectedItems);
       if (remoteState.products) setProducts(remoteState.products);
       if (remoteState.appUpdateInfo) setAppUpdateInfo(remoteState.appUpdateInfo);
     });
@@ -1377,306 +1407,117 @@ function AppContent() {
       );
     }
 
+    const renderPartnerAccountTab = () => (
+      <div className="bg-slate-900 text-white rounded-2xl p-4 space-y-3">
+        <h3 className="font-black text-emerald-300">Partner Account</h3>
+        <p className="text-xs">Signed-in role: {portalRole}</p>
+        <p className="text-xs text-slate-400">{currentUser?.fullName || currentUser?.businessName || "Partner"}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setAuthenticatedPartnerRole(null);
+            setCurrentUser({ ...currentUser, isGuest: true });
+            setActivePortal("customer");
+            setFooterTab("home");
+            triggerToast("Partner session ended. Returned to Customer Super-App.");
+          }}
+          className="w-full bg-rose-600 text-white font-black py-2 rounded-xl"
+        >
+          Lock & Exit Partner Portal
+        </button>
+      </div>
+    );
+
     if (portalRole === "merchant") {
       return (
-        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <div className="flex justify-between items-center">
-            <h2 className="font-black text-emerald-900 text-sm">Product Merchant Desk</h2>
-            <button
-              type="button"
-              onClick={() => {
-                setPersonalShoppingFromPartner("merchant");
-                setActivePortal("customer");
-              }}
-              className="bg-indigo-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-            >
-              Shop as Customer
-            </button>
-          </div>
-
-          <div className="space-y-2 border-t pt-2">
-            <h3 className="font-black text-xs">Publish New Product to Live Catalog</h3>
-            <select
-              value={newMerchantProd.categoryId}
-              onChange={(e) =>
-                setNewMerchantProd({ ...newMerchantProd, categoryId: e.target.value })
-              }
-              className="w-full border rounded-xl p-1.5 text-xs font-bold"
-            >
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={newMerchantProd.subCategoryBrand}
-              onChange={(e) =>
-                setNewMerchantProd({ ...newMerchantProd, subCategoryBrand: e.target.value })
-              }
-              placeholder="Product / Brand Title (e.g., Aashirvaad Atta)"
-              className="w-full border rounded-xl p-1.5 text-xs"
-            />
-            <input
-              type="text"
-              value={newMerchantProd.shopName}
-              onChange={(e) =>
-                setNewMerchantProd({ ...newMerchantProd, shopName: e.target.value })
-              }
-              placeholder="Your Shop Name (e.g., Sri Laxmi Kirana)"
-              className="w-full border rounded-xl p-1.5 text-xs"
-            />
-            <div className="grid grid-cols-2 gap-1.5">
-              <input
-                type="number"
-                value={newMerchantProd.price}
-                onChange={(e) =>
-                  setNewMerchantProd({ ...newMerchantProd, price: e.target.value })
-                }
-                placeholder="Selling Price (Rs.)"
-                className="border rounded-xl p-1.5 text-xs"
-              />
-              <input
-                type="number"
-                value={newMerchantProd.mrp}
-                onChange={(e) => setNewMerchantProd({ ...newMerchantProd, mrp: e.target.value })}
-                placeholder="MRP (Rs.)"
-                className="border rounded-xl p-1.5 text-xs"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (!newMerchantProd.subCategoryBrand || !newMerchantProd.price) return;
-                const priceNum = Number(newMerchantProd.price);
-                const created = {
-                  id: "prod_" + Date.now(),
-                  categoryId: newMerchantProd.categoryId,
-                  subCategoryBrand: newMerchantProd.subCategoryBrand,
-                  shopName: newMerchantProd.shopName || currentUser?.businessName || "Adilabad Store",
-                  variants: [
-                    {
-                      id: "v_" + Date.now(),
-                      label: newMerchantProd.variantLabel || "Standard Pack",
-                      price: priceNum,
-                      mrp: Number(newMerchantProd.mrp || priceNum + 20),
-                      weightGrams: 1000
-                    }
-                  ],
-                  merchantOffers: [
-                    {
-                      merchantId: Date.now(),
-                      merchantName: newMerchantProd.shopName || currentUser?.businessName || "Adilabad Store",
-                      price: priceNum,
-                      area: "Adilabad"
-                    }
-                  ]
-                };
-                setProducts([created, ...products]);
-                setNewMerchantProd({
-                  ...newMerchantProd,
-                  subCategoryBrand: "",
-                  price: "",
-                  mrp: ""
-                });
-                triggerToast("Product published live to Customer Super-App!");
-              }}
-              className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-            >
-              + Publish Live Product
-            </button>
-          </div>
-
-          <div className="space-y-2 border-t pt-2">
-            <h3 className="font-black text-xs">Incoming Customer Orders ({(orders || []).length})</h3>
-            {orders.map((o) => (
-              <div key={o.id} className="p-2 border rounded-xl flex justify-between items-center">
-                <div>
-                  <p className="font-black text-xs">
-                    #{o.id} | Rs.{o.grandTotal}
-                  </p>
-                  <p className="text-[10px] text-slate-500">{o.status}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOrders(
-                      orders.map((ord) =>
-                        ord.id === o.id
-                          ? { ...ord, status: "PACKED_HANDED_TO_CAPTAIN" }
-                          : ord
-                      )
-                    );
-                    triggerToast("Order #" + o.id + " handed over to Delivery Captain!");
-                  }}
-                  className="bg-amber-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-                >
-                  Mark Packed & Hand to Rider
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        <MerchantPortal
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          currentUser={currentUser}
+          categories={categories}
+          products={products}
+          setProducts={setProducts}
+          pendingSubCategories={pendingSubCategories}
+          setPendingSubCategories={setPendingSubCategories}
+          rejectedItems={rejectedItems}
+          orders={orders}
+          setOrders={setOrders}
+          onSwitchToPersonalShop={() => {
+            setPersonalShoppingFromPartner("merchant");
+            setActivePortal("customer");
+            setFooterTab("home");
+          }}
+          onTriggerToast={triggerToast}
+          renderAccountTab={renderPartnerAccountTab}
+        />
       );
     }
 
     if (portalRole === "service_provider") {
       return (
-        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <h2 className="font-black text-emerald-900 text-sm">1-Hr Service Provider Desk</h2>
-          <input
-            type="text"
-            value={newSpForm.providerName}
-            onChange={(e) => setNewSpForm({ ...newSpForm, providerName: e.target.value })}
-            placeholder="Provider / Technician Name"
-            className="w-full border rounded-xl p-1.5 text-xs"
-          />
-          <input
-            type="text"
-            value={newSpForm.specialization}
-            onChange={(e) => setNewSpForm({ ...newSpForm, specialization: e.target.value })}
-            placeholder="Specialization (e.g., AC Repair, Master Plumber)"
-            className="w-full border rounded-xl p-1.5 text-xs"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (!newSpForm.providerName) return;
-              setServiceProviders([
-                { id: "sp_" + Date.now(), ...newSpForm },
-                ...serviceProviders
-              ]);
-              setNewSpForm({ ...newSpForm, providerName: "", specialization: "" });
-              triggerToast("Listed in 1-Hr Service Directory!");
-            }}
-            className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-          >
-            + Go Live in 1-Hr Services
-          </button>
-
-          <div className="space-y-2 border-t pt-2">
-            <h3 className="font-black text-xs">Escrow Bookings ({(serviceBookings || []).length})</h3>
-            {serviceBookings.map((sb) => (
-              <div key={sb.id} className="p-2 border rounded-xl space-y-1.5">
-                <p className="font-black text-xs">
-                  {sb.id} | Escrow: Rs.{sb.escrowVisitingAmount} ({sb.escrowStatus})
-                </p>
-                <div className="flex gap-1.5">
-                  <input
-                    type="text"
-                    value={providerHappyCodeInput}
-                    onChange={(e) => setProviderHappyCodeInput(e.target.value)}
-                    placeholder={"Enter Customer Happy Code (" + sb.happyCode + ")"}
-                    className="flex-1 border rounded-lg px-2 py-1 text-[10px]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (providerHappyCodeInput === sb.happyCode) {
-                        setServiceBookings(
-                          serviceBookings.map((b) =>
-                            b.id === sb.id
-                              ? {
-                                  ...b,
-                                  escrowStatus: "RELEASED_TO_PROVIDER_BANK",
-                                  status: "COMPLETED"
-                                }
-                              : b
-                          )
-                        );
-                        setProviderHappyCodeInput("");
-                        triggerToast("Happy Code Verified! Escrow settled to Bank/UPI.");
-                      } else {
-                        triggerToast("Invalid Happy Code!");
-                      }
-                    }}
-                    className="bg-emerald-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-                  >
-                    Verify & Claim
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ServiceProviderPortal
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          currentUser={currentUser}
+          serviceCategories={SERVICE_CATEGORIES}
+          serviceProviders={serviceProviders}
+          setServiceProviders={setServiceProviders}
+          pendingServiceProviders={pendingServiceProviders}
+          serviceBookings={serviceBookings}
+          setServiceBookings={setServiceBookings}
+          onSwitchToPersonalShop={() => {
+            setPersonalShoppingFromPartner("service_provider");
+            setActivePortal("customer");
+            setFooterTab("home");
+          }}
+          onTriggerToast={triggerToast}
+          renderAccountTab={renderPartnerAccountTab}
+        />
       );
     }
 
     if (portalRole === "decorator") {
       return (
-        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <h2 className="font-black text-emerald-900 text-sm">
-            Function Hall & Event Decorator Desk
-          </h2>
-          <input
-            type="text"
-            value={newHallForm.name}
-            onChange={(e) => setNewHallForm({ ...newHallForm, name: e.target.value })}
-            placeholder="Function Hall Name"
-            className="w-full border rounded-xl p-1.5 text-xs"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (!newHallForm.name) return;
-              setFunctionHalls([
-                { id: "hall_" + Date.now(), ...newHallForm, bookedDates: [] },
-                ...functionHalls
-              ]);
-              setNewHallForm({ ...newHallForm, name: "" });
-              triggerToast("Function Hall published!");
-            }}
-            className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-          >
-            + Add Function Hall
-          </button>
-        </div>
+        <DecoratorPortal
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          currentUser={currentUser}
+          functionHalls={functionHalls}
+          setFunctionHalls={setFunctionHalls}
+          decorBids={decorBids}
+          setDecorBids={setDecorBids}
+          onSwitchToPersonalShop={() => {
+            setPersonalShoppingFromPartner("decorator");
+            setActivePortal("customer");
+            setFooterTab("home");
+          }}
+          onTriggerToast={triggerToast}
+          renderAccountTab={renderPartnerAccountTab}
+        />
       );
     }
 
     if (portalRole === "rider") {
       return (
-        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <h2 className="font-black text-emerald-900 text-sm">Delivery Captain Live Radar</h2>
-          {activeOrder ? (
-            <div className="space-y-2">
-              <LiveRouteMap order={activeOrder} brightTheme={brightTheme} />
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  value={captainOtpInput}
-                  onChange={(e) => setCaptainOtpInput(e.target.value)}
-                  placeholder={"Customer Delivery OTP (" + activeOrder.secretOtp + ")"}
-                  className="flex-1 border rounded-xl px-2.5 py-1.5 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (captainOtpInput === activeOrder.secretOtp) {
-                      setOrders(
-                        orders.map((o) =>
-                          o.id === activeOrder.id ? { ...o, status: "DELIVERED" } : o
-                        )
-                      );
-                      setCaptainOtpInput("");
-                      triggerToast("Order #" + activeOrder.id + " Marked DELIVERED!");
-                    } else {
-                      triggerToast("Incorrect Customer OTP!");
-                    }
-                  }}
-                  className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-black cursor-pointer"
-                >
-                  Verify OTP
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-slate-500 py-4 text-center font-bold">
-              No active dispatches waiting on radar.
-            </p>
-          )}
-        </div>
+        <RiderCaptainPortal
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          currentUser={currentUser}
+          setCurrentUser={setCurrentUser}
+          orders={orders}
+          setOrders={setOrders}
+          captainRadarJobs={captainRadarJobs}
+          setCaptainRadarJobs={setCaptainRadarJobs}
+          pendingRiders={pendingRiders}
+          onSwitchToPersonalShop={() => {
+            setPersonalShoppingFromPartner("rider");
+            setActivePortal("customer");
+            setFooterTab("home");
+          }}
+          onTriggerToast={triggerToast}
+          onReportError={(title, detail) => triggerToast(title + ": " + detail)}
+          renderAccountTab={renderPartnerAccountTab}
+        />
       );
     }
 
