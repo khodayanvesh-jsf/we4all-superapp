@@ -54,3 +54,15 @@ Use separate Capgo API keys and encryption key pairs for staging and production 
 - [Channels and rollouts](https://capgo.app/docs/live-updates/channels/)
 - [Encryption V2 and key management](https://capgo.app/docs/live-updates/encryption/)
 - [Capgo CLI bundle upload](https://capgo.app/docs/cli/reference/bundle/)
+
+
+## Native OTA-enabling Android release
+
+The updater plugin and its public encryption key must ship inside a native app binary before any existing installation can receive Capgo updates. The branch has a signed Android release workflow, **WE4ALL signed Android release build**, which is available after this reviewed branch is merged to `main`.
+
+Set these GitHub Environment secrets in `android-release` before running it:
+- `ANDROID_KEYSTORE_BASE64`: base64 of the EXISTING keystore used to sign the currently distributed `com.we4all.superapp` app. Do not generate a replacement if this app is already distributed; Android will reject upgrades signed with a different key.
+- `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`: values for that existing key.
+- `CAPGO_PUBLIC_KEY`: public half of the Capgo Encryption V2 key pair.
+
+The release workflow targets Android versionCode 329 / versionName 3.2.9, runs tests and the Vite build, embeds the Capgo public key, builds a signed AAB and APK, verifies the APK signature and uploads artifacts for inspection. It does **not** publish them to Google Play. Install the signed APK over an existing test installation and verify the signer/package/version before any store upload.
