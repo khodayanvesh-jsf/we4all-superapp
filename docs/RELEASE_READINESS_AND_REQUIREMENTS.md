@@ -249,3 +249,19 @@ Before each feature removal/replacement or production release, record:
 - Release version/build hash:
 
 **Current release decision: NOT APPROVED FOR GENERAL PUBLIC LAUNCH.** Continue hardening and target a controlled pilot on 2026-11-08 only if every enabled P0 workflow passes the release gate.
+
+
+## 11. Additional authentication hardening (6 Nov 2026)
+
+The legacy Account portal also contained two authentication demonstrations that must not be treated as secure sign-in:
+- The OTP button generated a code in the browser, exposed it in a toast, and pre-filled the verification field. This is not SMS OTP.
+- The biometric button displayed a successful passkey message and continued into the local account lookup without a server-generated challenge or server-side assertion verification.
+
+The review branch now disables both false-success paths and explains that the real SMS provider/server verification and passkey enrollment/challenge verification are not configured yet. This is a deliberate fail-closed staging behavior. It does not mean OTP or passkey functionality is complete.
+
+Before enabling either method:
+1. Configure the selected SMS/identity provider using server-side secrets.
+2. Enforce OTP expiry, replay protection, rate limits, attempt limits and phone-number ownership.
+3. For passkeys, create challenges server-side, verify signed WebAuthn assertions against registered credential public keys, and bind the assertion to the authenticated account/session.
+4. Audit account/role changes and revoke sessions on logout, suspension and account recovery.
+5. Add integration and abuse-case tests before removing the temporary unavailable state.
