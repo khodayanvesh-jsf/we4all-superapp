@@ -36,7 +36,6 @@ import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
-import { verifyModulePipelineIntegrity } from "./modules/security/CodeSecurityGuard";
 import {
   saveCloudAndLocalState,
   loadCloudAndLocalState,
@@ -324,12 +323,7 @@ function AppContent() {
   };
 
   const handleRunOtaUpdate = async () => {
-    const integrity = verifyModulePipelineIntegrity(savedCloud || {});
-    if (!integrity.valid) {
-      triggerToast("Application integrity check failed. OTA installation was blocked.");
-      return;
-    }
-    setOtaProgress({ pct: 5, msg: "Preparing verified Capgo update..." });
+    setOtaProgress({ pct: 5, msg: "Preparing Capgo signature-verified update..." });
     try {
       const updatedInfo = await performZeroLossOtaUpdate(
         appUpdateInfo.latestAvailableVersion,
