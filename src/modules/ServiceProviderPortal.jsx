@@ -168,6 +168,10 @@ export default function ServiceProviderPortal({
   };
 
   const handleAddRateCardTask = () => {
+    if (!isPublishedLive || !activeProProfile.id) {
+      onTriggerToast("Rate-card editing is locked until your own service-provider account is approved.");
+      return;
+    }
     if (!newTaskItem.title.trim()) {
       alert("Enter a service task name (e.g. AC Gas Refill, Tap Replacement).");
       return;
@@ -185,7 +189,7 @@ export default function ServiceProviderPortal({
       )
     );
     setNewTaskItem({ title: "", price: "", unit: "Fixed Job" });
-    onTriggerToast(`Added "${itemObj.title}" (Rs.${itemObj.price}) to your Rate Card!`);
+    onTriggerToast(`"${itemObj.title}" added to your local rate-card draft. Customer visibility is pending server sync and approval.`);
   };
 
   // Printable / Downloadable PDF Escrow & Final Tax Invoice
@@ -499,18 +503,18 @@ export default function ServiceProviderPortal({
                                   sparePartsCost: pForm.sparePartsCost,
                                   repairLaborFee: pForm.repairLaborFee,
                                   finalServiceBill: totalBill,
-                                  status: "FINAL_BILL_SENT_WAIT_PAYMENT"
+                                  status: "FINAL_BILL_PENDING_CUSTOMER_REVIEW"
                                 }
                               : b
                           )
                         );
                         onTriggerToast(
-                          `Final Bill (Rs.${totalBill}) pushed to Customer Orders tab for UPI Payment!`
+                          `Final estimate ₹${totalBill} saved for customer review in local app state. No payment or escrow was initiated.`
                         );
                       }}
                       className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-black py-2 rounded-xl text-[10px] cursor-pointer"
                     >
-                      Push Final Spare Parts & Labor Bill to Customer &rarr;
+                      Save Final Estimate for Customer Review
                     </button>
                   </div>
                 </div>
@@ -567,7 +571,9 @@ export default function ServiceProviderPortal({
             <div className="flex gap-2">
               <button
                 type="button"
+                disabled={!isPublishedLive || !activeProProfile.id}
                 onClick={() => {
+                  if (!isPublishedLive || !activeProProfile.id) return;
                   setServiceProviders(
                     serviceProviders.map((sp) =>
                       sp.id === activeProProfile.id
@@ -575,7 +581,7 @@ export default function ServiceProviderPortal({
                         : sp
                     )
                   );
-                  onTriggerToast("All 11 One-Hour Slots marked AVAILABLE!");
+                  onTriggerToast("All 11 one-hour slots updated in the device's saved state. Server availability sync is not confirmed.");
                 }}
                 className="flex-1 bg-emerald-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
               >
@@ -583,13 +589,15 @@ export default function ServiceProviderPortal({
               </button>
               <button
                 type="button"
+                disabled={!isPublishedLive || !activeProProfile.id}
                 onClick={() => {
+                  if (!isPublishedLive || !activeProProfile.id) return;
                   setServiceProviders(
                     serviceProviders.map((sp) =>
                       sp.id === activeProProfile.id ? { ...sp, availableSlots: [] } : sp
                     )
                   );
-                  onTriggerToast("Marked all slots Off-Duty.");
+                  onTriggerToast("All slots blocked in the device's saved state. Server availability sync is not confirmed.");
                 }}
                 className="bg-slate-800 text-rose-300 font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
               >
