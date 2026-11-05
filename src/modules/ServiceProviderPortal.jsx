@@ -30,7 +30,7 @@ export default function ServiceProviderPortal({
   renderAccountTab
 }) {
   // Tab 1: Visits & Geo Happy Code + Spare Parts Bill Builder State
-  const [providerInsideGeoFence, setProviderInsideGeoFence] = useState(true);
+  const [providerInsideGeoFence] = useState(false);
   const [happyCodeInputs, setHappyCodeInputs] = useState({});
   const [partsFormMap, setPartsFormMap] = useState({});
 
@@ -229,7 +229,7 @@ export default function ServiceProviderPortal({
               <tbody>
                 <tr>
                   <td>1. Doorstep Visiting Fee (Escrow Locked)</td>
-                  <td>Happy Code: ${sb.happyCode} (${sb.escrowStatus})</td>
+                  <td>Customer code protected · ${sb.escrowStatus}</td>
                   <td style="text-align:right;">Rs.${visitEscrow}</td>
                 </tr>
                 <tr>
@@ -315,44 +315,16 @@ export default function ServiceProviderPortal({
                   Verify Geo-Fenced Happy Code to unlock Visiting Fee Escrow & bill spare parts
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const simBooking = {
-                    id: `SRV-${Math.floor(1000 + Math.random() * 9000)}`,
-                    providerId: activeProProfile.id,
-                    providerName: activeProProfile.providerName,
-                    maskedId: activeProProfile.maskedId,
-                    customerName: "Anil Reddy (Adilabad)",
-                    address: "Subhash Nagar, Adilabad",
-                    bookedDate: selectedSlotDate,
-                    bookedSlot: "10:00 AM - 11:00 AM",
-                    visitingFee: activeProProfile.visitingFee || 99,
-                    hourlyRate: activeProProfile.hourlyRate || 150,
-                    escrowVisitingAmount: activeProProfile.visitingFee || 99,
-                    happyCode: String(Math.floor(1000 + Math.random() * 9000)),
-                    periodTag: "TODAY",
-                    escrowStatus: "VISITING_FEE_HELD_IN_ESCROW",
-                    status: "CONFIRMED_PROVIDER_EN_ROUTE"
-                  };
-                  setServiceBookings([simBooking, ...serviceBookings]);
-                  onTriggerToast(
-                    `Simulated Customer Visit #${simBooking.id} (Slot: ${simBooking.bookedSlot})!`
-                  );
-                }}
-                className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
-              >
-                + Test Visit
-              </button>
+              <p className="text-[10px] text-amber-200">New customer visits appear here only after the customer booking service confirms the booking. Test data is not inserted into this live queue.</p>
             </div>
 
             <div className="flex justify-between items-center bg-slate-950 p-2 rounded-xl border border-slate-800">
               <span className="text-[10px] text-slate-300 font-bold">
-                Customer Doorstep GPS Geo-Fence Status:
+                Device GPS status (server verification not configured):
               </span>
               <button
                 type="button"
-                onClick={() => setProviderInsideGeoFence(!providerInsideGeoFence)}
+                disabled
                 className={`px-2.5 py-1 rounded-lg font-black text-[9px] cursor-pointer ${
                   providerInsideGeoFence
                     ? "bg-emerald-400 text-slate-950"
@@ -419,7 +391,7 @@ export default function ServiceProviderPortal({
                       <input
                         type="text"
                         maxLength={4}
-                        placeholder={`Happy Code (${sb.happyCode})`}
+                        placeholder="Server-issued Happy Code (pending integration)"
                         value={happyCodeInputs[sb.id] ?? ""}
                         onChange={(e) =>
                           setHappyCodeInputs({ ...happyCodeInputs, [sb.id]: e.target.value })
@@ -428,36 +400,10 @@ export default function ServiceProviderPortal({
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          if (!providerInsideGeoFence) {
-                            alert(
-                              "GEO-FENCE BLOCKED: You must be physically inside the Customer GPS Geo-Fence to verify the Happy Code!"
-                            );
-                            return;
-                          }
-                          const entered = (happyCodeInputs[sb.id] || "").trim() || sb.happyCode;
-                          if (entered === sb.happyCode) {
-                            setServiceBookings(
-                              serviceBookings.map((b) =>
-                                b.id === sb.id
-                                  ? {
-                                      ...b,
-                                      escrowStatus: "RELEASED_TO_PROVIDER_WALLET",
-                                      status: "ON_SITE_WORK_IN_PROGRESS"
-                                    }
-                                  : b
-                              )
-                            );
-                            onTriggerToast(
-                              `Happy Code (${sb.happyCode}) Verified! Rs.${sb.escrowVisitingAmount} Visiting Escrow Released to Wallet.`
-                            );
-                          } else {
-                            alert(`Invalid Happy Code. Customer Happy Code is: ${sb.happyCode}`);
-                          }
-                        }}
-                        className="flex-1 bg-emerald-400 text-slate-950 font-black rounded-xl text-[10px] cursor-pointer"
+                        onClick={() => onTriggerToast("Happy Code verification requires a server-issued, order-bound code and backend confirmation. No escrow state was changed.")}
+                        disabled className="flex-1 bg-slate-700 text-slate-300 font-black rounded-xl text-[10px] cursor-not-allowed"
                       >
-                        Verify Happy Code ({sb.happyCode})
+                        Server verification required
                       </button>
                     </div>
                   </div>
