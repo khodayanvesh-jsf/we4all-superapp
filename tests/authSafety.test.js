@@ -13,10 +13,10 @@ test("legacy OTP flow does not generate or reveal a code in the browser", () => 
   assert.match(ownerAccountSource, /Local PINs, browser-stored profiles and demo codes are not accepted as authentication/);
 });
 
-test("OTP and biometric login fail closed until server verification exists", () => {
-  assert.match(ownerAccountSource, /loginMethod === "otp" \|\| loginMethod === "biometric"/);
-  assert.match(ownerAccountSource, /server-side passkey enrollment and challenge verification/);
-  assert.match(ownerAccountSource, /SMS OTP provider and server-side verification/);
+test("OTP and biometric options do not pretend to authenticate without server verification", () => {
+  assert.match(ownerAccountSource, /SMS OTP is unavailable until the secure server provider is configured/);
+  assert.match(ownerAccountSource, /server-side passkey enrollment and verification before this can be enabled/);
+  assert.match(ownerAccountSource, /Secure sign-in is not configured yet/);
 });
 
 test("biometric UI cannot announce local-only authentication success", () => {
