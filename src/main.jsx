@@ -1,14 +1,19 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
+import ActionAndErrorFeedbackLayer from "./modules/ActionAndErrorFeedbackLayer.jsx";
 
 class RootErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, errorMessage: "" };
+    this.state = { hasError: false, errorMessage: "", errorStack: "" };
   }
   static getDerivedStateFromError(error) {
-    return { hasError: true, errorMessage: error?.message || String(error) };
+    return {
+      hasError: true,
+      errorMessage: error?.message || String(error),
+      errorStack: error?.stack || ""
+    };
   }
   componentDidCatch(error, info) {
     console.error("WE4ALL Protected Boundary:", error, info);
@@ -17,13 +22,21 @@ class RootErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div style={{ minHeight: "100vh", background: "#071318", color: "#f8fafc", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px", fontFamily: "system-ui, sans-serif", textAlign: "center" }}>
-          <div style={{ background: "#0f172a", border: "2px solid #10b981", borderRadius: "24px", padding: "24px", maxWidth: "460px", width: "100%" }}>
-            <h2 style={{ color: "#34d399", fontWeight: 900, fontSize: "18px", margin: "0 0 8px" }}>
-              WE4ALL Auto-Recovery Shield
+          <div style={{ background: "#0f172a", border: "2px solid #f43f5e", borderRadius: "24px", padding: "24px", maxWidth: "520px", width: "100%" }}>
+            <span style={{ background: "#f43f5e", color: "#fff", padding: "3px 8px", borderRadius: "6px", fontSize: "10px", fontWeight: 900 }}>
+              FRONTEND RENDER EXCEPTION CAUGHT
+            </span>
+            <h2 style={{ color: "#fb7185", fontWeight: 900, fontSize: "18px", margin: "10px 0 6px" }}>
+              WE4ALL Auto-Recovery Diagnostic Shield
             </h2>
             <pre style={{ background: "#020617", color: "#fda4af", padding: "10px", borderRadius: "12px", fontSize: "11px", overflowX: "auto", textAlign: "left" }}>
               {this.state.errorMessage}
             </pre>
+            {this.state.errorStack && (
+              <pre style={{ background: "#020617", color: "#94a3b8", padding: "8px", borderRadius: "10px", fontSize: "9px", overflowX: "auto", textAlign: "left", maxHeight: "140px" }}>
+                {this.state.errorStack}
+              </pre>
+            )}
             <button
               onClick={() => {
                 localStorage.clear();
@@ -45,7 +58,9 @@ class RootErrorBoundary extends React.Component {
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <RootErrorBoundary>
-      <App />
+      <ActionAndErrorFeedbackLayer>
+        <App />
+      </ActionAndErrorFeedbackLayer>
     </RootErrorBoundary>
   </React.StrictMode>
 );
