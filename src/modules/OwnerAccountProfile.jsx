@@ -527,7 +527,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                       autoComplete="one-time-code"
                       maxLength={6}
                       value={otpState.token}
-                      onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\\D/g, "").slice(0, 6) })}
+                      onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
                       placeholder="Enter 6-digit SMS code"
                       className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center font-black tracking-widest"
                     />
@@ -631,7 +631,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                     autoComplete="one-time-code"
                     maxLength={6}
                     value={otpState.token}
-                    onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\\D/g, "").slice(0, 6) })}
+                    onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
                     placeholder="Enter 6-digit SMS code"
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-center font-mono tracking-widest"
                   />
