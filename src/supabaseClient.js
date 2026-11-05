@@ -3,7 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";
 import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "3.2.9";
+const CURRENT_SCHEMA_VERSION = "3.3.0";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
 const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
 const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
@@ -887,12 +887,14 @@ export async function createMarketplaceOrder({
     !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100)) {
     throw new Error("Your cart contains an item that has not been published to the live WE4ALL catalogue.");
   }
-  const { data, error } = await supabase.rpc("we4all_create_order", {
-    p_partner_id: partnerId,
-    p_items: safeItems,
-    p_zone_id: zoneId,
-    p_delivery_address: deliveryAddress,
-    p_idempotency_key: String(idempotencyKey)
+  const { data, error } = await supabase.functions.invoke("we4all-create-order", {
+    body: {
+      partnerId,
+      items: safeItems.map((item) => ({ catalogItemId: item.catalog_item_id, quantity: item.quantity })),
+      zoneId,
+      deliveryAddress,
+      idempotencyKey: String(idempotencyKey)
+    }
   });
   if (error) throw new Error(error.message || "The server could not create your order.");
   if (!data?.ok || !data?.order_id || data?.payment_status !== "pending") {
