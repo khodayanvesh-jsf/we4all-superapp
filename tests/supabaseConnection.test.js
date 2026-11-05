@@ -67,6 +67,14 @@ test("account authentication and file upload are bound to verified user identity
   assert.equal(client.includes("auth.getUser()"), true);
 });
 
+test("debounced writes cannot cross account boundaries or sync guest changes", () => {
+  assert.equal(client.includes("const ownerUserId = getActiveSupabaseUserId();"), true);
+  assert.equal(client.includes("if (!ownerUserId) return; // Guest/local edits"), true);
+  assert.equal(client.includes("ownerUserId !== activeUserId"), true);
+  assert.equal(client.includes("expectedUserId !== activeUserId"), true);
+  assert.equal(client.includes("pushPayloadToCloudServers(merged, nowIso, ownerUserId)"), true);
+});
+
 test("per-user state changes are published through Supabase Realtime and filtered by owner", () => {
   assert.equal(client.includes('"postgres_changes"'), true);
   assert.equal(client.includes('table: "we4all_user_state"'), true);
