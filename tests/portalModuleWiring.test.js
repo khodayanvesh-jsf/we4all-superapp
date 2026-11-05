@@ -67,7 +67,7 @@ test("Labour portal supports both legacy/new prop contracts and locks local OTP/
 
 test("Live route map uses opt-in device geolocation instead of fake timer progress", () => {
   assert.match(liveMap, /navigator\\.geolocation\\.watchPosition/);
-  assert.match(liveMap, /clearWatch/);
+  assert.equal(liveMap.includes("clearWatch"), true);
   assert.doesNotMatch(liveMap, /setInterval/);
   assert.doesNotMatch(liveMap, /19\\.6641|78\\.5320/);
 });
