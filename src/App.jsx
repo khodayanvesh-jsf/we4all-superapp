@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
 import {
   INITIAL_APP_UPDATE_INFO,
   GEO_ZONES,
@@ -173,7 +174,7 @@ function MobilePhoneShell({
       >
         <span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span>
         <span className="truncate ml-2 opacity-80">
-          OTA BUNDLE {appUpdateInfo?.currentBundleVersion || appUpdateInfo?.currentVersion || "BUILT-IN"}
+          OTA BUNDLE {appUpdateInfo?.currentBundleVersion || "BUILT-IN"}
         </span>
       </div>
 
