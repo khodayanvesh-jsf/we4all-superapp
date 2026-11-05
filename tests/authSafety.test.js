@@ -10,7 +10,7 @@ const ownerAccountSource = await readFile(
 test("legacy OTP flow does not generate or reveal a code in the browser", () => {
   assert.doesNotMatch(ownerAccountSource, /Instant OTP Generated/);
   assert.doesNotMatch(ownerAccountSource, /setOtpState\(\{\s*sent:\s*true/);
-  assert.match(ownerAccountSource, /No code is generated or accepted on this device/);
+  assert.match(ownerAccountSource, /Local PINs, browser-stored profiles and demo codes are not accepted as authentication/);
 });
 
 test("OTP and biometric login fail closed until server verification exists", () => {
