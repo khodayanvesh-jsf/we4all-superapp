@@ -5,7 +5,12 @@ import { CUSTOMER_QUICK_LINKS, INITIAL_CATEGORIES } from "../src/data.js";
 test("customer home exposes the ten required shopping and service entry points", () => {
   assert.equal(CUSTOMER_QUICK_LINKS.length, 10);
   const ids = CUSTOMER_QUICK_LINKS.map((item) => item.id);
+  assert.deepEqual(ids, [
+    "groceries", "vegetables", "meat", "construction", "medihub",
+    "labour", "services", "events", "rides", "kisan_mandi"
+  ]);
   assert.equal(new Set(ids).size, 10);
+  assert.equal(CUSTOMER_QUICK_LINKS.find((item) => item.id === "medihub").label, "MediHub");
   for (const link of CUSTOMER_QUICK_LINKS) {
     assert.ok(link.label, `missing label for ${link.id}`);
     assert.ok(link.icon, `missing icon for ${link.id}`);
