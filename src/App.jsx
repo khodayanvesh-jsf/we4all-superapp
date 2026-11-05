@@ -161,6 +161,21 @@ function MobilePhoneShell({
           )}
         </div>
       </div>
+      <div
+        className={
+          "px-3 py-1 flex items-center justify-between text-[9px] font-bold tracking-wide border-b shrink-0 " +
+          (brightTheme
+            ? "bg-emerald-50 text-emerald-950 border-emerald-100"
+            : "bg-[#0a171d] text-emerald-200 border-slate-800")
+        }
+        aria-label="Installed application version"
+        data-testid="installed-app-version"
+      >
+        <span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span>
+        <span className="truncate ml-2 opacity-80">
+          OTA BUNDLE {appUpdateInfo?.currentBundleVersion || appUpdateInfo?.currentVersion || "BUILT-IN"}
+        </span>
+      </div>
 
       {personalShoppingFromPartner && (
         <div className="bg-indigo-600 text-white px-3 py-1.5 flex justify-between items-center text-[10px] font-black shrink-0">
