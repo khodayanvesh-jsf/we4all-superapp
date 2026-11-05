@@ -5,7 +5,8 @@ import {
   getFounderCredentials,
   supabase,
   activateSupabaseAccount,
-  clearActiveSupabaseAccount
+  clearActiveSupabaseAccount,
+  probeSupabaseConnection
 } from "../supabaseClient";
 
 const ROLE_OPTIONS = [
@@ -65,6 +66,15 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
   const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
+  const [connectionHealth, setConnectionHealth] = useState({
+    checking: true,
+    configured: false,
+    backendReachable: false,
+    authenticated: false,
+    accountLinked: false,
+    syncReady: false,
+    message: "Checking Supabase connection…"
+  });
 
   useEffect(() => {
     let active = true;
@@ -128,6 +138,21 @@ export default function OwnerAccountProfile(rawProps = {}) {
     });
     return () => { active = false; };
   }, [currentUser?.authUserId]);
+
+
+  useEffect(() => {
+    let active = true;
+    const refreshConnection = async () => {
+      const result = await probeSupabaseConnection();
+      if (active) setConnectionHealth({ checking: false, ...result });
+    };
+    refreshConnection();
+    const timer = window.setInterval(refreshConnection, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [localUser?.authUserId]);
 
   const cleanPhoneDigits = (raw) => {
     const digits = String(raw || "").replace(/\D/g, "");
@@ -391,6 +416,26 @@ export default function OwnerAccountProfile(rawProps = {}) {
             🚪 Logout Session
           </button>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-black text-slate-200">Supabase cloud connection</span>
+          <span className={connectionHealth.syncReady ? "text-emerald-300 font-black" : connectionHealth.backendReachable ? "text-amber-300 font-black" : "text-rose-300 font-black"}>
+            {connectionHealth.checking
+              ? "CHECKING"
+              : connectionHealth.syncReady
+                ? "CONNECTED · ACCOUNT SYNC VERIFIED"
+                : connectionHealth.backendReachable
+                  ? connectionHealth.authenticated
+                    ? "API CONNECTED · ACCOUNT LINK PENDING"
+                    : "API CONNECTED · SIGN IN TO SYNC"
+                  : connectionHealth.configured
+                    ? "API UNREACHABLE"
+                    : "NOT CONFIGURED"}
+          </span>
+        </div>
+        <p className="text-slate-400">{connectionHealth.message}</p>
       </div>
 
       {/* Account Navigation Tabs */}
