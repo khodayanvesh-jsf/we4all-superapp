@@ -586,7 +586,7 @@ export async function checkLiveCloudOtaManifest(callback) {
     const currentBundleVersion = current?.bundle?.version || "BUILT-IN";
     const currentVersion = APP_VERSION;
     const latestVersion = latest?.version || currentBundleVersion;
-    const available = Boolean(latest?.url && latest?.version && latest.version !== currentVersion);
+    const available = Boolean(latest?.url && latest?.version && latest.version !== currentBundleVersion);
     const info = {
       ...installedInfo,
       currentVersion,
