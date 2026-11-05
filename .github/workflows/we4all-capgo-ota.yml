@@ -1,0 +1,81 @@
+name: WE4ALL Capgo OTA Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Capgo release channel
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      bundle_version:
+        description: Unique OTA bundle SemVer (for example 3.2.9)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: we4all-capgo-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  upload-ota:
+    name: Verify and publish encrypted OTA bundle
+    if: >-
+      (inputs.channel == 'staging' && github.ref == 'refs/heads/fix/payment-safety-guest-default') ||
+      (inputs.channel == 'production' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-22.04
+    environment: capgo-${{ inputs.channel }}
+    timeout-minutes: 30
+    env:
+      CAPGO_API_KEY: ${{ secrets.CAPGO_API_KEY }}
+      CAPGO_PRIVATE_KEY: ${{ secrets.CAPGO_PRIVATE_KEY }}
+      CAPGO_CHANNEL: ${{ inputs.channel }}
+      OTA_BUNDLE_VERSION: ${{ inputs.bundle_version }}
+      CAPGO_APP_ID: com.we4all.superapp
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Validate protected release inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CAPGO_API_KEY:?Set CAPGO_API_KEY in the capgo GitHub environment}"
+          test -n "${CAPGO_PRIVATE_KEY:?Set CAPGO_PRIVATE_KEY in the capgo GitHub environment}"
+          [[ "$OTA_BUNDLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          grep -q '"publicKey"' capacitor.config.json
+          grep -q 'CapacitorUpdater.notifyAppReady' src/main.jsx
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1e60f620b9541d1b7a8d0d8cdd2d1d2bf4a5d1c8
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run application tests
+        run: npm test
+
+      - name: Build production web bundle
+        run: npm run build
+
+      - name: Publish encrypted, checksum-verified Capgo bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes @capgo/cli@latest bundle upload "$CAPGO_APP_ID" \
+            --path ./dist \
+            --channel "$CAPGO_CHANNEL" \
+            --bundle "$OTA_BUNDLE_VERSION" \
+            --delta \
+            --key-data-v2 "$CAPGO_PRIVATE_KEY" \
+            --apikey "$CAPGO_API_KEY"
