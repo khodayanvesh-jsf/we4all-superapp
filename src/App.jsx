@@ -5,6 +5,7 @@ import {
   INITIAL_GEO_ADS,
   INITIAL_CATEGORIES,
   CUSTOMER_QUICK_LINKS,
+  mergeRequiredCategories,
   SERVICE_CATEGORIES,
   LABOUR_TRADE_CATEGORIES,
   INITIAL_MERCHANTS,
@@ -364,7 +365,9 @@ function AppContent() {
   const [selectedZoneFilter, setSelectedZoneFilter] = useState("ALL_INDIA");
   const [killedCategoriesByZone] = useState({});
   const [geoAds, setGeoAds] = useState(savedCloud?.geoAds || INITIAL_GEO_ADS);
-  const [categories, setCategories] = useState(savedCloud?.categories || INITIAL_CATEGORIES);
+  const [categories, setCategories] = useState(() =>
+    mergeRequiredCategories(INITIAL_CATEGORIES, savedCloud?.categories)
+  );
   const [merchants, setMerchants] = useState(savedCloud?.merchants || INITIAL_MERCHANTS);
   const [serviceProviders, setServiceProviders] = useState(
     savedCloud?.serviceProviders || INITIAL_SERVICE_PROVIDERS
