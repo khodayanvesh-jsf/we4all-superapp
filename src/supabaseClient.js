@@ -141,29 +141,45 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
   }
 }
 
-async function pushPayloadToCloudServers(payload, nowIso) {
-  if (!supabase) return { ok: false, reason: "Supabase client not configured" };
-  try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return { ok: false, reason: "No authenticated user session" };
+async function invokeUserSync(method, payload) {
+  if (!supabase) return { ok: false, reason: "Supabase is not configured" };
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.access_token) {
+    return { ok: false, reason: "Sign in with verified mobile OTP before cloud sync" };
+  }
 
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/we4all-sync`, {
+    method,
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json"
+    },
+    ...(method === "GET" ? {} : {
+      body: JSON.stringify({
+        app_version: CURRENT_SCHEMA_VERSION,
+        state_payload: payload
+      })
+    })
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.ok !== true) {
+    throw new Error(result.error || `Authenticated sync returned HTTP ${response.status}`);
+  }
+  return result;
+}
+
+async function pushPayloadToCloudServers(payload, nowIso) {
+  try {
     const safePayload = { ...payload, lastSyncedAt: nowIso };
     delete safePayload.founderCredentials;
     delete safePayload.supabaseSecretKey;
     delete safePayload.serviceRoleKey;
-
-    const { error } = await supabase.from("we4all_user_state").upsert({
-      user_id: user.id,
-      state_payload: safePayload,
-      app_version: CURRENT_SCHEMA_VERSION,
-      updated_at: nowIso
-    }, { onConflict: "user_id" });
-
-    if (error) throw error;
-    return { ok: true, userId: user.id, lastSyncedAt: nowIso };
+    return await invokeUserSync("PUT", safePayload);
   } catch (error) {
-    console.error("WE4ALL per-user sync failed:", error?.message || error);
-    return { ok: false, reason: error?.message || "Supabase sync failed" };
+    console.error("WE4ALL authenticated cloud save failed:", error?.message || error);
+    return { ok: false, reason: error?.message || "Cloud save failed" };
   }
 }
 
@@ -393,23 +409,19 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
 export async function pullRemoteSupabaseState(applyIncomingPayload) {
   if (!supabase) return null;
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return null;
-    const { data, error } = await supabase
-      .from("we4all_user_state")
-      .select("state_payload,updated_at")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (error) throw error;
-    const remotePayload = data?.state_payload;
-    if (remotePayload && typeof remotePayload === "object") {
-      const payload = { ...remotePayload, lastSyncedAt: data.updated_at || remotePayload.lastSyncedAt };
-      if (applyIncomingPayload) applyIncomingPayload(payload);
-      return payload;
+    const remote = await invokeUserSync("GET");
+    const payload = remote?.state_payload;
+    if (payload && typeof payload === "object" && Object.keys(payload).length) {
+      const nextPayload = { ...payload, lastSyncedAt: remote.updated_at || payload.lastSyncedAt };
+      if (applyIncomingPayload) applyIncomingPayload(nextPayload);
+      return nextPayload;
     }
     return null;
   } catch (error) {
-    console.error("WE4ALL per-user restore failed:", error?.message || error);
+    // A guest or a first-time account has no saved cloud row yet.
+    if (!String(error?.message || "").includes("Sign in")) {
+      console.warn("WE4ALL authenticated restore unavailable:", error?.message || error);
+    }
     return null;
   }
 }
