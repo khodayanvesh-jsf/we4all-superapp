@@ -7,7 +7,9 @@ import {
   pullRemoteSupabaseState,
   supabase,
   isLiveSupabaseConfigured,
-  getActiveSupabaseUserId
+  getActiveSupabaseUserId,
+  probeSupabaseConnection,
+  syncCurrentUserStateNow
 } from "../supabaseClient";
 
 export default function FounderAdminSuite({
@@ -834,7 +836,7 @@ export default function FounderAdminSuite({
                         <button
                           type="button"
                           disabled={!allAvailable}
-                          onClick={() => {
+                          onClick={async () => {
                             const next = safeDecorBids.map((entry) =>
                               entry.id === request.id
                                 ? { ...entry, status: "OPEN_FOR_BIDS", availabilityReviewedAt: new Date().toISOString(), availabilityReviewedBy: "founder" }
@@ -1756,25 +1758,15 @@ export default function FounderAdminSuite({
               <button
                 type="button"
                 onClick={async () => {
-                  setSyncStatusMsg("Verifying Supabase session...");
-                  const { data: { user }, error } = await supabase.auth.getUser();
-                  if (error) {
-                    setSyncStatusMsg("Connection check failed");
-                    onTriggerToast("Supabase check failed: " + error.message);
-                    return;
-                  }
-                  if (!user) {
-                    setSyncStatusMsg("Project configured · sign-in required");
-                    onTriggerToast("The Supabase project client is configured. Sign in using verified phone OTP to enable private sync.");
-                    return;
-                  }
-                  if (getActiveSupabaseUserId() !== user.id) {
-                    setSyncStatusMsg("Session valid · account restore pending");
-                    onTriggerToast("Your Supabase session is valid, but this device's private account snapshot has not finished restoring.");
-                    return;
-                  }
-                  setSyncStatusMsg("Authenticated · private account sync ready");
-                  onTriggerToast("Supabase Auth verified. This account's private sync is ready.");
+                  setSyncStatusMsg("Checking Supabase API, verified session and private sync…");
+                  const result = await probeSupabaseConnection();
+                  const statusText = result.syncReady
+                    ? "Connected · authenticated private sync verified"
+                    : result.backendReachable
+                      ? result.message
+                      : "Supabase API is not reachable: " + result.message;
+                  setSyncStatusMsg(statusText);
+                  onTriggerToast(statusText);
                 }}
                 className="bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
               >
@@ -1805,8 +1797,14 @@ export default function FounderAdminSuite({
                     appUpdateInfo,
                     geoAds: safeGeoAds
                   });
-                  setSyncStatusMsg("Private account backup queued");
-                  onTriggerToast("Current snapshot saved locally; authenticated cloud backup is queued for this account only.");
+                  const syncResult = await syncCurrentUserStateNow();
+                  if (syncResult?.ok) {
+                    setSyncStatusMsg("Connected · private state saved to Supabase");
+                    onTriggerToast("Private account snapshot verified and saved to Supabase.");
+                  } else {
+                    setSyncStatusMsg("Cloud save failed · " + (syncResult?.reason || "unknown error"));
+                    onTriggerToast("Supabase save failed: " + (syncResult?.reason || "unknown error"));
+                  }
                 }}
                 className="bg-teal-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
               >
