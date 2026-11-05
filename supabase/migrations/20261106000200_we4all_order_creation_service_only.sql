@@ -11,8 +11,8 @@ declare
 begin
  if coalesce(auth.role(),'') <> 'service_role' then raise exception 'SERVER_ONLY_ORDER_CREATION' using errcode='42501'; end if;
  if p_customer_user_id is null then raise exception 'CUSTOMER_REQUIRED' using errcode='22023'; end if;
- if p_partner_id is null or p_zone_id is null or pg_catalog.length(pg_catalog.trim(p_zone_id))<2 then raise exception 'INVALID_CHECKOUT_CONTEXT' using errcode='22023'; end if;
- if p_idempotency_key is null or pg_catalog.length(pg_catalog.trim(p_idempotency_key))<8 or pg_catalog.length(p_idempotency_key)>160 then raise exception 'INVALID_IDEMPOTENCY_KEY' using errcode='22023'; end if;
+ if p_partner_id is null or p_zone_id is null or pg_catalog.length(pg_catalog.btrim(p_zone_id))<2 then raise exception 'INVALID_CHECKOUT_CONTEXT' using errcode='22023'; end if;
+ if p_idempotency_key is null or pg_catalog.length(pg_catalog.btrim(p_idempotency_key))<8 or pg_catalog.length(p_idempotency_key)>160 then raise exception 'INVALID_IDEMPOTENCY_KEY' using errcode='22023'; end if;
  if pg_catalog.jsonb_typeof(p_items)<>'array' or pg_catalog.jsonb_array_length(p_items)<1 or pg_catalog.jsonb_array_length(p_items)>50 then raise exception 'INVALID_ORDER_ITEMS' using errcode='22023'; end if;
  if pg_catalog.jsonb_typeof(p_delivery_address)<>'object' or p_delivery_address='{}'::jsonb then raise exception 'DELIVERY_ADDRESS_REQUIRED' using errcode='22023'; end if;
  select * into v_existing from public.we4all_orders where customer_user_id=p_customer_user_id and idempotency_key=p_idempotency_key;
