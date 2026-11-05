@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   INITIAL_APP_UPDATE_INFO,
   GEO_ZONES,
@@ -43,7 +43,10 @@ import {
   wipeAllPreinstalledServerData,
   subscribeToRealtimeUpdates,
   checkLiveCloudOtaManifest,
-  performZeroLossOtaUpdate
+  performZeroLossOtaUpdate,
+  supabase,
+  activateSupabaseAccount,
+  clearActiveSupabaseAccount
 } from "./supabaseClient";
 
 function FounderLogoBadge({ logoUrl }) {
@@ -356,6 +359,8 @@ function AppContent() {
       upiId: ""
     }
   );
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
   const [registeredUsers, setRegisteredUsers] = useState(savedCloud?.registeredUsers || []);
   if (typeof window !== "undefined") { window.__WE4ALL_USERS = registeredUsers; }
   if (typeof window !== "undefined") { window.__WE4ALL_USERS = registeredUsers; }
@@ -366,6 +371,107 @@ function AppContent() {
     setMobileToast(msg);
     setTimeout(() => setMobileToast(""), 4200);
   };
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let active = true;
+
+    const restoreVerifiedSession = async () => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (!active) return;
+      if (authError || !user) {
+        if (currentUserRef.current?.authUserId) {
+          clearActiveSupabaseAccount();
+          setAuthenticatedPartnerRole(null);
+          setCurrentUser({
+            id: "guest_visitor",
+            fullName: "Guest Visitor",
+            phone: "",
+            role: "customer",
+            portal: "customer",
+            isGuest: true
+          });
+          setActivePortal("customer");
+          window.setTimeout(() => window.location.reload(), 0);
+        }
+        return;
+      }
+
+      const activation = await activateSupabaseAccount(user.id);
+      if (!active) return;
+      if (activation.changed) {
+        // The activation step replaced any prior user's local snapshot with this user's private cloud snapshot.
+        window.location.reload();
+        return;
+      }
+
+      const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
+        supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
+      ]);
+      if (profileError) throw profileError;
+      if (rolesError) throw rolesError;
+
+      const currentSnapshot = currentUserRef.current;
+      const preferredRole = currentSnapshot?.authUserId === user.id ? currentSnapshot.role : "customer";
+      const roleRecord = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
+      const resolvedRole = roleRecord?.role || "customer";
+      const signedInUser = {
+        id: user.id,
+        authUserId: user.id,
+        phone: user.phone || profile?.phone || "",
+        fullName: profile?.full_name || user.user_metadata?.full_name || "",
+        businessName: profile?.business_name || "",
+        area: profile?.area || "",
+        role: resolvedRole,
+        status: "Approved",
+        isGuest: false
+      };
+      if (!active) return;
+      setCurrentUser(signedInUser);
+      if (resolvedRole === "customer") {
+        setAuthenticatedPartnerRole(null);
+        setActivePortal("customer");
+      } else {
+        setAuthenticatedPartnerRole(resolvedRole);
+        setActivePortal(resolvedRole);
+      }
+    };
+
+    restoreVerifiedSession().catch((error) => {
+      console.warn("WE4ALL Supabase session restore failed:", error?.message || error);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN") {
+        window.setTimeout(() => {
+          if (active) restoreVerifiedSession().catch((error) =>
+            console.warn("WE4ALL sign-in restore failed:", error?.message || error)
+          );
+        }, 0);
+      }
+      if (event === "SIGNED_OUT") {
+        clearActiveSupabaseAccount();
+        setAuthenticatedPartnerRole(null);
+        setActivePortal("customer");
+        setCurrentUser({
+          id: "guest_visitor",
+          fullName: "Guest Visitor",
+          phone: "",
+          role: "customer",
+          portal: "customer",
+          isGuest: true
+        });
+        window.setTimeout(() => window.location.reload(), 0);
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
 
   const [selectedZoneFilter, setSelectedZoneFilter] = useState("ALL_INDIA");
   const [killedCategoriesByZone] = useState({});
