@@ -448,6 +448,22 @@ export async function wipeAllOnlineAndOfflineData() {
 
 export const wipeAllPreinstalledServerData = wipeAllOnlineAndOfflineData;
 
+export async function syncCurrentUserStateNow() {
+  const ownerUserId = getActiveSupabaseUserId();
+  if (!ownerUserId) {
+    const result = { ok: false, reason: "Sign in with a verified Supabase account before syncing." };
+    lastCloudSyncState = { status: "local-only", message: result.reason, lastSyncedAt: null };
+    return result;
+  }
+  if (cloudSyncDebounceTimer) {
+    clearTimeout(cloudSyncDebounceTimer);
+    cloudSyncDebounceTimer = null;
+  }
+  const payload = loadCloudAndLocalState() || {};
+  return pushPayloadToCloudServers(payload, new Date().toISOString(), ownerUserId);
+}
+
+
 export function saveCloudAndLocalState(stateSlice) {
   if (typeof window === "undefined" || isApplyingRemoteState) return;
   try {
