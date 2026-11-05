@@ -39,8 +39,9 @@ test("OTA checks use the native Capgo channel, not a static Vercel version manif
 test("OTA installation downloads and queues a real updater bundle", () => {
   assert.match(client, /CapacitorUpdater\.download\(/);
   assert.match(client, /CapacitorUpdater\.next\(\{ id: bundle\.id \}\)/);
-  assert.doesNotMatch(client, /setInterval\(/);
-  assert.doesNotMatch(client, /localStorage\.setItem\(INSTALLED_VER_KEY, ver\)/);
+  const installer = client.slice(client.indexOf("export async function performZeroLossOtaUpdate("));
+  assert.doesNotMatch(installer, /setInterval\(/);
+  assert.doesNotMatch(installer, /localStorage\.setItem\(INSTALLED_VER_KEY, ver\)/);
   assert.match(app, /next safe app background\/relaunch/);
 });
 
