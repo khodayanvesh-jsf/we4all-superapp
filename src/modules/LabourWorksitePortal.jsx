@@ -258,19 +258,33 @@ export default function LabourWorksitePortal({
                 Site: {lb.siteAddress} · Work date: {lb.workDate || "Not set"} · Shift: {lb.shift || "FULL_DAY"} · Status: {lb.status}
               </p>
 
-              {mode !== "customer" && lb.status === "REQUESTED_PENDING_WORKER_CONFIRMATION" && (
+              {mode !== "customer" && ["requested", "REQUESTED_PENDING_WORKER_CONFIRMATION"].includes(lb.status) && (
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      updateBookings(resolvedBookings.map((booking) =>
-                        booking.id === lb.id
-                          ? { ...booking, status: "WORKER_ACCEPTANCE_RECORDED_PENDING_SERVER", workerRespondedAt: new Date().toISOString() }
-                          : booking
-                      ));
-                      notify("Worker response saved locally. Customer notification and booking confirmation require server sync.");
-                    }}
-                    className="bg-emerald-500 text-slate-950 font-black px-3 py-2 rounded-lg text-[10px]"
+                    disabled={busyAction === worker.partnerId || resolvedBookings.some((b) => b.workerId === worker.id && b.customerId === (currentUser?.authUserId || currentUser?.id) && !["CANCELLED","REJECTED","WAGE_RELEASED_COMPLETED"].includes(b.status))}
+                onClick={async () => {
+                  if (!currentUser || currentUser.isGuest || !currentUser.authUserId) { notify("Sign in before requesting a worker. Your request has not been created."); return; }
+                  if (!worker.partnerId) { notify("This listing is not linked to an approved Labour partner. No request was created."); return; }
+                  if (!customerRequestForm.siteAddress.trim() || !customerRequestForm.workDate) { notify("Enter the worksite address and date before requesting a worker."); return; }
+                  if (customerRequestForm.workDate < new Date().toISOString().slice(0, 10)) { notify("The work date cannot be in the past."); return; }
+                  setBusyAction(worker.partnerId);
+                  try {
+                    const result = await createServerLabourEngagement({
+                      partnerId: worker.partnerId, tradeKey: worker.tradeId,
+                      workerCount: worker.mode === "TOLI_GROUP" ? worker.toliSize : 1,
+                      worksiteAddress: customerRequestForm.siteAddress.trim(),
+                      workDate: customerRequestForm.workDate, shift: customerRequestForm.shift
+                    });
+                    const bookingId = result.engagement_id || result.id;
+                    if (!bookingId) throw new Error("WE4ALL did not return the Labour request reference.");
+                    const booking = { id: bookingId, workerId: worker.partnerId, workerName: worker.name, tradeId: worker.tradeId, tradeName: worker.tradeName, customerId: currentUser.authUserId, customerName: currentUser.fullName || currentUser.name || "Customer", siteAddress: customerRequestForm.siteAddress.trim(), workDate: customerRequestForm.workDate, shift: customerRequestForm.shift, workerCount: worker.mode === "TOLI_GROUP" ? worker.toliSize : 1, totalWage: null, requestedAt: new Date().toISOString(), status: result.status || "requested", paymentStatus: result.payment_status || "pending", serverRecord: true };
+                    updateBookings([booking, ...resolvedBookings.filter((b) => b.id !== booking.id)]);
+                    notify("Labour request saved on the WE4ALL server. The worker must quote/accept. No wages or payment were collected.");
+                  } catch (error) { notify(error?.message || "Labour request failed. No server record was created."); }
+                  finally { setBusyAction(""); }
+                }}
+                className="bg-emerald-500 text-slate-950 font-black px-3 py-2 rounded-lg text-[10px]"
                   >
                     Confirm availability
                   </button>
