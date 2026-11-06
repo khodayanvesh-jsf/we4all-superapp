@@ -1000,3 +1000,18 @@ export async function createMarketplaceOrder({
   }
   return data;
 }
+
+ 
+export async function adjustMarketplaceStock({ partnerId, catalogItemId, quantityDelta, idempotencyKey }) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) throw new Error("Sign in with your approved merchant account.");
+  const { data, error } = await supabase.functions.invoke("we4all-adjust-stock", {
+    body: { partnerId, catalogItemId, quantityDelta, idempotencyKey }
+  });
+  if (error) throw new Error(error.message || "Stock update could not reach the server.");
+  if (!data?.ok || !Number.isInteger(Number(data.stock_quantity))) {
+    throw new Error(data?.error || "Server did not confirm the stock update.");
+  }
+  return data;
+}
