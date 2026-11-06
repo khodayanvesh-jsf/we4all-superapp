@@ -1120,6 +1120,72 @@ export async function verifyDeliveryTestOtp({ deliveryType, deliveryId, code }) 
 }
 
 
+function makeOperationsIdempotencyKey(prefix) {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`.slice(0, 160);
+}
+
+function bookingTimeToIso(date, clock) {
+  const match = String(clock || "").match(/^(\\d{1,2}):(\\d{2})\\s*(AM|PM)$/i);
+  if (!match || !date) throw new Error("Choose a valid booking date and time.");
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const meridiem = match[3].toUpperCase();
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) throw new Error("Invalid booking time.");
+  if (meridiem === "PM" && hour !== 12) hour += 12;
+  if (meridiem === "AM" && hour === 12) hour = 0;
+  const value = new Date(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`);
+  if (!Number.isFinite(value.getTime())) throw new Error("Invalid booking date.");
+  return value.toISOString();
+}
+
+export async function loadServerOperations() {
+  return invokeWe4AllOperations("list_my_operations");
+}
+
+export async function createServerBooking({
+  partnerId, bookingType = "service", date, slot, note = "", metadata = {}, idempotencyKey
+}) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("This provider does not have a verified WE4ALL partner record yet.");
+  if (!["service", "decorator", "function_hall"].includes(bookingType)) throw new Error("Unsupported booking type.");
+  const parts = [...String(slot || "").matchAll(/(\\d{1,2}:\\d{2}\\s*(?:AM|PM))/ig)];
+  if (parts.length < 2) throw new Error("Choose a valid one-hour booking slot.");
+  const requestedStartAt = bookingTimeToIso(date, parts[0][1]);
+  const requestedEndAt = bookingTimeToIso(date, parts[1][1]);
+  const data = await invokeWe4AllOperations("create_booking", {
+    partnerId, bookingType, requestedStartAt, requestedEndAt, note,
+    metadata: metadata && typeof metadata === "object" ? metadata : {},
+    idempotencyKey: String(idempotencyKey || makeOperationsIdempotencyKey("booking"))
+  });
+  if (!data.booking_id) throw new Error("The server did not return a booking reference.");
+  return data;
+}
+
+export async function createServerRideBooking({
+  vehicleClass, pickupAddress, dropoffAddress, zoneId = "adilabad_master",
+  note = "", idempotencyKey
+}) {
+  if (!["2W", "3W", "4W"].includes(String(vehicleClass))) throw new Error("Choose Bike (2W), Auto (3W) or Cab (4W).");
+  if (!String(pickupAddress || "").trim() || !String(dropoffAddress || "").trim()) throw new Error("Enter both pickup and destination.");
+  const data = await invokeWe4AllOperations("create_ride", {
+    vehicleClass,
+    pickupLocation: { address: String(pickupAddress).trim() },
+    dropoffLocation: { address: String(dropoffAddress).trim() },
+    zoneId, note, requestedStartAt: new Date().toISOString(),
+    idempotencyKey: String(idempotencyKey || makeOperationsIdempotencyKey("ride"))
+  });
+  if (!data.ride_booking_id) throw new Error("The server did not return a ride reference.");
+  return data;
+}
+
+export async function setServerPartnerAvailability({ partnerId, availabilityRules }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("A verified WE4ALL partner record is required.");
+  if (!availabilityRules || typeof availabilityRules !== "object" || Array.isArray(availabilityRules)) {
+    throw new Error("Availability settings must be a JSON object.");
+  }
+  return invokeWe4AllOperations("set_availability", { partnerId, availabilityRules });
+}
+
 /** Public read-only registry: only published public modules are returned. */
 export async function loadPublishedDynamicModules({ portalTarget, zoneCode = "*" } = {}) {
   if (!supabase) throw new Error("WE4ALL backend is not configured.");
