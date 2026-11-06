@@ -41,6 +41,8 @@ export default function ServiceProviderPortal({
   const activeProProfile =
     (serviceProviders || []).find(
       (sp) =>
+        (sp.id && sp.id === currentUser?.partnerId) ||
+        (sp.partnerId && sp.partnerId === currentUser?.partnerId) ||
         (sp.userId && sp.userId === currentUser?.id) ||
         (sp.phone && sp.phone === currentUser?.phone)
     ) || {
