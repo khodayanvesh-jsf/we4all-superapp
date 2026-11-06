@@ -83,7 +83,7 @@ export default function RiderRadarMap({ jobs = [], selectedJob, onSelectJob }) {
             Enable map & GPS
           </button>
         ) : (
-          <button type="button" onClick={() => setGpsEnabled(false)} className="bg-slate-700 text-white font-bold text-[10px] px-3 py-2 rounded-lg">
+          <button type="button" onClick={() => { setGpsEnabled(false); setShareWithServer(false); setServerShareStatus("OFF"); }} className="bg-slate-700 text-white font-bold text-[10px] px-3 py-2 rounded-lg">
             Stop GPS
           </button>
         )}
