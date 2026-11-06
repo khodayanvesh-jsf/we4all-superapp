@@ -1096,7 +1096,11 @@ export async function createServerP2PDelivery({
   const weight = Number(details.weightKg);
   const key = String(idempotencyKey || "");
   if (!pickup.address || !dropoff.address) throw new Error("Enter both pickup and delivery addresses.");
-  if (!Number.isFinite(weight) || weight <= 0 || weight > 2000) throw new Error("Enter parcel weight from 0.1 to 2000 kg.");
+  const maxWeightByVehicle = { "2W": 45, "3W": 300, "4W": 2000 };
+  const maxWeight = maxWeightByVehicle[String(vehicleClass)] || 0;
+  if (!Number.isFinite(weight) || weight <= 0 || !maxWeight || weight > maxWeight) {
+    throw new Error(maxWeight ? `${vehicleClass} vehicle capacity is ${maxWeight} kg. Choose a larger vehicle for this parcel.` : "Choose a valid delivery vehicle.");
+  }
   if (key.length < 8 || key.length > 160) throw new Error("A valid retry-safe request key is required.");
   return invokeWe4AllOperations("create_p2p_delivery", {
     pickupLocation: pickup, dropoffLocation: dropoff, parcelDetails: details,
@@ -1278,5 +1282,105 @@ export async function submitRiderLocationPing({ longitude, latitude, accuracyM, 
     accuracyM: Number.isFinite(Number(accuracyM)) ? Number(accuracyM) : null,
     headingDeg: Number.isFinite(Number(headingDeg)) ? Number(headingDeg) : null,
     speedMps: Number.isFinite(Number(speedMps)) ? Number(speedMps) : null
+  });
+}
+
+
+/** Public, column-limited approved Labour & Mistri Adda directory. */
+export async function loadPublicLabourProviders() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase
+    .from("we4all_partners")
+    .select("id,partner_type,display_name,zone_id,approval_status,availability_rules")
+    .eq("partner_type", "labour")
+    .eq("approval_status", "approved")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((partner) => {
+    const profile = partner.availability_rules?.labourProfile || {};
+    return {
+      id: partner.id,
+      partnerId: partner.id,
+      partnerType: partner.partner_type,
+      ownerUserId: null,
+      name: String(profile.name || partner.display_name || "Approved Labour Partner"),
+      tradeId: String(profile.tradeId || "lab_mason"),
+      tradeName: String(profile.tradeName || profile.tradeId || "Labour / Mistri"),
+      mode: profile.mode === "TOLI_GROUP" ? "TOLI_GROUP" : "INDIVIDUAL",
+      toliSize: Math.max(1, Number(profile.toliSize || 1)),
+      fullDayWage: Math.max(0, Number(profile.fullDayWage || 0)),
+      toolsIncluded: String(profile.toolsIncluded || ""),
+      status: "Approved",
+      zoneId: partner.zone_id,
+      availabilityRules: partner.availability_rules || {}
+    };
+  });
+}
+
+/** Save the approved Labour partner's public Adda listing in its server-owned profile. */
+export async function saveServerLabourProfile({ partnerId, profile, availabilityRules = {} }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) {
+    throw new Error("Your Labour/Mistri role must be Founder-approved before publishing a worker profile.");
+  }
+  const name = String(profile?.name || "").trim();
+  const wage = Number(profile?.fullDayWage);
+  const toliSize = Number(profile?.toliSize || 1);
+  if (!name || !Number.isFinite(wage) || wage < 0 || wage > 100000 || !Number.isInteger(toliSize) || toliSize < 1 || toliSize > 100) {
+    throw new Error("Enter a valid worker/group name, wage and group size.");
+  }
+  const rules = availabilityRules && typeof availabilityRules === "object" ? availabilityRules : {};
+  return setServerPartnerAvailability({
+    partnerId,
+    availabilityRules: {
+      ...rules,
+      labourProfile: {
+        name: name.slice(0, 100),
+        tradeId: String(profile.tradeId || "lab_mason").slice(0, 80),
+        tradeName: String(profile.tradeName || "").slice(0, 100),
+        mode: profile.mode === "TOLI_GROUP" ? "TOLI_GROUP" : "INDIVIDUAL",
+        toliSize,
+        fullDayWage: wage,
+        toolsIncluded: String(profile.toolsIncluded || "").slice(0, 500),
+        updatedAt: new Date().toISOString()
+      }
+    }
+  });
+}
+
+/** Create a Labour/Mistri request in the trusted booking ledger; no wages or payments are collected. */
+export async function createServerLabourEngagement({
+  partnerId, tradeKey, workerCount = 1, worksiteAddress, workDate, shift = "FULL_DAY", idempotencyKey
+}) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("This Labour partner is not linked to an approved WE4ALL account.");
+  if (!String(worksiteAddress || "").trim()) throw new Error("Enter the worksite address.");
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(workDate || ""))) throw new Error("Choose a valid future work date.");
+  const start = new Date(`${workDate}T09:00:00+05:30`);
+  if (!Number.isFinite(start.getTime()) || start.getTime() < Date.now() - 60000) throw new Error("Choose a future work date.");
+  const durationHours = shift === "HALF_DAY" ? 4.25 : 8.5;
+  if (!["FULL_DAY", "HALF_DAY"].includes(shift)) throw new Error("Choose full-day or half-day work.");
+  const count = Number(workerCount);
+  if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("Worker/group size must be between 1 and 100.");
+  const key = String(idempotencyKey || makeOperationsIdempotencyKey("labour"));
+  return invokeWe4AllOperations("create_labour", {
+    partnerId,
+    tradeKey: String(tradeKey || "").slice(0, 80),
+    workerCount: count,
+    requestedStartAt: start.toISOString(),
+    durationHours,
+    worksiteAddress: { address: String(worksiteAddress).trim().slice(0, 500) },
+    idempotencyKey: key
+  });
+}
+
+/** Partner accepts a Labour request with a quote or declines it; this does not release wages. */
+export async function quoteServerLabourEngagement({ engagementId, decision, agreedTotalInr = null }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(engagementId || ""))) throw new Error("Invalid Labour request reference.");
+  if (!["accept", "decline"].includes(decision)) throw new Error("Choose accept or decline.");
+  const total = decision === "accept" ? Number(agreedTotalInr) : null;
+  if (decision === "accept" && (!Number.isFinite(total) || total <= 0 || total > 10000000)) {
+    throw new Error("Enter a valid Labour quote.");
+  }
+  return invokeWe4AllOperations("quote_labour", {
+    engagementId, decision, agreedTotalInr: total
   });
 }
