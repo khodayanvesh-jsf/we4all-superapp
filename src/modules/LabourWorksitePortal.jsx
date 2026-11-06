@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { LABOUR_TRADE_CATEGORIES } from "../data";
+import { createServerLabourEngagement, quoteServerLabourEngagement, saveServerLabourProfile } from "../supabaseClient";
 
 export default function LabourWorksitePortal({
   mode = "worker",
@@ -20,9 +21,10 @@ export default function LabourWorksitePortal({
   const updateWorkers = setLabourWorkers || setWorkers || (() => {});
   const updateBookings = setLabourBookings || setBookings || (() => {});
   const notify = onTriggerToast || onToast || (() => {});
-  const myWorkerIds = new Set(
-    resolvedWorkers.filter((worker) => worker.ownerUserId === currentUser?.id).map((worker) => worker.id)
-  );
+  const myWorkerIds = new Set([
+    ...resolvedWorkers.filter((worker) => worker.ownerUserId === currentUser?.id).map((worker) => worker.id),
+    ...(currentUser?.partnerId ? [currentUser.partnerId] : [])
+  ]);
   const visibleBookings = mode === "customer"
     ? resolvedBookings.filter((booking) => booking.customerId === currentUser?.id)
     : resolvedBookings.filter((booking) => myWorkerIds.has(booking.workerId) || booking.workerUserId === currentUser?.id);
@@ -36,6 +38,8 @@ export default function LabourWorksitePortal({
     toolsIncluded: "Trowel, Spirit Level, Measuring Tape"
   });
   const [otpInputMap, setOtpInputMap] = useState({});
+  const [quoteInputMap, setQuoteInputMap] = useState({});
+  const [busyAction, setBusyAction] = useState("");
   const [customerRequestForm, setCustomerRequestForm] = useState({
     siteAddress: "",
     workDate: new Date().toISOString().slice(0, 10),
@@ -117,22 +121,31 @@ export default function LabourWorksitePortal({
           </div>
           <button
             type="button"
-            onClick={() => {
-              if (!newWorkerForm.name.trim()) return;
+            disabled={busyAction === "profile"}
+            onClick={async () => {
+              if (!currentUser?.authUserId || !currentUser?.partnerId || currentUser?.role !== "labour" || currentUser?.status !== "Approved") {
+                notify("Complete Labour/Mistri registration and Founder approval first. An unapproved profile cannot be published.");
+                return;
+              }
+              if (!newWorkerForm.name.trim()) { notify("Enter the worker or Mistri Toli leader name."); return; }
               const tradeObj = LABOUR_TRADE_CATEGORIES.find((t) => t.id === newWorkerForm.tradeId);
-              const created = {
-                id: `lab_${Date.now()}`,
-                ...newWorkerForm,
-                tradeName: tradeObj ? tradeObj.name : "Mason / Helper",
-                status: "PENDING_ADMIN_APPROVAL", ownerUserId: currentUser?.id || null
-              };
-              updateWorkers([created, ...resolvedWorkers]);
-              setNewWorkerForm({ ...newWorkerForm, name: "", phone: "" });
-              notify(`Worker registration submitted for approval: ${created.name}.`);
+              setBusyAction("profile");
+              try {
+                await saveServerLabourProfile({
+                  partnerId: currentUser.partnerId,
+                  availabilityRules: currentUser.availabilityRules || {},
+                  profile: { ...newWorkerForm, tradeName: tradeObj?.name || "Mason / Helper" }
+                });
+                const saved = { id: currentUser.partnerId, partnerId: currentUser.partnerId, ...newWorkerForm, tradeName: tradeObj?.name || "Mason / Helper", status: "Approved", ownerUserId: currentUser.authUserId };
+                updateWorkers([saved, ...resolvedWorkers.filter((w) => w.id !== saved.id)]);
+                setNewWorkerForm({ ...newWorkerForm, name: "", phone: "" });
+                notify("Labour profile saved to the approved server partner record. No SMS or payment was used.");
+              } catch (error) { notify(error?.message || "Labour profile was not saved to the server."); }
+              finally { setBusyAction(""); }
             }}
-            className="w-full bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
+            className="w-full bg-amber-400 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black py-2 rounded-xl cursor-pointer"
           >
-            Publish to Labour & Mistri Adda
+            {busyAction === "profile" ? "Saving to WE4ALL…" : "Publish approved Labour profile"}
           </button>
         </div>
       </div>
