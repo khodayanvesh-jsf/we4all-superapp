@@ -133,10 +133,40 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: false,
+      dataApiReachable: false,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
       message: "Supabase Auth API responded with an unsuccessful status."
+    };
+  }
+
+  let dataApiReachable = false;
+  try {
+    const { error: dataApiError } = await supabase
+      .from("we4all_catalog_items")
+      .select("id", { head: true, count: "exact" });
+    dataApiReachable = !dataApiError;
+    if (dataApiError) {
+      return {
+        configured: true,
+        backendReachable: true,
+        dataApiReachable: false,
+        authenticated: false,
+        accountLinked: false,
+        syncReady: false,
+        message: dataApiError.message || "Supabase REST Data API cannot read the WE4ALL catalogue. Check Data API exposed schemas, grants and RLS."
+      };
+    }
+  } catch (error) {
+    return {
+      configured: true,
+      backendReachable: true,
+      dataApiReachable: false,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: error?.message || "Could not reach the Supabase Data API."
     };
   }
 
@@ -156,10 +186,11 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
-      message: "Supabase is reachable. Sign in with SMS OTP to enable private account sync."
+      message: "Supabase Auth and the WE4ALL catalogue Data API are reachable. Sign in with SMS OTP to enable private account sync."
     };
   }
 
@@ -181,6 +212,7 @@ export async function probeSupabaseConnection() {
     const result = {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: true,
       accountLinked: true,
       syncReady: sync?.ok === true,
@@ -194,6 +226,7 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: true,
       accountLinked: true,
       syncReady: false,
@@ -252,7 +285,13 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
     } else {
       return "";
     }
-    const objectPath = `${user.id}/${folder}/${crypto.randomUUID()}.${extension}`;
+    const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    const sizeBytes = Number(file?.size || 0);
+    if (!allowedImageTypes.has(contentType) || !sizeBytes || sizeBytes > 5 * 1024 * 1024) {
+      throw new Error("Public WE4ALL media accepts JPEG, PNG or WebP images up to 5 MB. Do not upload KYC, identity or bank documents here.");
+    }
+    const safeFolder = String(folder || "uploads").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 50);
+    const objectPath = `${user.id}/${safeFolder}/${crypto.randomUUID()}.${extension}`;
     const { error } = await supabase.storage.from("we4all-media").upload(objectPath, file, {
       contentType,
       upsert: false
