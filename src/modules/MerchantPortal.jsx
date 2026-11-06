@@ -128,7 +128,7 @@ export default function MerchantPortal({
                 Stock Reservation Window
               </p>
               <p className="text-[9px] text-slate-400">
-                Stock reservation is not server-connected yet. Heavy orders can be quoted, but stock is not reserved by this toggle.
+                Stock changes sync to the WE4ALL inventory ledger. Orders are reserved by the server at checkout.
               </p>
             </div>
             <button
