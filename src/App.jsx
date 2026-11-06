@@ -767,7 +767,7 @@ function AppContent() {
     const suppliedUsername = String(adminLoginForm.username || "").trim();
     // Preserve the familiar Founder username while authenticating against the dedicated Supabase Auth identity.
     const email = suppliedUsername.toLowerCase() === "admin"
-      ? "khodayanvesh@gmail.com"
+      ? "admin@we4all.com"
       : suppliedUsername.toLowerCase();
     const password = String(adminLoginForm.password || "");
     setAdminLoginError("");
