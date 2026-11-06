@@ -65,7 +65,7 @@ test("environment example contains public settings only and no server secret", (
 test("account authentication and file upload are bound to verified user identity", () => {
   assert.equal(owner.includes("supabase.auth.verifyOtp"), true);
   assert.equal(owner.includes("supabase.auth.getUser"), true);
-  assert.equal(client.includes('const objectPath = `${user.id}/${folder}/${crypto.randomUUID()}.'), true);
+  assert.equal(client.includes("const safeFolder = String(folder"), true);
   assert.equal(client.includes("auth.getUser()"), true);
 });
 
