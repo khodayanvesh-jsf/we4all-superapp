@@ -1,0 +1,4 @@
+project_id = "bdmbziwazpuzbukazmug"
+
+[functions.we4all-create-order]
+verify_jwt = true

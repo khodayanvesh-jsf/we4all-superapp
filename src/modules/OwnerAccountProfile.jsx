@@ -1,9 +1,12 @@
 ﻿import React, { useState, useEffect } from "react";
 import {
   loadCloudAndLocalState,
-  saveCloudAndLocalState,
   performZeroLossOtaUpdate,
-  getFounderCredentials
+  getFounderCredentials,
+  supabase,
+  activateSupabaseAccount,
+  clearActiveSupabaseAccount,
+  probeSupabaseConnection
 } from "../supabaseClient";
 
 const ROLE_OPTIONS = [
@@ -11,7 +14,8 @@ const ROLE_OPTIONS = [
   { id: "merchant", label: "🏪 Product Merchant Partner", isConsumer: false },
   { id: "service_provider", label: "🔧 Home Service Provider Partner", isConsumer: false },
   { id: "decorator", label: "🌺 Event Decorator & Function Hall Partner", isConsumer: false },
-  { id: "rider", label: "🛵 Delivery Captain & Bike/Auto Taxi Partner", isConsumer: false }
+  { id: "rider", label: "🛵 Delivery Captain & Bike/Auto Taxi Partner", isConsumer: false },
+  { id: "labour", label: "🧱 Labour & Mistri Worker Partner", isConsumer: false }
 ];
 
 export default function OwnerAccountProfile(rawProps = {}) {
@@ -30,58 +34,144 @@ export default function OwnerAccountProfile(rawProps = {}) {
     appUpdateInfo = {},
     setAppUpdateInfo,
     onOpenAdminGate,
+    onPartnerAuthenticated,
+    onLogoutPartner,
     onTriggerToast = () => {}
   } = rawProps;
 
-  const [localUser, setLocalUser] = useState(() => {
-    if (currentUser && !currentUser.isGuest) return currentUser;
-    try {
-      const saved = localStorage.getItem("we4all_persistent_user_session_v8");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return currentUser || { isGuest: true, role: "customer", fullName: "Guest Visitor" };
-  });
+  const [localUser, setLocalUser] = useState({ isGuest: true, role: "customer", fullName: "Guest Visitor" });
 
-  const isLoggedIn = Boolean(localUser && !localUser.isGuest);
+  const isLoggedIn = Boolean(localUser?.authUserId && !localUser.isGuest);
 
   // If logged in, default to account details; if guest, show login/register gate
   const [subTab, setSubTab] = useState(() => (isLoggedIn ? "account_details" : "kyc_gate"));
   const [authMode, setAuthMode] = useState("login"); // login | register
-  const [loginMethod, setLoginMethod] = useState("pin"); // pin | otp | biometric
   const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
   const [showPinText, setShowPinText] = useState(false);
 
   const isConsumerSelected = selectedRoleKey === "customer";
 
-  const [loginForm, setLoginForm] = useState({
-    identifier: "", // phone or username
-    pin: ""
-  });
+  const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
 
   const [regForm, setRegForm] = useState({
     fullName: "",
     businessName: "",
+    email: "",
+    password: "",
     phone: "",
     upiId: "",
-    pin: "",
     area: "Subhash Nagar, Adilabad"
   });
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
-  const [otpState, setOtpState] = useState({ sent: false, generatedOtp: "", enteredOtp: "" });
+  const [authState, setAuthState] = useState({ busy: false });
+  const [connectionHealth, setConnectionHealth] = useState({
+    checking: true,
+    configured: false,
+    backendReachable: false,
+    authenticated: false,
+    accountLinked: false,
+    syncReady: false,
+    message: "Checking Supabase connection…"
+  });
 
   useEffect(() => {
-    if (currentUser && !currentUser.isGuest) {
-      setLocalUser(currentUser);
-    }
-  }, [currentUser]);
+    let active = true;
+    const guest = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
+    (async () => {
+      if (!supabase) {
+        if (active) setLocalUser(guest);
+        return;
+      }
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data?.user) {
+        if (active) {
+          setLocalUser(guest);
+          if (currentUser?.authUserId) {
+            setCurrentUser?.(guest);
+            setActivePortal?.("customer");
+            onSelectRole?.("customer");
+          }
+        }
+        return;
+      }
+      const user = data.user;
+      const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
+        supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
+      ]);
+      if (profileError) throw profileError;
+      if (rolesError) throw rolesError;
+      const customerRole = (roles || []).find((item) => item.role === "customer" && item.status === "approved");
+      if (!customerRole) throw new Error("Verified Supabase session has no approved customer role.");
+      const preferredRole = currentUser?.authUserId === user.id ? currentUser.role : "customer";
+      const approvedRole = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
+      const resolvedRole = approvedRole?.role || "customer";
+      let partnerRecord = null;
+      if (resolvedRole !== "customer") {
+        const { data, error: partnerError } = await supabase
+          .from("we4all_partners")
+          .select("id,partner_type,approval_status,vehicle_class")
+          .eq("owner_user_id", user.id)
+          .eq("partner_type", resolvedRole)
+          .eq("approval_status", "approved")
+          .maybeSingle();
+        if (partnerError) throw partnerError;
+        if (!data) throw new Error("Your approved role has no active WE4ALL partner profile. Contact Founder support.");
+        partnerRecord = data;
+      }
+      const signedInUser = {
+        id: user.id,
+        authUserId: user.id,
+        phone: user.phone || profile?.phone || "",
+        fullName: profile?.full_name || user.user_metadata?.full_name || "",
+        businessName: profile?.business_name || "",
+        area: profile?.area || "",
+        role: resolvedRole,
+        partnerId: partnerRecord?.id || null,
+        vehicleCode: partnerRecord?.vehicle_class === "4W" ? "4W_HEAVY" : (partnerRecord?.vehicle_class || "UNVERIFIED"),
+        status: "Approved",
+        isGuest: false
+      };
+      if (!active) return;
+      setLocalUser(signedInUser);
+      setCurrentUser?.(signedInUser);
+      if (resolvedRole !== "customer") {
+        onPartnerAuthenticated?.(resolvedRole, signedInUser);
+      } else {
+        setActivePortal?.("customer");
+        onSelectRole?.("customer");
+      }
+    })().catch((error) => {
+      console.warn("WE4ALL session restore failed:", error?.message || error);
+      if (active) {
+        setLocalUser(guest);
+        setCurrentUser?.(guest);
+        setActivePortal?.("customer");
+      }
+    });
+    return () => { active = false; };
+  }, [currentUser?.authUserId]);
+
+
+  useEffect(() => {
+    let active = true;
+    const refreshConnection = async () => {
+      const result = await probeSupabaseConnection();
+      if (active) setConnectionHealth({ checking: false, ...result });
+    };
+    refreshConnection();
+    const timer = window.setInterval(refreshConnection, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [localUser?.authUserId]);
 
   const cleanPhoneDigits = (raw) => {
     const digits = String(raw || "").replace(/\D/g, "");
     return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits.slice(0, 10);
   };
-
-  const cleanPinDigits = (raw) => String(raw || "").replace(/\D/g, "").slice(0, 4);
 
   const normalizeUpiId = (rawUpi, fallbackPhone) => {
     const trimmed = String(rawUpi || "").trim();
@@ -89,87 +179,155 @@ export default function OwnerAccountProfile(rawProps = {}) {
     return fallbackPhone ? `${fallbackPhone}@ybl` : "";
   };
 
-  const handleLoginSubmit = () => {
-    const ident = String(loginForm.identifier || "").trim();
-    const pin = cleanPinDigits(loginForm.pin);
-
-    if (!ident) {
-      setFormFeedback({ type: "error", message: "Please enter your Registered Phone Number or Username." });
+  const handleLoginSubmit = async () => {
+    const email = String(loginForm.identifier || "").trim().toLowerCase();
+    const password = String(loginForm.password || "");
+    if (!email.includes("@") || password.length < 8) {
+      setFormFeedback({ type: "error", message: "Enter your registered email address and password (minimum 8 characters)." });
       return;
     }
-    if (loginMethod === "pin" && pin.length !== 4) {
-      setFormFeedback({ type: "error", message: "Please enter your valid 4-Digit Security PIN." });
+    if (!supabase) {
+      setFormFeedback({ type: "error", message: "WE4ALL database is not configured. The connection checker is separate from sign-in; SMS is not required." });
       return;
     }
-    if (loginMethod === "otp") {
-      if (!otpState.sent) {
-        setFormFeedback({ type: "error", message: "Please request a Mobile OTP first." });
-        return;
-      }
-      if (String(otpState.enteredOtp).trim() !== String(otpState.generatedOtp).trim()) {
-        setFormFeedback({ type: "error", message: "Incorrect 4-Digit OTP entered." });
-        return;
-      }
-    }
-
-    const snap = loadCloudAndLocalState() || {};
-    const registeredUsers = Array.isArray(snap.registeredUsers) ? snap.registeredUsers : [];
-
-    const matched = registeredUsers.find(
-      (u) =>
-        (u?.phone && cleanPhoneDigits(u.phone) === cleanPhoneDigits(ident)) ||
-        (u?.username && u.username.toLowerCase() === ident.toLowerCase()) ||
-        (u?.fullName && u.fullName.toLowerCase() === ident.toLowerCase())
-    );
-
-    if (!matched) {
-      setFormFeedback({
-        type: "error",
-        message: `No account found for "${ident}". Please check your details or switch to New Registration.`
-      });
-      return;
-    }
-
-    if (loginMethod === "pin" && matched.pin && String(matched.pin) !== pin) {
-      setFormFeedback({ type: "error", message: "Incorrect 4-Digit Security PIN." });
-      return;
-    }
-
-    const activeRole = matched.role || selectedRoleKey || "customer";
-    const activeUser = {
-      ...matched,
-      role: activeRole,
-      portal: activeRole,
-      isGuest: false,
-      lastLoginAt: new Date().toLocaleString()
-    };
-
-    setLocalUser(activeUser);
+    setAuthState((state) => ({ ...state, busy: true }));
     try {
-      localStorage.setItem("we4all_persistent_user_session_v8", JSON.stringify(activeUser));
-    } catch (e) {}
-    saveCloudAndLocalState({ currentUser: activeUser });
-
-    if (setCurrentUser) setCurrentUser(activeUser);
-    if (setActivePortal) setActivePortal(activeRole);
-    if (onSelectRole) onSelectRole(activeRole);
-
-    setSubTab("account_details");
-    onTriggerToast(`✓ Successfully logged into ${activeRole.toUpperCase()} portal! Session persists.`);
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      const user = data?.user;
+      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a signed-in session.");
+      const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
+        supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
+      ]);
+      if (profileError) throw profileError;
+      if (rolesError) throw rolesError;
+      const activation = await activateSupabaseAccount(user.id);
+      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
+      if (activation.changed && typeof window !== "undefined") { window.location.reload(); return; }
+      const customerRole = (roles || []).find((role) => role.role === "customer" && role.status === "approved");
+      if (!customerRole) throw new Error("Customer role is not yet provisioned. Please contact WE4ALL support.");
+      const baseUser = {
+        id: user.id, authUserId: user.id, email: user.email || email,
+        phone: user.phone || profile?.phone || "",
+        fullName: profile?.full_name || user.user_metadata?.full_name || "",
+        businessName: profile?.business_name || user.user_metadata?.business_name || "",
+        area: profile?.area || user.user_metadata?.area || "", isGuest: false
+      };
+      if (selectedRoleKey !== "customer") {
+        const approved = (roles || []).find((role) => role.role === selectedRoleKey && role.status === "approved");
+        if (!approved) {
+          const customer = { ...baseUser, role: "customer", status: "Approved" };
+          setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
+          setFormFeedback({ type: "error", message: `Your customer account is active. The ${selectedRoleKey.replace("_", " ")} portal is pending Founder approval.` });
+          setSubTab("account_details"); return;
+        }
+        const { data: partner, error: partnerError } = await supabase.from("we4all_partners")
+          .select("id,partner_type,approval_status,vehicle_class").eq("owner_user_id", user.id)
+          .eq("partner_type", selectedRoleKey).eq("approval_status", "approved").maybeSingle();
+        if (partnerError) throw partnerError;
+        if (!partner) throw new Error("Your approved portal has no active partner profile.");
+        const partnerUser = { ...baseUser, role: selectedRoleKey, partnerId: partner.id, vehicleCode: partner.vehicle_class === "4W" ? "4W_HEAVY" : (partner.vehicle_class || "UNVERIFIED"), status: "Approved" };
+        setLocalUser(partnerUser); setCurrentUser?.(partnerUser);
+        onPartnerAuthenticated?.(selectedRoleKey, partnerUser);
+        setFormFeedback({ type: "success", message: `${selectedRoleKey.replace("_", " ")} portal access verified.` });
+      } else {
+        const customer = { ...baseUser, role: "customer", status: "Approved" };
+        setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
+        setFormFeedback({ type: "success", message: "Signed in. Your WE4ALL account is connected to Supabase." });
+      }
+      setSubTab("account_details");
+    } catch (error) {
+      setFormFeedback({ type: "error", message: error?.message || "Email/password sign-in failed." });
+    } finally {
+      setAuthState((state) => ({ ...state, busy: false }));
+    }
   };
 
-  const handleLogout = () => {
+  const handleRegistrationSubmit = async () => {
+    const email = String(regForm.email || "").trim().toLowerCase();
+    const password = String(regForm.password || "");
+    if (!regForm.fullName.trim()) { setFormFeedback({ type: "error", message: "Enter your full name." }); return; }
+    if (!email.includes("@")) { setFormFeedback({ type: "error", message: "Enter a valid email address." }); return; }
+    if (password.length < 8) { setFormFeedback({ type: "error", message: "Choose a password with at least 8 characters." }); return; }
+    if (!isConsumerSelected && !regForm.businessName.trim()) { setFormFeedback({ type: "error", message: "Enter your business or partner name." }); return; }
+    if (!supabase) { setFormFeedback({ type: "error", message: "WE4ALL database is not configured. SMS is not required for the database connection." }); return; }
+    setOtpState((state) => ({ ...state, busy: true }));
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email, password,
+        options: { data: {
+          full_name: regForm.fullName.trim(),
+          business_name: regForm.businessName.trim(),
+          phone: cleanPhoneDigits(regForm.phone),
+          area: regForm.area || ""
+        } }
+      });
+      if (error) throw error;
+      const user = data?.user;
+      if (!user?.id) throw new Error("Supabase did not create an account.");
+      if (!data.session) {
+        setFormFeedback({
+          type: "success",
+          message: "Account registration started. Check your email for Supabase's free verification link, then return here and sign in. No SMS was sent."
+        });
+        setAuthMode("login");
+        setLoginForm({ identifier: email, password: "" });
+        setAuthState({ busy: false });
+        return;
+      }
+      const profilePayload = {
+        user_id: user.id, full_name: regForm.fullName.trim(),
+        business_name: regForm.businessName.trim(),
+        phone: cleanPhoneDigits(regForm.phone), area: regForm.area || "",
+        updated_at: new Date().toISOString()
+      };
+      const { error: profileError } = await supabase.from("we4all_profiles").upsert(profilePayload, { onConflict: "user_id" });
+      if (profileError) throw profileError;
+      if (selectedRoleKey !== "customer") {
+        const { error: applicationError } = await supabase.from("we4all_partner_applications").insert({
+          user_id: user.id, requested_role: selectedRoleKey,
+          application_payload: { full_name: profilePayload.full_name, business_name: profilePayload.business_name, phone: profilePayload.phone, area: profilePayload.area }
+        });
+        if (applicationError) throw applicationError;
+      }
+      const activation = await activateSupabaseAccount(user.id);
+      if (!activation.ok) throw new Error(activation.reason || "Could not activate your WE4ALL account.");
+      const customer = {
+        id: user.id, authUserId: user.id, email,
+        phone: profilePayload.phone, fullName: profilePayload.full_name,
+        businessName: profilePayload.business_name, area: profilePayload.area,
+        role: "customer", status: "Approved", isGuest: false
+      };
+      setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
+      setSubTab("account_details");
+      setFormFeedback({ type: "success", message: selectedRoleKey === "customer"
+        ? "Customer account created and connected to WE4ALL."
+        : "Customer account created. Your partner application is awaiting Founder approval." });
+    } catch (error) {
+      setFormFeedback({ type: "error", message: error?.message || "Could not complete registration." });
+    } finally {
+      setOtpState((state) => ({ ...state, busy: false }));
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase?.auth.signOut();
+      clearActiveSupabaseAccount();
+    } catch (error) {
+      console.warn("WE4ALL sign-out failed:", error?.message || error);
+    }
     const guestUser = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
     setLocalUser(guestUser);
-    try {
-      localStorage.removeItem("we4all_persistent_user_session_v8");
-    } catch (e) {}
-    saveCloudAndLocalState({ currentUser: guestUser });
     if (setCurrentUser) setCurrentUser(guestUser);
     if (setActivePortal) setActivePortal("customer");
     if (onSelectRole) onSelectRole("customer");
+    onLogoutPartner?.();
+    setOtpState({ sent: false, phone: "", token: "", busy: false });
     setSubTab("kyc_gate");
-    onTriggerToast("🚪 Logged out successfully. Returned to Guest Visitor mode.");
+    onTriggerToast("Signed out of Supabase. Returned to Guest Visitor mode.");
+    if (typeof window !== "undefined") window.location.reload();
   };
 
   return (
@@ -200,6 +358,24 @@ export default function OwnerAccountProfile(rawProps = {}) {
             🚪 Logout Session
           </button>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-black text-slate-200">Supabase cloud connection</span>
+          <span className={connectionHealth.backendReachable ? "text-emerald-300 font-black" : "text-rose-300 font-black"}>
+            {connectionHealth.checking
+              ? "CHECKING"
+              : connectionHealth.syncReady
+                ? "CONNECTED · ACCOUNT SYNC VERIFIED"
+                : connectionHealth.backendReachable
+                  ? "API CONNECTED"
+                  : connectionHealth.configured
+                    ? "API UNREACHABLE"
+                    : "NOT CONFIGURED"}
+          </span>
+        </div>
+        <p className="text-slate-400">{connectionHealth.message}</p>
       </div>
 
       {/* Account Navigation Tabs */}
@@ -287,107 +463,23 @@ export default function OwnerAccountProfile(rawProps = {}) {
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-400 font-bold block mb-1">Username or Phone Number *</label>
-                <input
-                  type="text"
-                  value={loginForm.identifier}
+                <label className="text-[10px] text-slate-400 font-bold block mb-1">Email address *</label>
+                <input type="email" autoComplete="username" value={loginForm.identifier}
                   onChange={(e) => setLoginForm({ ...loginForm, identifier: e.target.value })}
-                  placeholder="Enter Username or 10-Digit Mobile"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
-                />
+                  placeholder="name@example.com"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold" />
               </div>
-
-              <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
-                {[
-                  { id: "pin", label: "PIN Code" },
-                  { id: "otp", label: "Mobile OTP" },
-                  { id: "biometric", label: "Biometric / Passkey" }
-                ].map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setLoginMethod(m.id)}
-                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black cursor-pointer ${
-                      loginMethod === m.id ? "bg-amber-400 text-slate-950" : "text-slate-400"
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold block mb-1">Password *</label>
+                <input type="password" autoComplete="current-password" value={loginForm.password}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                  placeholder="At least 8 characters"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
               </div>
-
-              {loginMethod === "pin" && (
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[10px] text-slate-400 font-bold">4-Digit Security PIN *</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowPinText(!showPinText)}
-                      className="text-[10px] text-emerald-400 font-bold cursor-pointer"
-                    >
-                      {showPinText ? "Hide PIN" : "Show PIN"}
-                    </button>
-                  </div>
-                  <input
-                    type={showPinText ? "text" : "password"}
-                    maxLength={4}
-                    value={loginForm.pin}
-                    onChange={(e) => setLoginForm({ ...loginForm, pin: cleanPinDigits(e.target.value) })}
-                    placeholder="••••"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-emerald-300 font-mono text-center tracking-widest text-sm font-black"
-                  />
-                </div>
-              )}
-
-              {loginMethod === "otp" && (
-                <div className="space-y-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const code = String(Math.floor(1000 + Math.random() * 9000));
-                        setOtpState({ sent: true, generatedOtp: code, enteredOtp: code });
-                        onTriggerToast(`📲 Instant OTP Generated: ${code}`);
-                      }}
-                      className="bg-amber-400 text-slate-950 font-black px-3 py-2 rounded-xl cursor-pointer text-[11px]"
-                    >
-                      📲 Send Mobile OTP
-                    </button>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      value={otpState.enteredOtp}
-                      onChange={(e) => setOtpState({ ...otpState, enteredOtp: cleanPinDigits(e.target.value) })}
-                      placeholder="4-Digit OTP"
-                      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-emerald-300 font-mono text-center font-black"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {loginMethod === "biometric" && (
-                <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/40 text-center space-y-2">
-                  <p className="text-emerald-300 font-bold text-xs">Touch Fingerprint Sensor or FaceID</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoginForm({ ...loginForm, identifier: currentUser?.phone || "9848011223" });
-                      onTriggerToast("✓ Biometric Passkey Verified!");
-                      setTimeout(handleLoginSubmit, 400);
-                    }}
-                    className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl cursor-pointer text-xs"
-                  >
-                    Authenticate with Device Biometrics 👆
-                  </button>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleLoginSubmit}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs"
-              >
-                Unlock &amp; Stay Logged In to Portal →
+              <p className="text-[10px] text-emerald-300">Free sign-in: SMS OTP is temporarily paused. Database connection is checked separately and never requires a text message.</p>
+              <button type="button" onClick={handleLoginSubmit} disabled={authState.busy}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs">
+                {otpState.busy ? "Signing in…" : "Sign in securely →"}
               </button>
             </div>
           ) : (
@@ -426,65 +518,30 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 />
               )}
 
-              <input
-                type="tel"
-                maxLength={10}
-                value={regForm.phone}
+              <input type="email" autoComplete="email" required value={regForm.email}
+                onChange={(e) => setRegForm({ ...regForm, email: e.target.value })}
+                placeholder="Email address *" className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
+              <input type="password" autoComplete="new-password" required minLength={8} value={regForm.password}
+                onChange={(e) => setRegForm({ ...regForm, password: e.target.value })}
+                placeholder="Create password (minimum 8 characters) *" className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
+              <input type="tel" maxLength={10} value={regForm.phone}
                 onChange={(e) => setRegForm({ ...regForm, phone: cleanPhoneDigits(e.target.value) })}
-                placeholder="10-Digit Mobile Number *"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
-              />
+                placeholder="Mobile number (optional contact only)"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold" />
 
               <input
                 type="text"
                 maxLength={4}
-                value={regForm.pin}
-                onChange={(e) => setRegForm({ ...regForm, pin: cleanPinDigits(e.target.value) })}
-                placeholder="Create 4-Digit PIN * (e.g. 1990)"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-emerald-300 font-mono text-center tracking-widest font-black"
+                value={regForm.area}
+                onChange={(e) => setRegForm({ ...regForm, area: e.target.value })}
+                placeholder="Area / address"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
               />
 
-              <button
-                type="button"
-                onClick={() => {
-                  const phone = cleanPhoneDigits(regForm.phone);
-                  const pin = cleanPinDigits(regForm.pin);
-                  if (!regForm.fullName.trim() || phone.length !== 10 || pin.length !== 4) {
-                    setFormFeedback({ type: "error", message: "Please fill Name, 10-digit mobile, and 4-digit PIN." });
-                    return;
-                  }
-                  const newUser = {
-                    id: `${selectedRoleKey}_${Date.now()}`,
-                    fullName: regForm.fullName.trim(),
-                    name: regForm.fullName.trim(),
-                    businessName: regForm.businessName.trim() || regForm.fullName.trim(),
-                    phone,
-                    role: selectedRoleKey,
-                    portal: selectedRoleKey,
-                    upiId: normalizeUpiId(regForm.upiId, phone),
-                    pin,
-                    isGuest: false,
-                    status: isConsumerSelected ? "Approved" : "Pending Admin Approval"
-                  };
-                  const snap = loadCloudAndLocalState() || {};
-                  const list = Array.isArray(snap.registeredUsers) ? snap.registeredUsers : [];
-                  saveCloudAndLocalState({
-                    currentUser: newUser,
-                    registeredUsers: [newUser, ...list]
-                  });
-                  setLocalUser(newUser);
-                  try {
-                    localStorage.setItem("we4all_persistent_user_session_v8", JSON.stringify(newUser));
-                  } catch (e) {}
-                  if (setCurrentUser) setCurrentUser(newUser);
-                  if (setActivePortal) setActivePortal(selectedRoleKey);
-                  if (onSelectRole) onSelectRole(selectedRoleKey);
-                  setSubTab("account_details");
-                  onTriggerToast(`✓ Registration complete! Logged into ${selectedRoleKey.toUpperCase()} portal.`);
-                }}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow text-xs"
-              >
-                Complete Registration &amp; Start Session →
+              <p className="text-[10px] text-emerald-300">No paid SMS is used. Supabase may send a free email confirmation link depending on your Auth settings. Your database connection is tested separately.</p>
+              <button type="button" disabled={otpState.busy} onClick={handleRegistrationSubmit}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl shadow text-xs">
+                {otpState.busy ? "Creating account…" : "Create free WE4ALL account →"}
               </button>
             </div>
           )}

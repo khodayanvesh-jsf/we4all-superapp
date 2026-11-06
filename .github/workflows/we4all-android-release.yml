@@ -1,0 +1,103 @@
+name: WE4ALL signed Android release build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: we4all-android-release
+  cancel-in-progress: false
+
+jobs:
+  signed-release:
+    name: Build and verify signed Android APK
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    environment: android-release
+    timeout-minutes: 45
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      CAPGO_PUBLIC_KEY: ${{ secrets.CAPGO_PUBLIC_KEY }}
+    steps:
+      - name: Checkout reviewed production source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Validate signing material
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_KEYSTORE_BASE64:?Set the existing Android app-signing keystore}"
+          test -n "${ANDROID_KEYSTORE_PASSWORD:?Set ANDROID_KEYSTORE_PASSWORD}"
+          test -n "${ANDROID_KEY_ALIAS:?Set ANDROID_KEY_ALIAS}"
+          test -n "${ANDROID_KEY_PASSWORD:?Set ANDROID_KEY_PASSWORD}"
+          test -n "${CAPGO_PUBLIC_KEY:?Set the Capgo public encryption key}"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java 21
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Configure Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies and test
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Configure Capgo public key
+        run: |
+          npx --yes @capgo/cli@latest key save --key-data "$CAPGO_PUBLIC_KEY"
+          npx cap sync android
+
+      - name: Restore existing Android signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="$RUNNER_TEMP/we4all-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Build signed AAB and APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon clean assembleRelease
+
+      - name: Verify APK signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+
+      - name: Upload signed release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: WE4ALL-3.2.9-signed-android-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14

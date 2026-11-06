@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
+import { supabase, adjustMarketplaceStock } from "../supabaseClient";
 
 export default function MerchantPortal({
   footerTab,
@@ -16,8 +18,16 @@ export default function MerchantPortal({
   onTriggerToast,
   renderAccountTab
 }) {
-  const [autoStockWindowActive, setAutoStockWindowActive] = useState(true);
+  const [autoStockWindowActive] = useState(false);
+  const merchantId = currentUser?.id || "";
+  const merchantName = currentUser?.businessName || currentUser?.fullName || "";
+  const merchantProducts = (products || []).filter((product) =>
+    product.ownerUserId === merchantId ||
+    (merchantName && product.shopName === merchantName)
+  );
+  const merchantOrders = (orders || []).filter((order) => isMerchantOrderOwned(order, currentUser));
   const [heavyLaborFees, setHeavyLaborFees] = useState({});
+  const [productSubmitting, setProductSubmitting] = useState(false);
   const [newProdForm, setNewProdForm] = useState({
     categoryId: "daily_needs",
     subCategoryBrand: "",
@@ -31,6 +41,34 @@ export default function MerchantPortal({
   if (footerTab === "account") {
     return renderAccountTab();
   }
+
+  const handleToggleLiveStock = async (product) => {
+    if (!currentUser?.partnerId || !product?.catalogItemId) {
+      onTriggerToast("This product is not linked to a verified live catalogue record.");
+      return;
+    }
+    const currentQuantity = Number(product.stockQuantity || 0);
+    const targetQuantity = currentQuantity > 0 ? 0 : 1;
+    const delta = targetQuantity - currentQuantity;
+    const idempotencyKey = globalThis.crypto?.randomUUID?.() || `stock-${product.catalogItemId}-${Date.now()}`;
+    try {
+      const result = await adjustMarketplaceStock({
+        partnerId: currentUser.partnerId,
+        catalogItemId: product.catalogItemId,
+        quantityDelta: delta,
+        idempotencyKey
+      });
+      const quantity = Number(result.stock_quantity);
+      setProducts((items) => (items || []).map((item) =>
+        item.catalogItemId === product.catalogItemId
+          ? { ...item, stockQuantity: quantity, inStock: quantity > 0 }
+          : item
+      ));
+      onTriggerToast(`Online stock saved. ${quantity > 0 ? "Available" : "Out of stock"} in the shared WE4ALL catalogue.`);
+    } catch (error) {
+      onTriggerToast(error?.message || "Stock update failed. No local success was recorded.");
+    }
+  };
 
   const handleConfirmHeavyAndLaborBill = (ord) => {
     const fees = heavyLaborFees[ord.id] || { heavyTransportFee: 0, laborFee: 0 };
@@ -51,13 +89,13 @@ export default function MerchantPortal({
               deliveryFee: baseDelivery,
               gst,
               grandTotal,
-              status: "MERCHANT_CONFIRMED_WAIT_PAYMENT"
+              status: "BILL_PREPARED_PENDING_CUSTOMER_REVIEW"
             }
           : o
       )
     );
     if (onTriggerToast) {
-      onTriggerToast(`Confirmed Bill (Rs.${grandTotal}) & pushed to Customer for UPI payment!`);
+      onTriggerToast(`Bill of ₹${grandTotal} prepared for customer review. Payment is not confirmed.`);
     }
   };
 
@@ -87,31 +125,31 @@ export default function MerchantPortal({
           <div className="bg-slate-900 p-2.5 rounded-2xl border border-slate-800 flex justify-between items-center">
             <div>
               <p className="font-bold text-amber-300 text-[11px]">
-                30-Min Autonomous Stock Window
+                Stock Reservation Window
               </p>
               <p className="text-[9px] text-slate-400">
-                Standard orders bypass popup wait; heavy orders allow adding Transport &amp; Labor fees
+                Stock changes sync to the WE4ALL inventory ledger. Orders are reserved by the server at checkout.
               </p>
             </div>
             <button
               type="button"
-              onClick={() => setAutoStockWindowActive(!autoStockWindowActive)}
+              disabled
               className={`px-2.5 py-1 rounded-lg font-black text-[9px] cursor-pointer ${
                 autoStockWindowActive
                   ? "bg-emerald-400 text-slate-950"
                   : "bg-slate-800 text-slate-400"
               }`}
             >
-              {autoStockWindowActive ? "AUTO ON" : "MANUAL"}
+              "SERVER SYNC PENDING"
             </button>
           </div>
 
-          {(orders || []).length === 0 ? (
+          {merchantOrders.length === 0 ? (
             <p className="text-slate-400 text-center py-6 bg-slate-900 rounded-2xl border border-slate-800">
               No active store orders in queue. Place an order from the Customer App to test!
             </p>
           ) : (
-            orders.map((ord) => {
+            merchantOrders.map((ord) => {
               const feeEntry = heavyLaborFees[ord.id] || { heavyTransportFee: 0, laborFee: 0 };
               return (
                 <div
@@ -180,21 +218,22 @@ export default function MerchantPortal({
                     </button>
                     <button
                       type="button"
+                      disabled={!canMarkOrderPacked(ord)}
                       onClick={() => {
+                        if (!canMarkOrderPacked(ord)) {
+                          onTriggerToast("Packing is locked until payment is verified by the server.");
+                          return;
+                        }
                         setOrders(
                           orders.map((o) =>
                             o.id === ord.id
-                              ? { ...o, status: "READY_FOR_PICKUP_AGENT_ALERTED" }
+                              ? { ...o, status: "PACKED_PENDING_SERVER_DISPATCH" }
                               : o
                           )
                         );
-                        if (onTriggerToast) {
-                          onTriggerToast(
-                            `Order #${ord.id} Packed & Ready! Delivery Captain alerted.`
-                          );
-                        }
+                        onTriggerToast(`Order #${ord.id} marked packed locally. Dispatch still requires server confirmation.`);
                       }}
-                      className="bg-amber-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
+                      className="bg-amber-400 disabled:bg-slate-700 disabled:text-slate-300 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
                     >
                       Packed &amp; Ready &rarr; Alert Rider
                     </button>
@@ -210,9 +249,9 @@ export default function MerchantPortal({
       {footerTab === "stock" && (
         <div className="space-y-2">
           <h4 className="font-black text-emerald-400">
-            2. Physical Product Stock &amp; Inline Price Manual ({(products || []).length} Items)
+            2. My Products &amp; Stock Manual ({merchantProducts.length} Items)
           </h4>
-          {products.map((prod, idx) => (
+          {merchantProducts.map((prod) => (
             <div
               key={prod.id}
               className="bg-slate-900 p-2.5 rounded-2xl border border-slate-800 flex justify-between items-center gap-2"
@@ -225,18 +264,25 @@ export default function MerchantPortal({
                     type="number"
                     value={prod.variants?.[0]?.price || 50}
                     onChange={(e) => {
-                      const next = [...products];
-                      const val = Number(e.target.value) || 0;
-                      if (next[idx].variants?.[0]) next[idx].variants[0].price = val;
-                      setProducts(next);
+                      const val = Number(e.target.value);
+                      if (!Number.isFinite(val) || val <= 0) return;
+                      setProducts((products || []).map((item) =>
+                        item.id === prod.id && item.ownerUserId === merchantId
+                          ? { ...item, variants: (item.variants || []).map((variant, variantIndex) =>
+                              variantIndex === 0 ? { ...variant, price: val, updatedAt: new Date().toISOString() } : variant
+                            ) }
+                          : item
+                      ));
                     }}
                     className="w-20 bg-slate-950 border border-slate-700 rounded-lg p-1 text-emerald-300 font-bold text-xs"
                   />
                   <button
                     type="button"
-                    onClick={() =>
-                      setProducts(products.filter((item) => item.id !== prod.id))
-                    }
+                    onClick={() => setProducts((products || []).map((item) =>
+                      item.id === prod.id && item.ownerUserId === merchantId
+                        ? { ...item, status: "ARCHIVED_BY_MERCHANT", inStock: false }
+                        : item
+                    ))}
                     className="bg-rose-950/60 text-rose-300 border border-rose-700 px-2 py-0.5 rounded text-[9px] font-bold cursor-pointer"
                   >
                     Remove
@@ -245,11 +291,7 @@ export default function MerchantPortal({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  const next = [...products];
-                  next[idx].inStock = !next[idx].inStock;
-                  setProducts(next);
-                }}
+                onClick={() => handleToggleLiveStock(prod)}
                 className={`px-3 py-1.5 rounded-xl font-black text-[10px] cursor-pointer ${
                   prod.inStock !== false
                     ? "bg-emerald-500 text-slate-950"
@@ -309,6 +351,73 @@ export default function MerchantPortal({
           </div>
           <button
             type="button"
+            disabled={productSubmitting}
+            onClick={async () => {
+              const title = newProdForm.subCategoryBrand.trim();
+              const price = Number(newProdForm.price);
+              const mrp = Number(newProdForm.mrp || newProdForm.price);
+              if (!title || !merchantId || !currentUser?.partnerId ||
+                  !Number.isFinite(price) || price <= 0 ||
+                  !Number.isFinite(mrp) || mrp < price) {
+                onTriggerToast("A verified partner profile, product name, valid price and MRP are required.");
+                return;
+              }
+              if (!supabase) {
+                onTriggerToast("WE4ALL backend is unavailable. Product was not saved.");
+                return;
+              }
+              setProductSubmitting(true);
+              try {
+                const sku = "WE4-" + (globalThis.crypto?.randomUUID?.() || Date.now()).toString().replace(/-/g, "").slice(0, 12).toUpperCase();
+                const { data: created, error } = await supabase
+                  .from("we4all_catalog_items")
+                  .insert({
+                    partner_id: currentUser.partnerId,
+                    sku,
+                    title,
+                    description: "",
+                    category_key: newProdForm.categoryId,
+                    item_type: "physical",
+                    price_inr: price,
+                    mrp_inr: mrp,
+                    stock_quantity: 0,
+                    unit_label: newProdForm.unitLabel || "unit",
+                    metadata: { image_url: newProdForm.image || "" }
+                  })
+                  .select("id,partner_id,title,sku,category_key,price_inr,mrp_inr,stock_quantity,unit_label,approval_status,is_active,created_at")
+                  .single();
+                if (error) throw error;
+                const product = {
+                  id: created.id,
+                  catalogItemId: created.id,
+                  ownerUserId: merchantId,
+                  merchantId,
+                  partnerId: created.partner_id,
+                  categoryId: created.category_key,
+                  subCategoryBrand: created.title,
+                  shopName: merchantName,
+                  sku: created.sku,
+                  variants: [{ id: created.id, label: created.unit_label, price: Number(created.price_inr), mrp: Number(created.mrp_inr), weightGrams: 1000 }],
+                  stockQuantity: created.stock_quantity,
+                  inStock: false,
+                  status: "PENDING_ADMIN_APPROVAL",
+                  createdAt: created.created_at
+                };
+                setProducts([product, ...(products || [])]);
+                setNewProdForm({ ...newProdForm, subCategoryBrand: "", price: 0, mrp: 0 });
+                onTriggerToast("Product saved to WE4ALL database as pending approval with zero stock. Founder approval and stock entry are required before customer sale.");
+              } catch (error) {
+                onTriggerToast(error?.message || "Could not save product to WE4ALL.");
+              } finally {
+                setProductSubmitting(false);
+              }
+            }}
+            className="w-full bg-emerald-500 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
+          >
+            {productSubmitting ? "Saving to WE4ALL…" : "Submit Product for Approval"}
+          </button>
+          <button
+            type="button"
             onClick={() => {
               if (!newProdForm.subCategoryBrand.trim()) return;
               setPendingSubCategories([
@@ -361,14 +470,14 @@ export default function MerchantPortal({
       {footerTab === "orders" && (
         <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 space-y-2">
           <h4 className="font-black text-emerald-400">
-            4. Merchant GST &amp; Settlement Ledger ({(orders || []).length} Orders)
+            4. Merchant GST &amp; Settlement Ledger ({merchantOrders.length} Orders)
           </h4>
           <p className="text-[11px] text-slate-300">
-            Total Settled Volume:{" "}
+            Order value shown (not settled payout):{" "}
             <strong>
-              Rs.{orders.reduce((s, o) => s + Number(o.grandTotal || 0), 0)}
+              Rs.{merchantOrders.reduce((s, o) => s + Number(o.grandTotal || 0), 0)}
             </strong>{" "}
-            (0% Commission Forever)
+            (settlement not verified)
           </p>
         </div>
       )}

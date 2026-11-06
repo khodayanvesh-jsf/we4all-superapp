@@ -1,16 +1,13 @@
-CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE TABLE IF NOT EXISTS public.we4all_town_state (
-  zone_id VARCHAR(64) PRIMARY KEY,
-  app_version VARCHAR(20) DEFAULT '3.1.0',
-  state_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS public.we4all_orders_ledger (
-  order_id VARCHAR(50) PRIMARY KEY,
-  category_id VARCHAR(50),
-  customer_name VARCHAR(120),
-  address TEXT,
-  grand_total DECIMAL(10,2),
-  status VARCHAR(50),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- RETIRED SQL SCRIPT — DO NOT EXECUTE.
+-- Earlier WE4ALL versions created public write policies on shared global JSON state.
+-- The live project now uses owner-scoped RLS tables and authenticated Edge Function sync.
+-- Canonical, already-applied database changes are recorded in:
+--   supabase/migrations/20261105190000_secure_user_state_partner_auth.sql
+--   supabase/migrations/20261105200000_we4all_auth_profiles_customer_bootstrap.sql
+--   supabase/migrations/20261105210000_secure_we4all_media_uploads.sql
+-- Do not recreate public policies or the old shared global sync bus.
+DO $we4all_retired$
+BEGIN
+  RAISE EXCEPTION 'This legacy WE4ALL setup script is retired. Apply the secure versioned migrations instead.';
+END
+$we4all_retired$;
