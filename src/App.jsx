@@ -46,7 +46,10 @@ import {
   performZeroLossOtaUpdate,
   supabase,
   activateSupabaseAccount,
-  clearActiveSupabaseAccount
+  clearActiveSupabaseAccount,
+  loadMarketplaceCatalog,
+  loadMarketplaceOrders,
+  createMarketplaceOrder
 } from "./supabaseClient";
 
 function FounderLogoBadge({ logoUrl }) {
@@ -563,6 +566,7 @@ function AppContent() {
   });
 
   const [orders, setOrders] = useState(savedCloud?.orders || []);
+  const checkoutIdempotencyKeyRef = useRef(null);
   const [activeOrderId, setActiveOrderId] = useState(null);
   const [liveOrderDrawerOpen, setLiveOrderDrawerOpen] = useState(false);
   const [serviceBookings, setServiceBookings] = useState(savedCloud?.serviceBookings || []);
@@ -671,6 +675,51 @@ function AppContent() {
   ]);
 
   useEffect(() => {
+    let active = true;
+    let channel = null;
+
+    const refreshCatalog = async () => {
+      try {
+        const liveProducts = await loadMarketplaceCatalog();
+        if (active) setProducts(liveProducts);
+      } catch (error) {
+        console.warn("WE4ALL live catalogue load failed:", error?.message || error);
+      }
+    };
+
+    const refreshOrders = async () => {
+      if (!currentUser?.authUserId) return;
+      try {
+        const liveOrders = await loadMarketplaceOrders(currentUser);
+        if (active) setOrders(liveOrders);
+      } catch (error) {
+        console.warn("WE4ALL shared orders load failed:", error?.message || error);
+      }
+    };
+
+    refreshCatalog();
+    refreshOrders();
+
+    if (supabase) {
+      channel = supabase
+        .channel("we4all-marketplace-live")
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_catalog_items" }, refreshCatalog)
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_orders" }, refreshOrders)
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_order_items" }, refreshOrders)
+        .subscribe();
+    }
+
+    return () => {
+      active = false;
+      if (channel && supabase) supabase.removeChannel(channel);
+    };
+  }, [currentUser?.authUserId, currentUser?.role, currentUser?.partnerId]);
+
+  useEffect(() => {
+    checkoutIdempotencyKeyRef.current = null;
+  }, [merchantCart]);
+
+  useEffect(() => {
     return subscribeToRealtimeUpdates((remoteState) => {
       if (remoteState.orders) setOrders(remoteState.orders);
       if (remoteState.serviceBookings) setServiceBookings(remoteState.serviceBookings);
@@ -745,6 +794,7 @@ function AppContent() {
           ...merchantCart,
           {
             productId: product.id,
+            catalogItemId: product.catalogItemId || product.id,
             categoryId: product.categoryId,
             variantId: variant.id,
             name: product.subCategoryBrand + " (" + variant.label + ")",
@@ -759,65 +809,75 @@ function AppContent() {
     triggerToast("Added " + product.subCategoryBrand + " to Cart!");
   };
 
-  const handlePlaceOrderForCheckout = () => {
+  const handlePlaceOrderForCheckout = async () => {
     if ((merchantCart || []).length === 0) return;
-    const itemsTotal = merchantCart.reduce((s, i) => s + i.price * i.qty, 0);
-    const { totalWeightGrams, totalRouteKm, vehicle, deliveryFee } = calculateOrderLogistics(
-      merchantCart,
-      activeAddressObj.distanceKm,
-      0,
-      0
-    );
-    const silentFee = Number(monetizationConfig.globalPlatformFee || 0);
-    const gst = Number(((itemsTotal + deliveryFee + silentFee) * 0.05).toFixed(2));
-    const grandTotal = Number((itemsTotal + deliveryFee + silentFee + gst).toFixed(2));
+    if (!currentUser?.authUserId || currentUser?.isGuest) {
+      triggerToast("Sign in and verify your customer account before placing a real order.");
+      setActivePortal("customer");
+      setFooterTab("account");
+      return;
+    }
 
-    const checkoutKey = JSON.stringify(
-      merchantCart.map((item) => ({
-        merchantId: item.merchantId || "",
-        merchantName: item.merchantName || "",
-        name: item.name || "",
-        price: Number(item.price || 0),
-        qty: Number(item.qty || 1)
-      })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-    );
-    const existingDraft = (orders || []).find((order) =>
-      order.checkoutKey === checkoutKey &&
-      ["AWAITING_VERIFIED_PAYMENT", "PAYMENT_SETUP_REQUIRED"].includes(order.status)
-    );
-    const newOrder = existingDraft || {
-      id: "VFL-" + (globalThis.crypto?.randomUUID?.() || Date.now()),
-      checkoutKey,
-      dateStr: new Date().toISOString().slice(0, 10),
-      createdAt: new Date().toISOString(),
-      periodTag: "TODAY",
-      customerId: currentUser?.id || null,
-      customerName: currentUser.fullName,
-      address: activeAddressObj.fullAddress,
-      distanceKm: totalRouteKm,
-      totalWeightGrams,
-      vehicle,
-      shopName: Array.from(new Set(merchantCart.map((i) => i.merchantName))).join(" + "),
-      items: merchantCart,
-      itemsTotal,
-      deliveryFee,
-      gst,
-      grandTotal,
-      riderName: null,
-      status: "AWAITING_VERIFIED_PAYMENT",
-      paymentStatus: "PENDING",
-      deliveryVerificationStatus: "AWAITING_SERVER_OTP"
-    };
+    const partnerIds = [...new Set(merchantCart.map((item) => String(item.merchantId || "")))];
+    if (partnerIds.length !== 1 || !partnerIds[0]) {
+      triggerToast("Please place separate orders for each merchant. A checkout can contain one merchant only.");
+      return;
+    }
+    if (merchantCart.some((item) => !item.catalogItemId || !/^[0-9a-f-]{36}$/i.test(String(item.catalogItemId)))) {
+      triggerToast("One or more cart items are not from the live WE4ALL catalogue. Refresh the store and add them again.");
+      return;
+    }
 
-    if (!existingDraft) setOrders([newOrder, ...(orders || [])]);
-    setActiveOrderId(newOrder.id);
-    // Keep the customer's cart until the payment provider confirms success server-side.
-    setPendingUpiPayment({
-      type: "APPROVED_MERCHANT_ORDER",
-      orderId: newOrder.id,
-      title: "Order #" + newOrder.id,
-      amount: newOrder.grandTotal
-    });
+    if (!checkoutIdempotencyKeyRef.current) {
+      checkoutIdempotencyKeyRef.current = globalThis.crypto?.randomUUID?.() ||
+        ("we4-" + currentUser.authUserId + "-" + Date.now());
+    }
+
+    try {
+      const result = await createMarketplaceOrder({
+        partnerId: partnerIds[0],
+        items: merchantCart.map((item) => ({
+          catalogItemId: item.catalogItemId,
+          quantity: Number(item.qty || 1)
+        })),
+        zoneId: activeAddressObj?.zoneId || "adilabad_master",
+        deliveryAddress: {
+          full_address: activeAddressObj?.fullAddress || "Adilabad Town",
+          label: activeAddressObj?.label || "Primary",
+          zone_id: activeAddressObj?.zoneId || "adilabad_master"
+        },
+        idempotencyKey: checkoutIdempotencyKeyRef.current
+      });
+
+      const serverOrder = {
+        id: result.order_id,
+        orderNumber: result.order_number,
+        customerId: currentUser.authUserId,
+        merchantId: partnerIds[0],
+        merchantOwnerId: null,
+        merchantName: merchantCart[0]?.merchantName || "WE4ALL Merchant",
+        shopName: merchantCart[0]?.merchantName || "WE4ALL Merchant",
+        customerName: currentUser.fullName || "WE4ALL Customer",
+        address: activeAddressObj?.fullAddress || "Adilabad Town",
+        items: merchantCart,
+        itemsTotal: Number(result.subtotal_inr ?? result.total_inr ?? 0),
+        deliveryFee: Number(result.delivery_fee_inr || 0),
+        gst: Number(result.tax_inr || 0),
+        grandTotal: Number(result.total_inr || 0),
+        status: result.status || "awaiting_payment",
+        paymentStatus: result.payment_status || "pending",
+        createdAt: new Date().toISOString(),
+        dateStr: new Date().toISOString().slice(0, 10)
+      };
+      setOrders((current) => [serverOrder, ...(current || []).filter((order) => order.id !== serverOrder.id)]);
+      setActiveOrderId(serverOrder.id);
+      setPendingUpiPayment(null);
+      setMerchantCart([]);
+      checkoutIdempotencyKeyRef.current = null;
+      triggerToast("Order " + result.order_number + " saved to WE4ALL online database. Payment is PENDING; no payment has been collected.");
+    } catch (error) {
+      triggerToast(error?.message || "WE4ALL could not save this order. Your cart has been kept.");
+    }
   };
 
   const renderRolePortalContent = (portalRole) => {
