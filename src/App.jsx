@@ -764,11 +764,15 @@ function AppContent() {
     setViewMode("founder_web");
   };
   const handleFounderAdminLogin = async () => {
-    const email = String(adminLoginForm.username || "").trim().toLowerCase();
+    const suppliedUsername = String(adminLoginForm.username || "").trim();
+    // Preserve the familiar Founder username while authenticating against the dedicated Supabase Auth identity.
+    const email = suppliedUsername.toLowerCase() === "admin"
+      ? "khodayanvesh@gmail.com"
+      : suppliedUsername.toLowerCase();
     const password = String(adminLoginForm.password || "");
     setAdminLoginError("");
     if (!email.includes("@") || password.length < 8) {
-      setAdminLoginError("Enter the Founder account email and password.");
+      setAdminLoginError("Enter username admin (or the Founder email) and the current Supabase Founder password.");
       return;
     }
     if (!supabase) {
@@ -2030,13 +2034,13 @@ function AppContent() {
               <button type="button" onClick={() => setViewMode("mobile_app")}
                 className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer">Back to App</button>
             </div>
-            <p className="text-[10px] text-slate-400">Use the dedicated Founder Supabase Auth email and password. The server checks the trusted Founder role; customer and partner accounts cannot open this console.</p>
+            <p className="text-[10px] text-slate-400">Use username admin or the dedicated Founder email with the current Founder password. The server checks the trusted Founder role; customer and partner accounts cannot open this console.</p>
             {adminLoginError && <p role="alert" className="text-rose-300 text-xs font-bold">{adminLoginError}</p>}
             <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); handleFounderAdminLogin(); }}>
-              <label className="block text-[10px] text-slate-300 font-bold">Founder email
-                <input type="email" autoComplete="username" required value={adminLoginForm.username}
+              <label className="block text-[10px] text-slate-300 font-bold">Founder username
+                <input type="text" autoComplete="username" required value={adminLoginForm.username}
                   onChange={(e) => setAdminLoginForm({ ...adminLoginForm, username: e.target.value })}
-                  placeholder="founder@example.com"
+                  placeholder="admin"
                   className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white" />
               </label>
               <label className="block text-[10px] text-slate-300 font-bold">Founder password
