@@ -1,7 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { submitRiderLocationPing } from "../supabaseClient";
 
 export default function RiderRadarMap({ jobs = [], selectedJob, onSelectJob }) {
   const [gpsEnabled, setGpsEnabled] = useState(false);
+  const [shareWithServer, setShareWithServer] = useState(false);
+  const [serverShareStatus, setServerShareStatus] = useState("OFF");
+  const lastServerPingAt = useRef(0);
   const [gps, setGps] = useState({ status: "OFF", lat: null, lng: null, accuracy: null, error: "" });
 
   useEffect(() => {
@@ -15,13 +19,27 @@ export default function RiderRadarMap({ jobs = [], selectedJob, onSelectJob }) {
     }
     setGps({ status: "REQUESTING", lat: null, lng: null, accuracy: null, error: "" });
     const watchId = navigator.geolocation.watchPosition(
-      (position) => setGps({
-        status: "LIVE",
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-        error: ""
-      }),
+      (position) => {
+        setGps({
+          status: "LIVE",
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          error: ""
+        });
+        if (shareWithServer && Date.now() - lastServerPingAt.current >= 10000) {
+          lastServerPingAt.current = Date.now();
+          setServerShareStatus("SENDING");
+          submitRiderLocationPing({
+            longitude: position.coords.longitude,
+            latitude: position.coords.latitude,
+            accuracyM: position.coords.accuracy,
+            headingDeg: position.coords.heading,
+            speedMps: position.coords.speed
+          }).then(() => setServerShareStatus("LIVE"))
+            .catch((error) => setServerShareStatus(error?.message || "UPLOAD_ERROR"));
+        }
+      },
       (error) => setGps({
         status: "ERROR", lat: null, lng: null, accuracy: null,
         error: error.code === 1 ? "Location permission denied. Enable location permission in Android settings." :
@@ -30,7 +48,7 @@ export default function RiderRadarMap({ jobs = [], selectedJob, onSelectJob }) {
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [gpsEnabled]);
+  }, [gpsEnabled, shareWithServer]);
 
   const destination = selectedJob?.pickupPin || selectedJob?.pickup_location?.address ||
     selectedJob?.pickup_location?.full_address || selectedJob?.pickup_location?.name || "";
@@ -70,6 +88,13 @@ export default function RiderRadarMap({ jobs = [], selectedJob, onSelectJob }) {
           </button>
         )}
         {gps.status === "LIVE" && <span className="text-[9px] text-emerald-300">Accuracy ±{Math.round(gps.accuracy || 0)} m</span>}
+        {gpsEnabled && gps.status === "LIVE" && (
+          <button type="button" onClick={() => { setShareWithServer((value) => !value); setServerShareStatus(shareWithServer ? "OFF" : "REQUESTING"); }}
+            className={shareWithServer ? "bg-emerald-500 text-slate-950 font-black text-[9px] px-2 py-1 rounded-lg" : "bg-slate-700 text-white font-bold text-[9px] px-2 py-1 rounded-lg"}>
+            {shareWithServer ? "Stop server GPS sharing" : "Share live GPS with dispatch"}
+          </button>
+        )}
+        {shareWithServer && <span className="text-[9px] text-cyan-200">Server share: {serverShareStatus}</span>}
         {gps.error && <span className="text-[9px] text-rose-300">{gps.error}</span>}
       </div>
       {mapSrc ? (
@@ -98,7 +123,7 @@ export default function RiderRadarMap({ jobs = [], selectedJob, onSelectJob }) {
               <span className="block text-[9px] text-slate-300 mt-1 truncate">{job.pickupPin || job.pickup_location?.address || job.pickup_location?.full_address || "Pickup location provided after selection"}</span>
             </button>
           ))}
-        <p className="text-[8px] text-slate-500">Map preview uses device GPS. Nearby ranking, rider-to-server tracking and live customer map sharing require the next location-service integration.</p>
+        <p className="text-[8px] text-slate-500">GPS is local until you explicitly enable server sharing. Server pings are sent at most every 10 seconds and expire after two hours. Customer trip sharing is a separate next step.</p>
       </div>
     </section>
   );
