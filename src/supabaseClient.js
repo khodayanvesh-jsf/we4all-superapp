@@ -1164,3 +1164,18 @@ export async function setFounderDynamicModuleStatus(moduleId, action) {
   if (data?.ok !== true) throw new Error(data?.error || "Could not update module status.");
   return data.result;
 }
+
+
+/** Upload a rider's GPS fix only after the rider explicitly enables server sharing. */
+export async function submitRiderLocationPing({ longitude, latitude, accuracyM, headingDeg, speedMps }) {
+  const lon = Number(longitude), lat = Number(latitude);
+  if (!Number.isFinite(lon) || lon < -180 || lon > 180 || !Number.isFinite(lat) || lat < -90 || lat > 90) {
+    throw new Error("Invalid GPS coordinates.");
+  }
+  return invokeWe4AllOperations("rider_location_ping", {
+    longitude: lon, latitude: lat,
+    accuracyM: Number.isFinite(Number(accuracyM)) ? Number(accuracyM) : null,
+    headingDeg: Number.isFinite(Number(headingDeg)) ? Number(headingDeg) : null,
+    speedMps: Number.isFinite(Number(speedMps)) ? Number(speedMps) : null
+  });
+}
