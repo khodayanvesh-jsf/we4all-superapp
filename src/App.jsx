@@ -51,6 +51,7 @@ import {
   loadMarketplaceCatalog,
   loadMarketplaceOrders,
   loadPublicServiceProviders,
+  loadPublicLabourProviders,
   loadPublishedDynamicModules,
   createMarketplaceOrder,
   loadServerOperations,
@@ -716,6 +717,15 @@ function AppContent() {
       }
     };
 
+    const refreshLabourDirectory = async () => {
+      try {
+        const directory = await loadPublicLabourProviders();
+        if (active) setLabourWorkers(directory);
+      } catch (error) {
+        console.warn("WE4ALL approved Labour directory load failed:", error?.message || error);
+      }
+    };
+
     const refreshDynamicModules = async () => {
       try {
         const modules = await loadPublishedDynamicModules({
@@ -758,7 +768,28 @@ function AppContent() {
           customerName: currentUser.fullName || "WE4ALL Customer",
           address: row.metadata?.address || "", bookingType: row.booking_type
         })));
-        setLabourBookings(live.labourEngagements || []);
+        const labourRows = (live.labourEngagements || []).map((row) => {
+          const worker = (labourWorkers || []).find((item) => item.partnerId === row.labour_partner_id);
+          const duration = Number(row.requested_duration_hours || 8.5);
+          const site = row.worksite_address || {};
+          return {
+            id: row.id, workerId: row.labour_partner_id,
+            workerUserId: currentUser.role === "labour" ? currentUser.authUserId : null,
+            workerName: worker?.name || "Approved Labour Partner",
+            tradeId: row.trade_key, tradeName: worker?.tradeName || row.trade_key,
+            customerId: row.customer_user_id,
+            customerName: row.customer_user_id === currentUser.authUserId ? (currentUser.fullName || "Customer") : "Customer",
+            siteAddress: site.address || site.full_address || "",
+            workDate: inIndiaDate(row.requested_start_at),
+            shift: duration >= 8 ? "FULL_DAY" : "HALF_DAY",
+            workerCount: Number(row.worker_count || 1),
+            totalWage: row.agreed_total_inr == null ? null : Number(row.agreed_total_inr),
+            status: row.status, paymentStatus: row.payment_status,
+            requestedAt: row.created_at, serverRecord: true
+          };
+        });
+        const uniqueLabourRows = Array.from(new Map(labourRows.map((row) => [row.id, row])).values());
+        setLabourBookings(uniqueLabourRows);
         setTaxiCart((live.rides || []).map((ride) => ({
           id: ride.id, serverRideBookingId: ride.id, vehicle: ride.vehicle_class,
           pickup: ride.pickup_location?.address || "", drop: ride.dropoff_location?.address || "",
@@ -771,6 +802,7 @@ function AppContent() {
 
     refreshCatalog();
     refreshServiceDirectory();
+    refreshLabourDirectory();
     refreshOrders();
     refreshServerOperations();
     refreshDynamicModules();
@@ -779,7 +811,10 @@ function AppContent() {
       channel = supabase
         .channel("we4all-marketplace-live")
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_catalog_items" }, refreshCatalog)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_partners" }, refreshServiceDirectory)
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_partners" }, () => {
+          refreshServiceDirectory();
+          refreshLabourDirectory();
+        })
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_orders" }, refreshOrders)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_order_items" }, refreshOrders)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_bookings" }, refreshServerOperations)
