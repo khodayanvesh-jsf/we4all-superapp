@@ -1,4 +1,5 @@
 import { withSupabase } from "npm:@supabase/server@1.9.2";
+import { createAdminClient } from "npm:@supabase/server@1.9.2/core";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -33,7 +34,7 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
     return json({ ok: false, error: "Request body must be valid JSON" }, 400);
   }
 
-  const admin = ctx.supabaseAdmin;
+  const admin = createAdminClient({ auth: { keyName: "we4allbackendrotation202611" } });
 
   if (body.action === "list") {
     const { data: applications, error } = await admin
