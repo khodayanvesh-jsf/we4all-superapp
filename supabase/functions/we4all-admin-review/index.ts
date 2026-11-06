@@ -71,6 +71,38 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
     });
   }
 
+  if (body.action === "list_products") {
+    const { data: items, error } = await admin
+      .from("we4all_catalog_items")
+      .select("id,partner_id,sku,title,description,category_key,price_inr,mrp_inr,stock_quantity,unit_label,approval_status,created_at,we4all_partners(display_name,zone_id)")
+      .eq("approval_status", "pending")
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.error("WE4ALL pending catalogue lookup failed:", error.message);
+      return json({ ok: false, error: "Could not load pending catalogue items" }, 500);
+    }
+    return json({ ok: true, products: items || [] });
+  }
+
+  if (body.action === "review_product") {
+    const productId = String(body.catalog_item_id || "");
+    const decision = String(body.decision || "");
+    if (!productId || !["approved", "rejected"].includes(decision)) {
+      return json({ ok: false, error: "catalog_item_id and a valid decision are required" }, 400);
+    }
+    const { data, error } = await admin.rpc("we4all_review_catalog_item", {
+      p_catalog_item_id: productId,
+      p_decision: decision,
+      p_reviewer_id: reviewerId
+    });
+    if (error) {
+      console.error("WE4ALL catalogue review failed:", error.message);
+      const status = error.code === "P0002" ? 404 : error.code === "40001" ? 409 : 400;
+      return json({ ok: false, error: error.message || "Could not review catalogue item" }, status);
+    }
+    return json({ ok: true, review: data });
+  }
+
   if (body.action === "review") {
     const applicationId = String(body.application_id || "");
     const decision = String(body.decision || "");
