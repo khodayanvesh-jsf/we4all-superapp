@@ -64,6 +64,8 @@ export default function RiderCaptainPortal({
   const [dispatchError, setDispatchError] = useState("");
   const [radarServiceFilter, setRadarServiceFilter] = useState("ALL");
   const [selectedRadarJob, setSelectedRadarJob] = useState(null);
+  const [assignedServiceJobs, setAssignedServiceJobs] = useState([]);
+  const [routeGpsEnabled, setRouteGpsEnabled] = useState(false);
 
   const myPendingCaptain = (pendingRiders || []).find(
     (r) =>
@@ -83,7 +85,16 @@ export default function RiderCaptainPortal({
     setDispatchLoading(true);
     setDispatchError("");
     try {
-      const result = await invokeWe4AllOperations("list_rider_jobs");
+      const [result, assigned] = await Promise.all([
+        invokeWe4AllOperations("list_rider_jobs"),
+        invokeWe4AllOperations("list_my_operations")
+      ]);
+      const assignedJobs = [
+        ...(assigned.dispatchJobs || []).map((job) => ({ ...job, serviceType: "M2C", id: job.id, orderId: job.order_id, pickupPin: job.pickup_location?.address || "Merchant pickup", dropPin: job.dropoff_location?.address || "Customer delivery", status: ["accepted","at_pickup"].includes(job.status) ? "ACCEPTED_BY_CAPTAIN" : "PICKED_UP_EN_ROUTE", requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class, serverDispatchVerified: true })),
+        ...(assigned.p2pDeliveries || []).map((job) => ({ ...job, serviceType: "P2P", id: job.id, pickupPin: job.pickup_location?.address || "Personal pickup", dropPin: job.dropoff_location?.address || "Personal delivery", status: job.status === "assigned" ? "ACCEPTED_BY_CAPTAIN" : "PICKED_UP_EN_ROUTE", requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class, serverDispatchVerified: true })),
+        ...(assigned.taxiRides || []).map((job) => ({ ...job, serviceType: "TAXI", id: job.id, pickupPin: job.pickup_location?.address || "Passenger pickup", dropPin: job.dropoff_location?.address || "Passenger destination", status: job.status === "assigned" ? "ACCEPTED_BY_CAPTAIN" : "PICKED_UP_EN_ROUTE", requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class, serverDispatchVerified: true }))
+      ];
+      setAssignedServiceJobs(assignedJobs);
       const jobs = (result.jobs || []).map((job) => {
         const serviceType = job.service_type || "M2C";
         const pickup = job.pickup_location || {};
@@ -203,6 +214,9 @@ export default function RiderCaptainPortal({
       }
     });
 
+  assignedServiceJobs.forEach((job) => {
+    if (job.status === "ACCEPTED_BY_CAPTAIN" || job.status === "PICKED_UP_EN_ROUTE") activeMap.set(job.id, job);
+  });
   const activeAcceptedTrips = Array.from(activeMap.values());
 
   // Deduplicated Completed / Active Bookings for Tab 3 (Km Rate) & Tab 4 (Earnings)
@@ -224,6 +238,7 @@ export default function RiderCaptainPortal({
       }
     });
 
+  assignedServiceJobs.forEach((job) => bookingsMap.set(job.id, job));
   const allMyVehicleBookings = Array.from(bookingsMap.values());
 
   // COMPLETE OTP VERIFICATION HANDLER (Updates BOTH captainRadarJobs AND orders)
@@ -540,6 +555,10 @@ export default function RiderCaptainPortal({
               Live GPS route for {currentUser?.vehicleModel || myVehicleRule.shortLabel} ({currentUser?.rcPlate || "Not verified"})
             </p>
           </div>
+          <button type="button" onClick={() => setRouteGpsEnabled((value) => !value)}
+            className="rounded-xl px-3 py-2 text-[10px] font-black ${routeGpsEnabled ? "bg-emerald-500 text-slate-950" : "bg-cyan-500 text-slate-950"}">
+            {routeGpsEnabled ? "Stop route GPS" : "Enable route GPS"}
+          </button>
           {(activeAcceptedTrips || []).length === 0 ? (
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center space-y-2">
               <p className="font-bold text-slate-300">
@@ -584,7 +603,7 @@ export default function RiderCaptainPortal({
                     riderName={currentUser?.fullName || "Rider"}
                     vehicle={`${myVehicleRule.shortLabel} (${currentUser?.rcPlate || "Vehicle pending"})`}
                     distanceKm={trip.distanceKm || null}
-                    trackingEnabled={isOnlineForDriving && locationConsent}
+                    trackingEnabled={routeGpsEnabled}
                   />
                   <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 flex justify-between items-center text-[10px]">
                     <span className="text-slate-300">
