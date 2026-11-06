@@ -218,6 +218,10 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
   if(speed!==null&&(!Number.isFinite(speed)||speed<0||speed>150))return fail("INVALID_GPS_SPEED");
   const partner=await approvedPartner(admin,user.id,"rider");
   if(!partner?.vehicle_class)return fail("FOUNDER_VERIFIED_VEHICLE_CLASS_REQUIRED",403);
+  const {data:latestPing,error:latestPingError}=await admin.from("we4all_rider_location_pings")
+    .select("observed_at").eq("rider_user_id",user.id).order("observed_at",{ascending:false}).limit(1).maybeSingle();
+  if(latestPingError)return fail("RIDER_GPS_RATE_CHECK_FAILED",500);
+  if(latestPing?.observed_at&&Date.now()-new Date(latestPing.observed_at).getTime()<10000)return fail("GPS_PING_RATE_LIMITED",429);
   return json(200,await rpc("we4all_upsert_rider_location_ping",{
    p_rider_user_id:user.id,p_longitude:longitude,p_latitude:latitude,
    p_accuracy_m:accuracy,p_heading_deg:heading,p_speed_mps:speed
