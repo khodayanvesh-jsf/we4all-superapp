@@ -85,7 +85,7 @@ export const isLiveSupabaseConfigured = Boolean(supabase);
 
 let lastCloudSyncState = {
   status: "not-signed-in",
-  message: "Sign in to enable private cloud synchronization.",
+  message: "Supabase connection has not been checked yet.",
   lastSyncedAt: null
 };
 
@@ -190,7 +190,7 @@ export async function probeSupabaseConnection() {
       authenticated: false,
       accountLinked: false,
       syncReady: false,
-      message: "Supabase Auth and the WE4ALL catalogue Data API are reachable. Sign in with SMS OTP to enable private account sync."
+      message: "Supabase backend and WE4ALL catalogue API are reachable."
     };
   }
 
