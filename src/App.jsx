@@ -52,6 +52,9 @@ import {
   loadMarketplaceOrders,
   loadPublishedDynamicModules,
   createMarketplaceOrder,
+  loadServerOperations,
+  createServerBooking,
+  createServerRideBooking,
   createServerP2PDelivery,
   issueDeliveryTestOtp
 } from "./supabaseClient";
@@ -570,6 +573,9 @@ function AppContent() {
     dropPin: "Collectorate Chowk, Adilabad",
     distanceKm: 2.5
   });
+  const [taxiBookingBusy, setTaxiBookingBusy] = useState(false);
+  const [serviceBookingBusyId, setServiceBookingBusyId] = useState("");
+
 
   const [p2pParcelForm, setP2pParcelForm] = useState({
     pickupAddress: "", dropAddress: "", parcelType: "Documents",
@@ -723,8 +729,39 @@ function AppContent() {
       }
     };
 
+    const refreshServerOperations = async () => {
+      if (!currentUser?.authUserId) return;
+      try {
+        const live = await loadServerOperations();
+        if (!active) return;
+        const inIndiaDate = (value) => value ? new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
+        }).format(new Date(value)) : "";
+        const inIndiaTime = (value) => value ? new Date(value).toLocaleTimeString("en-IN", {
+          timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
+        }) : "";
+        setServiceBookings((live.bookings || []).filter((row) => row.booking_type === "service").map((row) => ({
+          id: row.id, serverBookingId: row.id, providerId: row.partner_id,
+          customerId: row.customer_user_id, status: row.status, paymentStatus: row.payment_status,
+          bookedDate: inIndiaDate(row.requested_start_at),
+          bookedSlot: `${inIndiaTime(row.requested_start_at)} - ${inIndiaTime(row.requested_end_at)}`,
+          customerName: currentUser.fullName || "WE4ALL Customer",
+          address: row.metadata?.address || "", bookingType: row.booking_type
+        })));
+        setLabourBookings(live.labourEngagements || []);
+        setTaxiCart((live.rides || []).map((ride) => ({
+          id: ride.id, serverRideBookingId: ride.id, vehicle: ride.vehicle_class,
+          pickup: ride.pickup_location?.address || "", drop: ride.dropoff_location?.address || "",
+          status: ride.status, paymentStatus: ride.payment_status, fare: ride.quoted_total_inr || null
+        })));
+      } catch (error) {
+        console.warn("WE4ALL operational records refresh failed:", error?.message || error);
+      }
+    };
+
     refreshCatalog();
     refreshOrders();
+    refreshServerOperations();
     refreshDynamicModules();
 
     if (supabase) {
@@ -733,6 +770,9 @@ function AppContent() {
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_catalog_items" }, refreshCatalog)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_orders" }, refreshOrders)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_order_items" }, refreshOrders)
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_bookings" }, refreshServerOperations)
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_ride_bookings" }, refreshServerOperations)
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_labour_engagements" }, refreshServerOperations)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_dynamic_modules" }, refreshDynamicModules)
         .subscribe();
     }
@@ -1348,21 +1388,46 @@ function AppContent() {
                         <button
                           type="button"
                           disabled={!slotIsAvailable}
-                          onClick={() => {
-                            setServiceCart([
-                              ...serviceCart,
-                              {
-                                ...sp,
-                                providerId: sp.id,
-                                bookingDate: serviceFilterDate,
-                                bookingSlot: serviceFilterSlot
-                              }
-                            ]);
-                            triggerToast("Added an available provider slot to the service cart. It is not booked or paid yet.");
+                          disabled={!slotIsAvailable || serviceBookingBusyId === sp.id}
+                          onClick={async () => {
+                            if (!currentUser?.authUserId || currentUser?.isGuest) {
+                              triggerToast("Sign in to request a service visit. Browsing remains free.");
+                              setFooterTab("account");
+                              return;
+                            }
+                            setServiceBookingBusyId(sp.id);
+                            try {
+                              const result = await createServerBooking({
+                                partnerId: sp.partnerId || sp.id,
+                                bookingType: "service",
+                                date: serviceFilterDate,
+                                slot: serviceFilterSlot,
+                                note: `Service request: ${sp.specialization || sp.providerName || "Doorstep service"}`,
+                                metadata: {
+                                  serviceCategoryId: sp.serviceCategoryId || null,
+                                  serviceName: sp.specialization || sp.serviceCategory || "",
+                                  requestedVisitingFeeInr: Number(sp.visitingFee || 0),
+                                  paymentMode: "unpaid_test_mode"
+                                },
+                                idempotencyKey: `svc-${currentUser.authUserId}-${sp.id}-${serviceFilterDate}-${serviceFilterSlot.replace(/[^a-z0-9]/gi, "")}`
+                              });
+                              setServiceBookings((current) => [{
+                                id: result.booking_id, serverBookingId: result.booking_id,
+                                providerId: sp.partnerId || sp.id, status: result.status || "requested",
+                                paymentStatus: result.payment_status || "pending",
+                                bookedDate: serviceFilterDate, bookedSlot: serviceFilterSlot,
+                                customerName: currentUser.fullName || "WE4ALL Customer"
+                              }, ...current]);
+                              triggerToast(`Service request ${result.booking_id} saved. No payment was collected.`);
+                            } catch (error) {
+                              triggerToast(error?.message || "Service request failed. No booking was recorded.");
+                            } finally {
+                              setServiceBookingBusyId("");
+                            }
                           }}
                           className="bg-amber-400 disabled:bg-slate-300 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                         >
-                          {slotIsAvailable ? "Add available slot" : "Slot unavailable"}
+                          {serviceBookingBusyId === sp.id ? "Submitting…" : slotIsAvailable ? "Request this slot" : "Slot unavailable"}
                         </button>
                       </div>
                     )})
@@ -1491,23 +1556,42 @@ function AppContent() {
                         <button
                           key={v.type}
                           type="button"
-                          onClick={() => {
-                            setTaxiCart([
-                              ...taxiCart,
-                              {
-                                id: "RIDE-" + Date.now(),
-                                vehicle: v.type,
-                                pickup: taxiBookingForm.pickupPin,
-                                drop: taxiBookingForm.dropPin,
-                                fare
-                              }
-                            ]);
-                            triggerToast(v.type + " (Rs." + fare + ") added to Ride Cart!");
+                          disabled={taxiBookingBusy}
+                          onClick={async () => {
+                            if (!currentUser?.authUserId || currentUser?.isGuest) {
+                              triggerToast("Sign in with your free WE4ALL account to request a ride.");
+                              setFooterTab("account");
+                              return;
+                            }
+                            const vehicleClass = v.type === "2W Bike" ? "2W" : v.type === "3W Auto" ? "3W" : "4W";
+                            setTaxiBookingBusy(true);
+                            try {
+                              const result = await createServerRideBooking({
+                                vehicleClass,
+                                pickupAddress: taxiBookingForm.pickupPin,
+                                dropoffAddress: taxiBookingForm.dropPin,
+                                zoneId: activeAddressObj?.zoneId || "adilabad_master",
+                                note: "Fare estimate is indicative; final quote is pending rider confirmation.",
+                                idempotencyKey: `ride-${currentUser.authUserId}-${globalThis.crypto?.randomUUID?.() || Date.now()}`
+                              });
+                              setTaxiCart((current) => [{
+                                id: result.ride_booking_id, serverRideBookingId: result.ride_booking_id,
+                                vehicle: v.type, vehicleClass,
+                                pickup: taxiBookingForm.pickupPin, drop: taxiBookingForm.dropPin,
+                                estimatedFare: fare, fare: null, status: result.status || "requested",
+                                paymentStatus: "pending"
+                              }, ...current]);
+                              triggerToast(`${v.type} request ${result.ride_booking_id} saved. Fare is pending; no payment was collected.`);
+                            } catch (error) {
+                              triggerToast(error?.message || "Ride request failed. No server booking was created.");
+                            } finally {
+                              setTaxiBookingBusy(false);
+                            }
                           }}
                           className="p-2 rounded-xl border border-emerald-600 bg-emerald-50 text-center cursor-pointer"
                         >
                           <p className="font-black text-[10px]">{v.type}</p>
-                          <p className="font-black text-xs text-emerald-800">Rs.{fare}</p>
+                          <p className="font-black text-xs text-emerald-800">Est. ₹{fare}</p><p className="text-[8px] text-slate-500">Final fare by rider</p>
                         </button>
                       );
                     })}
