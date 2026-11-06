@@ -861,6 +861,104 @@ export async function performZeroLossOtaUpdate(targetVersion, releaseNotes, onPr
   return updatedInfo;
 }
 
+
+function mapMarketplaceCatalogRow(row) {
+  const partner = row.we4all_partners || row.partner || {};
+  const price = Number(row.price_inr || 0);
+  const mrp = Number(row.mrp_inr ?? row.price_inr ?? 0);
+  const isApproved = row.approval_status === "approved" && row.is_active === true;
+  return {
+    id: row.id,
+    catalogItemId: row.id,
+    partnerId: row.partner_id,
+    ownerUserId: row.owner_user_id || null,
+    merchantId: row.partner_id,
+    merchantName: partner.display_name || "WE4ALL Merchant",
+    shopName: partner.display_name || "WE4ALL Merchant",
+    categoryId: row.category_key,
+    subCategoryBrand: row.title,
+    sku: row.sku || "",
+    image: row.metadata?.image_url || "",
+    metadata: row.metadata || {},
+    variants: [{
+      id: row.id,
+      label: row.unit_label || "unit",
+      price,
+      mrp,
+      weightGrams: 1000
+    }],
+    merchantOffers: [{
+      merchantId: row.partner_id,
+      merchantName: partner.display_name || "WE4ALL Merchant",
+      price,
+      catalogItemId: row.id,
+      zoneId: partner.zone_id || "adilabad_master"
+    }],
+    stockQuantity: row.stock_quantity,
+    inStock: row.stock_quantity === null || Number(row.stock_quantity) > 0,
+    status: isApproved ? "Approved" : "PENDING_ADMIN_APPROVAL",
+    approvalStatus: row.approval_status,
+    createdAt: row.created_at
+  };
+}
+
+export async function loadMarketplaceCatalog() {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase
+    .from("we4all_catalog_items")
+    .select("id,partner_id,sku,title,description,category_key,item_type,price_inr,mrp_inr,stock_quantity,unit_label,approval_status,is_active,metadata,created_at,we4all_partners!inner(display_name,zone_id,approval_status)")
+    .eq("we4all_partners.approval_status", "approved")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(mapMarketplaceCatalogRow);
+}
+
+export async function loadMarketplaceOrders(currentUser) {
+  if (!supabase || !currentUser?.authUserId) return [];
+  const { data, error } = await supabase
+    .from("we4all_orders")
+    .select("id,customer_user_id,partner_id,zone_id,order_number,status,payment_status,subtotal_inr,tax_inr,delivery_fee_inr,discount_inr,total_inr,delivery_address,customer_note,created_at,we4all_partners(display_name),we4all_order_items(id,catalog_item_id,item_title_snapshot,sku_snapshot,quantity,unit_price_inr,line_total_inr)")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return (data || []).map((row) => {
+    const partner = row.we4all_partners || {};
+    const items = row.we4all_order_items || [];
+    const mappedItems = items.map((item) => ({
+      catalogItemId: item.catalog_item_id,
+      productId: item.catalog_item_id,
+      name: item.item_title_snapshot,
+      qty: Number(item.quantity),
+      price: Number(item.unit_price_inr),
+      lineTotal: Number(item.line_total_inr),
+      merchantId: row.partner_id,
+      merchantName: partner.display_name || "WE4ALL Merchant"
+    }));
+    return {
+      id: row.id,
+      orderNumber: row.order_number,
+      customerId: row.customer_user_id,
+      merchantId: row.partner_id,
+      merchantOwnerId: currentUser.role === "customer" ? null : currentUser.authUserId,
+      merchantName: partner.display_name || "WE4ALL Merchant",
+      shopName: partner.display_name || "WE4ALL Merchant",
+      customerName: currentUser.fullName || "WE4ALL Customer",
+      address: row.delivery_address?.full_address || row.delivery_address?.address || "",
+      deliveryAddress: row.delivery_address || {},
+      items: mappedItems,
+      itemsTotal: Number(row.subtotal_inr),
+      deliveryFee: Number(row.delivery_fee_inr),
+      gst: Number(row.tax_inr),
+      grandTotal: Number(row.total_inr),
+      status: row.status,
+      paymentStatus: row.payment_status,
+      dateStr: String(row.created_at || "").slice(0, 10),
+      createdAt: row.created_at,
+      periodTag: "TODAY"
+    };
+  });
+}
+
 export async function createMarketplaceOrder({
   partnerId,
   items,
