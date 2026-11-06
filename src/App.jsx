@@ -763,6 +763,49 @@ function AppContent() {
     setAdminAuthStep(1);
     setViewMode("founder_web");
   };
+  const handleFounderAdminLogin = async () => {
+    const email = String(adminLoginForm.username || "").trim().toLowerCase();
+    const password = String(adminLoginForm.password || "");
+    setAdminLoginError("");
+    if (!email.includes("@") || password.length < 8) {
+      setAdminLoginError("Enter the Founder account email and password.");
+      return;
+    }
+    if (!supabase) {
+      setAdminLoginError("Supabase is not configured. Founder login cannot be verified.");
+      return;
+    }
+    setAdminLoginError("Checking secure Founder authorization…");
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError) throw authError;
+      if (!authData?.session?.access_token || !authData?.user?.id) {
+        throw new Error("Supabase did not return a valid authenticated session.");
+      }
+      // The server verifies the signed JWT app_metadata.we4all_role claim.
+      const { data: founderCheck, error: founderError } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "list" }
+      });
+      if (founderError) throw founderError;
+      if (founderCheck?.ok !== true || !Array.isArray(founderCheck.applications)) {
+        throw new Error(founderCheck?.error || "This Supabase account is not authorized as a WE4ALL Founder.");
+      }
+      setIsAdminAuthenticated(true);
+      setAdminAuthStep(1);
+      setAdminLoginError("");
+      setAdminLoginForm({ username: email, password: "" });
+      triggerToast("Founder authorization verified by Supabase. Admin console unlocked.");
+    } catch (error) {
+      const message = error?.message || "Founder login failed.";
+      setIsAdminAuthenticated(false);
+      setAdminLoginError(
+        /founder server authorization|403|not authorized/i.test(message)
+          ? "This email/password is valid, but this account has not been provisioned as a Founder. A trusted administrator must assign app_metadata.we4all_role = founder, then sign in again."
+          : message
+      );
+    }
+  };
+
 
   const getProductBestOffer = (product) => {
     const offers =
@@ -1983,77 +2026,30 @@ function AppContent() {
         !isAdminAuthenticated ? (
           <div className="max-w-md mx-auto mt-12 bg-slate-900 border border-amber-400/50 rounded-3xl p-6 space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="font-black text-amber-400 text-base">
-                WE4ALL Founder Admin 2-Factor Gate
-              </h2>
-              <button
-                type="button"
-                onClick={() => setViewMode("mobile_app")}
-                className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer"
-              >
-                Back to App
-              </button>
+              <h2 className="font-black text-amber-400 text-base">WE4ALL Founder / Author Secure Login</h2>
+              <button type="button" onClick={() => setViewMode("mobile_app")}
+                className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer">Back to App</button>
             </div>
-            {adminLoginError && (
-              <p className="text-rose-400 text-xs font-bold">{adminLoginError}</p>
-            )}
-            {adminAuthStep === 1 ? (
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={adminLoginForm.username}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, username: e.target.value })
-                  }
-                  placeholder="Founder username (server authentication required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <input
-                  type="password"
-                  value={adminLoginForm.password}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, password: e.target.value })
-                  }
-                  placeholder="Founder password (server authentication required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    setAdminAuthStep(1);
-                    setAdminLoginError(
-                      "Founder login is disabled until server-side founder authentication and step-up verification are configured. No browser-stored fallback credentials are accepted."
-                    );
-                  }}
-                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Founder authentication unavailable
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <input
-                  type="password"
-                  value={adminPinInput}
-                  onChange={(e) => setAdminPinInput(e.target.value)}
-                  placeholder="Founder PIN (server verification required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-center font-black tracking-widest text-amber-300"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    setAdminLoginError(
-                      "Founder PIN verification is unavailable until a server-validated founder session is implemented."
-                    );
-                  }}
-                  className="w-full bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Server verification required
-                </button>
-              </div>
-            )}
+            <p className="text-[10px] text-slate-400">Use the dedicated Founder Supabase Auth email and password. The server checks the trusted Founder role; customer and partner accounts cannot open this console.</p>
+            {adminLoginError && <p role="alert" className="text-rose-300 text-xs font-bold">{adminLoginError}</p>}
+            <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); handleFounderAdminLogin(); }}>
+              <label className="block text-[10px] text-slate-300 font-bold">Founder email
+                <input type="email" autoComplete="username" required value={adminLoginForm.username}
+                  onChange={(e) => setAdminLoginForm({ ...adminLoginForm, username: e.target.value })}
+                  placeholder="founder@example.com"
+                  className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white" />
+              </label>
+              <label className="block text-[10px] text-slate-300 font-bold">Founder password
+                <input type="password" autoComplete="current-password" required value={adminLoginForm.password}
+                  onChange={(e) => setAdminLoginForm({ ...adminLoginForm, password: e.target.value })}
+                  placeholder="Supabase Auth password"
+                  className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white" />
+              </label>
+              <button type="submit" className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-3 rounded-xl cursor-pointer">
+                Verify Founder account & open console
+              </button>
+            </form>
+            <p className="text-[9px] text-slate-500">No browser-stored credentials, hard-coded passwords or local PIN bypasses are used.</p>
           </div>
         ) : (
           <div className="p-4 space-y-4">
