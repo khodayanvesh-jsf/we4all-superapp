@@ -910,7 +910,22 @@ export async function loadMarketplaceCatalog() {
     .eq("we4all_partners.approval_status", "approved")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data || []).map(mapMarketplaceCatalogRow);
+
+  let ownerByPartnerId = new Map();
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData?.user?.id) {
+    const { data: ownPartners, error: ownPartnerError } = await supabase
+      .from("we4all_partners")
+      .select("id,owner_user_id")
+      .eq("owner_user_id", userData.user.id);
+    if (ownPartnerError) throw ownPartnerError;
+    ownerByPartnerId = new Map((ownPartners || []).map((partner) => [partner.id, partner.owner_user_id]));
+  }
+
+  return (data || []).map((row) => ({
+    ...mapMarketplaceCatalogRow(row),
+    ownerUserId: ownerByPartnerId.get(row.partner_id) || null
+  }));
 }
 
 export async function loadMarketplaceOrders(currentUser) {
