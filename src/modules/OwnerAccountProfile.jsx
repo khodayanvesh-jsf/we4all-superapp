@@ -46,7 +46,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
   // If logged in, default to account details; if guest, show login/register gate
   const [subTab, setSubTab] = useState(() => (isLoggedIn ? "account_details" : "kyc_gate"));
   const [authMode, setAuthMode] = useState("login"); // login | register
-  const [loginMethod, setLoginMethod] = useState("password"); // Free Supabase email/password; SMS OTP paused
   const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
   const [showPinText, setShowPinText] = useState(false);
 
@@ -65,7 +64,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
   });
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
-  const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
+  const [authState, setAuthState] = useState({ busy: false });
   const [connectionHealth, setConnectionHealth] = useState({
     checking: true,
     configured: false,
@@ -180,53 +179,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
     return fallbackPhone ? `${fallbackPhone}@ybl` : "";
   };
 
-  const sendPhoneOtp = async () => {
-    const phoneDigits = cleanPhoneDigits(authMode === "register" ? regForm.phone : loginForm.identifier);
-    if (phoneDigits.length !== 10) {
-      setFormFeedback({ type: "error", message: "Enter a valid 10-digit Indian mobile number." });
-      return;
-    }
-    if (!supabase) {
-      setFormFeedback({ type: "error", message: "Supabase client is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY." });
-      return;
-    }
-    setOtpState({ sent: false, phone: "", token: "", busy: true });
-    const phone = `+91${phoneDigits}`;
-    try {
-      const isRegistration = authMode === "register";
-      if (isRegistration) {
-        if (!regForm.fullName.trim()) throw new Error("Enter your full name before requesting OTP.");
-        if (!isConsumerSelected && !regForm.businessName.trim()) throw new Error("Enter your business or partner name.");
-        const { error } = await supabase.auth.signInWithOtp({
-          phone,
-          options: {
-            shouldCreateUser: true,
-            data: {
-              full_name: regForm.fullName.trim(),
-              business_name: regForm.businessName.trim(),
-              area: regForm.area || ""
-            }
-          }
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signInWithOtp({
-          phone,
-          options: { shouldCreateUser: false }
-        });
-        if (error) throw error;
-      }
-      setOtpState({ sent: true, phone, token: "", busy: false });
-      setFormFeedback({ type: "success", message: `SMS verification code sent to +91 ${phoneDigits}. Enter it below to continue.` });
-    } catch (error) {
-      setOtpState({ sent: false, phone: "", token: "", busy: false });
-      setFormFeedback({
-        type: "error",
-        message: error?.message || "Could not send SMS OTP. Check that Phone Auth and an SMS provider are enabled in Supabase."
-      });
-    }
-  };
-
   const handleLoginSubmit = async () => {
     const email = String(loginForm.identifier || "").trim().toLowerCase();
     const password = String(loginForm.password || "");
@@ -238,7 +190,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       setFormFeedback({ type: "error", message: "WE4ALL database is not configured. The connection checker is separate from sign-in; SMS is not required." });
       return;
     }
-    setOtpState((state) => ({ ...state, busy: true }));
+    setAuthState((state) => ({ ...state, busy: true }));
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
@@ -288,7 +240,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
     } catch (error) {
       setFormFeedback({ type: "error", message: error?.message || "Email/password sign-in failed." });
     } finally {
-      setOtpState((state) => ({ ...state, busy: false }));
+      setAuthState((state) => ({ ...state, busy: false }));
     }
   };
 
@@ -321,7 +273,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         });
         setAuthMode("login");
         setLoginForm({ identifier: email, password: "" });
-        setOtpState({ sent: false, phone: "", token: "", busy: false });
+        setAuthState({ busy: false });
         return;
       }
       const profilePayload = {
@@ -525,7 +477,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
               </div>
               <p className="text-[10px] text-emerald-300">Free sign-in: SMS OTP is temporarily paused. Database connection is checked separately and never requires a text message.</p>
-              <button type="button" onClick={handleLoginSubmit} disabled={otpState.busy}
+              <button type="button" onClick={handleLoginSubmit} disabled={authState.busy}
                 className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs">
                 {otpState.busy ? "Signing in…" : "Sign in securely →"}
               </button>
