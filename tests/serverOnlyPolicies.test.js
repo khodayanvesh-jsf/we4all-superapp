@@ -7,7 +7,7 @@ const migration = await readFile(
   "utf8"
 );
 
-test("server-only audit, ledger, webhook, P2P and GPS tables explicitly deny client roles", () => {
+test("server-only tables are enumerated and receive explicit deny-all client policies", () => {
   for (const table of [
     "we4all_audit_events",
     "we4all_delivery_test_otps",
@@ -18,7 +18,8 @@ test("server-only audit, ledger, webhook, P2P and GPS tables explicitly deny cli
     "we4all_rider_location_pings",
     "we4all_town_state"
   ]) {
-    assert.match(migration, new RegExp(table + "_client_deny"));
+    assert.ok(migration.includes("'" + table + "'"), `missing server-only table: ${table}`);
   }
+  assert.match(migration, /table_name \|\| '_client_deny'/);
   assert.match(migration, /for all to anon, authenticated using \(false\) with check \(false\)/i);
 });
