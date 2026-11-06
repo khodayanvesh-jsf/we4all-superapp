@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - fix/payment-safety-guest-default
-    paths:
-      - ".github/workflows/export-we4all-source.yml"
-      - "**"
   workflow_dispatch:
 
 permissions:
