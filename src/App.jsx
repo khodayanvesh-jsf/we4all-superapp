@@ -37,6 +37,7 @@ import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
+import DynamicModuleRenderer from "./modules/DynamicModuleRenderer";
 import {
   saveCloudAndLocalState,
   loadCloudAndLocalState,
@@ -49,6 +50,7 @@ import {
   clearActiveSupabaseAccount,
   loadMarketplaceCatalog,
   loadMarketplaceOrders,
+  loadPublishedDynamicModules,
   createMarketplaceOrder,
   createServerP2PDelivery,
   issueDeliveryTestOtp
@@ -544,6 +546,8 @@ function AppContent() {
     };
 
   const [globalCustomerSubTab, setGlobalCustomerSubTab] = useState("stores");
+  const [publishedDynamicModules, setPublishedDynamicModules] = useState([]);
+  const [selectedDynamicModule, setSelectedDynamicModule] = useState(null);
   const customerHomeSubTab = globalCustomerSubTab;
   const setCustomerHomeSubTab = setGlobalCustomerSubTab;
   const [selectedCategory, setSelectedCategory] = useState("daily_needs");
@@ -696,6 +700,19 @@ function AppContent() {
       }
     };
 
+    const refreshDynamicModules = async () => {
+      try {
+        const modules = await loadPublishedDynamicModules({
+          portalTarget: "customer",
+          zoneCode: activeAddressObj?.zoneCode || activeAddressObj?.zoneId || "adilabad"
+        });
+        if (active) setPublishedDynamicModules(modules.filter((module) =>
+          !Array.isArray(module.visibility_roles) || module.visibility_roles.includes("customer") || module.visibility_roles.includes("*")
+        ));
+      } catch (error) {
+        console.warn("WE4ALL published dynamic modules load failed:", error?.message || error);
+      }
+    };
     const refreshOrders = async () => {
       if (!currentUser?.authUserId) return;
       try {
@@ -708,6 +725,7 @@ function AppContent() {
 
     refreshCatalog();
     refreshOrders();
+    refreshDynamicModules();
 
     if (supabase) {
       channel = supabase
@@ -715,6 +733,7 @@ function AppContent() {
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_catalog_items" }, refreshCatalog)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_orders" }, refreshOrders)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_order_items" }, refreshOrders)
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_dynamic_modules" }, refreshDynamicModules)
         .subscribe();
     }
 
@@ -1087,6 +1106,39 @@ function AppContent() {
                   ))}
               </div>
 
+              {publishedDynamicModules.length > 0 && (
+                <section className="bg-slate-900/80 border border-cyan-500/40 rounded-xl p-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-black text-cyan-200">New WE4ALL Modules</h3>
+                    <span className="text-[8px] text-slate-400">Founder published</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {publishedDynamicModules.map((module) => (
+                      <button key={module.id} type="button" onClick={() => setSelectedDynamicModule(module)}
+                        className={"min-h-[58px] rounded-lg border px-1.5 py-2 flex flex-col items-center justify-center gap-1 " + (selectedDynamicModule?.id === module.id ? "bg-cyan-900 border-cyan-400 text-white" : "bg-slate-950 border-slate-700 text-slate-100")}>
+                        <span className="text-base">{module.icon || "▦"}</span>
+                        <span className="text-[8px] leading-tight text-center font-bold">{module.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {selectedDynamicModule && (
+                    <DynamicModuleRenderer
+                      module={selectedDynamicModule}
+                      onClose={() => setSelectedDynamicModule(null)}
+                      onNavigate={(destination) => {
+                        if (destination?.type === "category" && destination.categoryId) {
+                          setSelectedCategory(destination.categoryId);
+                          setCustomerHomeSubTab("stores");
+                        }
+                        if (destination?.type === "tab" && ["services","taxi","parcel","events","labour","stores"].includes(destination.tab)) {
+                          setCustomerHomeSubTab(destination.tab);
+                        }
+                        setSelectedDynamicModule(null);
+                      }}
+                    />
+                  )}
+                </section>
+              )}
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
