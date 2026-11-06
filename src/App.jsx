@@ -50,6 +50,7 @@ import {
   clearActiveSupabaseAccount,
   loadMarketplaceCatalog,
   loadMarketplaceOrders,
+  loadPublicServiceProviders,
   loadPublishedDynamicModules,
   createMarketplaceOrder,
   loadServerOperations,
@@ -706,6 +707,15 @@ function AppContent() {
       }
     };
 
+    const refreshServiceDirectory = async () => {
+      try {
+        const directory = await loadPublicServiceProviders();
+        if (active) setServiceProviders(directory);
+      } catch (error) {
+        console.warn("WE4ALL public service directory load failed:", error?.message || error);
+      }
+    };
+
     const refreshDynamicModules = async () => {
       try {
         const modules = await loadPublishedDynamicModules({
@@ -760,6 +770,7 @@ function AppContent() {
     };
 
     refreshCatalog();
+    refreshServiceDirectory();
     refreshOrders();
     refreshServerOperations();
     refreshDynamicModules();
@@ -768,6 +779,7 @@ function AppContent() {
       channel = supabase
         .channel("we4all-marketplace-live")
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_catalog_items" }, refreshCatalog)
+        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_partners" }, refreshServiceDirectory)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_orders" }, refreshOrders)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_order_items" }, refreshOrders)
         .on("postgres_changes", { event: "*", schema: "public", table: "we4all_bookings" }, refreshServerOperations)
