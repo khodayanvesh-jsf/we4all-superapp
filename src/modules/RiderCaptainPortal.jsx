@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { invokeWe4AllOperations } from "../supabaseClient";
 import LiveRouteMap from "./LiveRouteMap";
+import RiderRadarMap from "./RiderRadarMap";
 
 export const VEHICLE_CONSORT_RULES = {
   "2W": {
@@ -61,6 +62,8 @@ export default function RiderCaptainPortal({
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [claimingDispatchId, setClaimingDispatchId] = useState("");
   const [dispatchError, setDispatchError] = useState("");
+  const [radarServiceFilter, setRadarServiceFilter] = useState("ALL");
+  const [selectedRadarJob, setSelectedRadarJob] = useState(null);
 
   const myPendingCaptain = (pendingRiders || []).find(
     (r) =>
@@ -81,22 +84,25 @@ export default function RiderCaptainPortal({
     setDispatchError("");
     try {
       const result = await invokeWe4AllOperations("list_rider_jobs");
-      const jobs = (result.jobs || []).map((job) => ({
-        ...job,
-        id: job.id,
-        orderId: job.order_id,
-        requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class,
-        vehicleLabel: job.vehicle_class,
-        weightKg: Number(job.we4all_orders?.total_weight_kg || 5),
-        badge: "Verified merchant delivery",
-        bookedBy: `Order ${job.we4all_orders?.order_number || job.order_id}`,
-        pickupPin: job.pickup_location?.address || job.pickup_location?.name || "Merchant pickup",
-        dropPin: job.dropoff_location?.full_address || job.dropoff_location?.address || "Customer delivery",
-        distanceKm: null,
-        captainPayout: Number(job.we4all_orders?.delivery_fee_inr || 0),
-        serverDispatchVerified: true,
-        status: "OPEN_ON_RADAR"
-      }));
+      const jobs = (result.jobs || []).map((job) => {
+        const serviceType = job.service_type || "M2C";
+        const pickup = job.pickup_location || {};
+        const dropoff = job.dropoff_location || {};
+        return {
+          ...job, id: job.id, orderId: job.order_id, serviceType,
+          requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class,
+          vehicleLabel: job.vehicle_class === "4W" ? "4W Cab / Utility" : job.vehicle_class,
+          weightKg: Number(job.parcel_details?.weightKg || job.we4all_orders?.total_weight_kg || 0),
+          badge: serviceType === "TAXI" ? "Rapido passenger ride" : serviceType === "P2P" ? "Personal parcel delivery" : "Merchant to Customer delivery",
+          bookedBy: serviceType === "TAXI" ? "Passenger pickup" : serviceType === "P2P" ? (job.parcel_details?.type || "Personal parcel") : `Order ${job.we4all_orders?.order_number || job.order_id}`,
+          pickupPin: pickup.address || pickup.full_address || pickup.name || "Pickup address",
+          dropPin: dropoff.address || dropoff.full_address || dropoff.name || "Destination address",
+          distanceKm: null,
+          captainPayout: serviceType === "M2C" ? Number(job.we4all_orders?.delivery_fee_inr || 0) : null,
+          quotedFare: serviceType === "TAXI" ? Number(job.quoted_total_inr || 0) : Number(job.quoted_fee_inr || 0),
+          serverDispatchVerified: true, status: "OPEN_ON_RADAR"
+        };
+      });
       setCaptainRadarJobs(jobs);
     } catch (error) {
       setDispatchError(error?.message || "Could not load verified dispatch jobs.");
@@ -387,6 +393,15 @@ export default function RiderCaptainPortal({
             <p className="text-[10px] text-slate-300">Customer delivery OTP / completion: Paused until secure server verification is available.</p>
             <p className="text-[10px] text-slate-300">Rider settlement / payout: Paused; no payment has been initiated.</p>
           </div>
+          <RiderRadarMap jobs={myEligibleRadarJobs} selectedJob={selectedRadarJob} onSelectJob={setSelectedRadarJob} />
+          <div className="grid grid-cols-4 gap-1 bg-slate-950 border border-slate-800 p-1 rounded-xl">
+            {[
+              ["ALL","All"],["TAXI","Bike / Auto / Cab"],["P2P","P2P Parcel"],["M2C","M2C Delivery"]
+            ].map(([value,label]) => (
+              <button key={value} type="button" onClick={() => setRadarServiceFilter(value)}
+                className={`rounded-lg py-2 px-1 text-[8px] font-black ${radarServiceFilter === value ? "bg-cyan-400 text-slate-950" : "text-slate-300 bg-slate-900"}`}>{label}</button>
+            ))}
+          </div>
           <div className="bg-slate-900 p-3 rounded-2xl border border-teal-500/40 space-y-2">
             <div className="flex justify-between items-center">
               <div>
@@ -415,7 +430,7 @@ export default function RiderCaptainPortal({
               <div className="flex justify-between items-start gap-2">
                 <div>
                   <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-[9px] font-black px-2 py-0.5 rounded">
-                    ALLOCATED TO {job.requiredVehicleCode || "2W"} &bull; {job.weightKg || 5} KG
+                    {job.serviceType || "M2C"} &bull; {job.requiredVehicleCode || "2W"} {job.weightKg ? `· ${job.weightKg} KG` : ""}
                   </span>
                   <h5 className="font-black text-white text-xs mt-1">
                     #{job.id} &bull; {job.badge}
@@ -424,7 +439,7 @@ export default function RiderCaptainPortal({
                 </div>
                 <div className="text-right shrink-0">
                   <span className="font-black text-emerald-400 text-sm block">
-                    Rs.{job.captainPayout}
+                    {job.captainPayout ? `₹${job.captainPayout}` : job.quotedFare ? `Fare ₹${job.quotedFare}` : "Fare pending"}
                   </span>
                   <span className="text-[9px] text-amber-300 font-bold">
                     {job.distFromCaptainKm} km away
@@ -447,9 +462,12 @@ export default function RiderCaptainPortal({
                   onClick={async () => {
                     setClaimingDispatchId(job.id);
                     try {
-                      await invokeWe4AllOperations("claim_dispatch", { dispatchId: job.id });
+                      const claimAction = job.serviceType === "TAXI" ? "claim_taxi_ride" : job.serviceType === "P2P" ? "claim_p2p_delivery" : "claim_dispatch";
+                      const claimPayload = job.serviceType === "TAXI" ? { rideBookingId: job.id } : job.serviceType === "P2P" ? { deliveryId: job.id } : { dispatchId: job.id };
+                      await invokeWe4AllOperations(claimAction, claimPayload);
                       await refreshRiderDispatch();
-                      onTriggerToast?.("Dispatch accepted by WE4ALL server. Check your active route.");
+                      setSelectedRadarJob(null);
+                      onTriggerToast?.(`${job.serviceType === "TAXI" ? "Passenger ride" : job.serviceType === "P2P" ? "P2P parcel" : "Merchant delivery"} accepted by WE4ALL. Open the route tab for navigation.`);
                     } catch (error) {
                       onTriggerToast?.(error?.message || "Dispatch claim failed. No local assignment was created.");
                     } finally {
