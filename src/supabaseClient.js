@@ -1119,7 +1119,7 @@ export async function issueDeliveryTestOtp({ deliveryType, deliveryId }) {
 /** Assigned rider verifies the optional test code. This never completes a trip or pays out. */
 export async function verifyDeliveryTestOtp({ deliveryType, deliveryId, code }) {
   if (!["M2C", "P2P", "TAXI"].includes(String(deliveryType))) throw new Error("Unsupported delivery type.");
-  if (!deliveryId || !/^\\d{6}$/.test(String(code || ""))) throw new Error("Enter the six-digit customer test code.");
+  if (!deliveryId || !/^\d{6}$/.test(String(code || ""))) throw new Error("Enter the six-digit customer test code.");
   return invokeWe4AllOperations("verify_delivery_test_otp", { deliveryType, deliveryId, code: String(code) });
 }
 
@@ -1130,7 +1130,7 @@ function makeOperationsIdempotencyKey(prefix) {
 }
 
 function bookingTimeToIso(date, clock) {
-  const match = String(clock || "").match(/^(\\d{1,2}):(\\d{2})\\s*(AM|PM)$/i);
+  const match = String(clock || "").match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (!match || !date) throw new Error("Choose a valid booking date and time.");
   let hour = Number(match[1]);
   const minute = Number(match[2]);
@@ -1152,7 +1152,7 @@ export async function createServerBooking({
 }) {
   if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("This provider does not have a verified WE4ALL partner record yet.");
   if (!["service", "decorator", "function_hall"].includes(bookingType)) throw new Error("Unsupported booking type.");
-  const parts = [...String(slot || "").matchAll(/(\\d{1,2}:\\d{2}\\s*(?:AM|PM))/ig)];
+  const parts = [...String(slot || "").matchAll(/(\d{1,2}:\d{2}\s*(?:AM|PM))/ig)];
   if (parts.length < 2) throw new Error("Choose a valid one-hour booking slot.");
   const requestedStartAt = bookingTimeToIso(date, parts[0][1]);
   const requestedEndAt = bookingTimeToIso(date, parts[1][1]);
@@ -1353,7 +1353,7 @@ export async function createServerLabourEngagement({
 }) {
   if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("This Labour partner is not linked to an approved WE4ALL account.");
   if (!String(worksiteAddress || "").trim()) throw new Error("Enter the worksite address.");
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(workDate || ""))) throw new Error("Choose a valid future work date.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(workDate || ""))) throw new Error("Choose a valid future work date.");
   const start = new Date(`${workDate}T09:00:00+05:30`);
   if (!Number.isFinite(start.getTime()) || start.getTime() < Date.now() - 60000) throw new Error("Choose a future work date.");
   const durationHours = shift === "HALF_DAY" ? 4.25 : 8.5;
