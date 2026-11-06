@@ -1143,10 +1143,11 @@ function AppContent() {
 
                             <button
                               type="button"
+                              disabled={prod.inStock === false}
                               onClick={() => handleAddToUnifiedMerchantCart(prod)}
-                              className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
+                              className="bg-emerald-600 disabled:bg-slate-300 disabled:text-slate-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                             >
-                              + Add
+                              {prod.inStock === false ? "Out of stock" : "+ Add"}
                             </button>
                           </div>
 
@@ -1473,7 +1474,7 @@ function AppContent() {
                         onClick={handlePlaceOrderForCheckout}
                         className="w-full bg-emerald-600 text-white font-black py-2.5 rounded-xl cursor-pointer"
                       >
-                        Approve & Pay via UPI
+                        Place Order (Payment Pending)
                       </button>
                     </>
                   )}
