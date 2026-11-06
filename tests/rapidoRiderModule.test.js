@@ -70,3 +70,17 @@ test("4W vehicle class is kept distinct from 2W and 3W", () => {
   assert.match(rider, /"4W_HEAVY"/);
   assert.match(radarMap, /WE4ALL LIVE RADAR MAP/);
 });
+
+test("delivery test OTP is optional, short-lived, rate-limited and never completes a trip", async () => {
+  const ops = await readFile(new URL("../supabase/functions/we4all-operations/index.ts", import.meta.url), "utf8");
+  assert.match(ops, /case "issue_delivery_test_otp"/);
+  assert.match(ops, /case "verify_delivery_test_otp"/);
+  assert.match(ops, /10\*60\*1000/);
+  assert.match(ops, /attempts>=5/);
+  assert.match(ops, /delivery_status_changed:false/);
+  assert.match(ops, /payout_released:false/);
+  assert.match(client, /issueDeliveryTestOtp/);
+  assert.match(client, /verifyDeliveryTestOtp/);
+  assert.match(app, /Generate optional test code/);
+  assert.match(rider, /Verify test code \(optional\)/);
+});
