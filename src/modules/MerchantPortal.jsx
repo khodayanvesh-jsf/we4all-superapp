@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
-import { supabase } from "../supabaseClient";
+import { supabase, adjustMarketplaceStock } from "../supabaseClient";
 
 export default function MerchantPortal({
   footerTab,
@@ -41,6 +41,34 @@ export default function MerchantPortal({
   if (footerTab === "account") {
     return renderAccountTab();
   }
+
+  const handleToggleLiveStock = async (product) => {
+    if (!currentUser?.partnerId || !product?.catalogItemId) {
+      onTriggerToast("This product is not linked to a verified live catalogue record.");
+      return;
+    }
+    const currentQuantity = Number(product.stockQuantity || 0);
+    const targetQuantity = currentQuantity > 0 ? 0 : 1;
+    const delta = targetQuantity - currentQuantity;
+    const idempotencyKey = globalThis.crypto?.randomUUID?.() || `stock-${product.catalogItemId}-${Date.now()}`;
+    try {
+      const result = await adjustMarketplaceStock({
+        partnerId: currentUser.partnerId,
+        catalogItemId: product.catalogItemId,
+        quantityDelta: delta,
+        idempotencyKey
+      });
+      const quantity = Number(result.stock_quantity);
+      setProducts((items) => (items || []).map((item) =>
+        item.catalogItemId === product.catalogItemId
+          ? { ...item, stockQuantity: quantity, inStock: quantity > 0 }
+          : item
+      ));
+      onTriggerToast(`Online stock saved. ${quantity > 0 ? "Available" : "Out of stock"} in the shared WE4ALL catalogue.`);
+    } catch (error) {
+      onTriggerToast(error?.message || "Stock update failed. No local success was recorded.");
+    }
+  };
 
   const handleConfirmHeavyAndLaborBill = (ord) => {
     const fees = heavyLaborFees[ord.id] || { heavyTransportFee: 0, laborFee: 0 };
@@ -263,13 +291,7 @@ export default function MerchantPortal({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setProducts((products || []).map((item) =>
-                    item.id === prod.id && item.ownerUserId === merchantId
-                      ? { ...item, inStock: !item.inStock, updatedAt: new Date().toISOString() }
-                      : item
-                  ));
-                }}
+                onClick={() => handleToggleLiveStock(prod)}
                 className={`px-3 py-1.5 rounded-xl font-black text-[10px] cursor-pointer ${
                   prod.inStock !== false
                     ? "bg-emerald-500 text-slate-950"
