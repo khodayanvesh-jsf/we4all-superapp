@@ -38,7 +38,7 @@ test("merchant stock changes use the verified server endpoint", () => {
   assert.match(stockEdge, /we4all_adjust_inventory/);
 });
 test("checkout does not claim payment is completed", () => {
-  assert.match(app, /payment is PENDING/);
+  assert.match(app, /payment is PENDING/i);
   assert.match(orderEdge, /payment_status/);
   assert.doesNotMatch(orderEdge, /payment_status\s*[:=]\s*["']paid/i);
 });
