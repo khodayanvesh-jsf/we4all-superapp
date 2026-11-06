@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { invokeWe4AllOperations } from "../supabaseClient";
+import { invokeWe4AllOperations, verifyDeliveryTestOtp } from "../supabaseClient";
 import LiveRouteMap from "./LiveRouteMap";
 import RiderRadarMap from "./RiderRadarMap";
 
@@ -242,12 +242,23 @@ export default function RiderCaptainPortal({
   const allMyVehicleBookings = Array.from(bookingsMap.values());
 
   // COMPLETE OTP VERIFICATION HANDLER (Updates BOTH captainRadarJobs AND orders)
-  const handleVerifyTripOtpAndComplete = () => {
-    onReportError(
-      "Delivery verification unavailable",
-      "The backend has not issued a customer-bound, expiring delivery OTP. No delivery status or payout was changed.",
-      "Complete the secure OTP endpoint and provider-side verification before enabling delivery completion."
-    );
+  const handleVerifyTripOtpAndComplete = async (trip) => {
+    const code = String(dropOtpInputs[trip.id] || "").trim();
+    if (!/^\d{6}$/.test(code)) {
+      onTriggerToast?.("Enter the six-digit optional test code shared by the customer.");
+      return;
+    }
+    try {
+      const result = await verifyDeliveryTestOtp({
+        deliveryType: trip.serviceType || "M2C",
+        deliveryId: trip.id,
+        code
+      });
+      setOtpVerifiedBanner({ tripId: trip.id, message: result.message || "Optional test code verified." });
+      onTriggerToast?.("Test code verified. Delivery status and rider payout remain unchanged.");
+    } catch (error) {
+      onTriggerToast?.(error?.message || "Test code verification failed.");
+    }
   };
 
   const handleDownloadCaptainStatementPdf = () => {
@@ -583,7 +594,7 @@ export default function RiderCaptainPortal({
             </div>
           ) : (
             activeAcceptedTrips.map((trip) => {
-              const otpCode = "";
+              const otpCode = "OPTIONAL TEST";
               return (
                 <div
                   key={trip.id}
@@ -607,16 +618,17 @@ export default function RiderCaptainPortal({
                   />
                   <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 flex justify-between items-center text-[10px]">
                     <span className="text-slate-300">
-                      Customer / Merchant OTP:{" "}
+                      Customer / Merchant code:{" "}
                       <strong className="text-amber-300 font-mono text-xs">{otpCode}</strong>
                     </span>
-                    <span className="text-[10px] text-amber-200">Server-issued delivery OTP required. Completion remains locked.</span>
+                    <span className="text-[10px] text-amber-200">Optional test only · no SMS · not required to complete the trip.</span>
                   </div>
                   <div className="flex gap-1.5">
                     <input
                       type="text"
-                      maxLength={4}
-                      placeholder="Server-issued delivery OTP (not configured)"
+                      inputMode="numeric"
+                       maxLength={6}
+                      placeholder="Optional 6-digit test code"
                       value={dropOtpInputs[trip.id] ?? ""}
                       onChange={(e) =>
                         setDropOtpInputs({
@@ -628,13 +640,14 @@ export default function RiderCaptainPortal({
                     />
                     <button
                       type="button"
-                      disabled
+                      disabled={String(dropOtpInputs[trip.id] || "").length !== 6}
                       onClick={() => handleVerifyTripOtpAndComplete(trip)}
-                      className="flex-1 bg-slate-700 text-slate-300 font-black rounded-xl text-[10px] cursor-not-allowed shadow"
+                      className="flex-1 bg-cyan-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black rounded-xl text-[10px] shadow"
                     >
-                      Server verification required
+                      Verify test code (optional)
                     </button>
                   </div>
+                  {otpVerifiedBanner?.tripId === trip.id && <p className="text-[9px] text-emerald-300">{otpVerifiedBanner.message} Trip completion and payout remain unchanged.</p>}
                 </div>
               );
             })
