@@ -1069,3 +1069,17 @@ export async function adjustMarketplaceStock({ partnerId, catalogItemId, quantit
   }
   return data;
 }
+
+
+/** Invoke a role-gated WE4ALL server action using the current user's session. */
+export async function invokeWe4AllOperations(action, fields = {}) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth?.user?.id) throw new Error("Sign in with your WE4ALL account first.");
+  const { data, error } = await supabase.functions.invoke("we4all-operations", {
+    body: { action, ...fields }
+  });
+  if (error) throw error;
+  if (!data || data.ok !== true) throw new Error(data?.error || "WE4ALL server did not confirm this action.");
+  return data;
+}
