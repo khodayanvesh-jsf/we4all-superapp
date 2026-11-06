@@ -74,11 +74,11 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
  }
  case "set_availability":{
   const id=String(body.partnerId||"");if(!uuid(id))return fail("INVALID_PARTNER_ID");
-  const {data:p,error}=await admin.from("we4all_partners").select("id,partner_type").eq("id",id).eq("owner_user_id",user.id).eq("approval_status","approved").maybeSingle();
+  const {data:p,error}=await admin.from("we4all_partners").select("id,partner_type,availability_rules").eq("id",id).eq("owner_user_id",user.id).eq("approval_status","approved").maybeSingle();
   if(error||!p)return fail("PARTNER_OWNERSHIP_REQUIRED",403);
   const role=p.partner_type,authorized=(role==="service_provider"&&has("service_provider"))||(role==="decorator"&&has("decorator"))||(role==="function_hall"&&(has("decorator")||founder));
   if(!authorized)return fail("APPROVED_PARTNER_REQUIRED",403);
-  const rules=obj(body.availabilityRules);if(JSON.stringify(rules).length>10000)return fail("AVAILABILITY_RULES_TOO_LARGE");
+  const incomingRules=obj(body.availabilityRules);const rules={...obj(p.availability_rules),...incomingRules};if(JSON.stringify(rules).length>10000)return fail("AVAILABILITY_RULES_TOO_LARGE");
   const {error:updateError}=await admin.from("we4all_partners").update({availability_rules:rules,updated_at:new Date().toISOString()}).eq("id",id).eq("owner_user_id",user.id);
   if(updateError)return fail("AVAILABILITY_SAVE_FAILED",500);
   return json(200,{ok:true,partnerId:id,availabilityRules:rules});
