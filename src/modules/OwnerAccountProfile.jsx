@@ -417,9 +417,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
               : connectionHealth.syncReady
                 ? "CONNECTED · ACCOUNT SYNC VERIFIED"
                 : connectionHealth.backendReachable
-                  ? connectionHealth.authenticated
-                    ? "API CONNECTED · ACCOUNT LINK PENDING"
-                    : "API CONNECTED · SIGN IN TO SYNC"
+                  ? "API CONNECTED"
                   : connectionHealth.configured
                     ? "API UNREACHABLE"
                     : "NOT CONFIGURED"}
