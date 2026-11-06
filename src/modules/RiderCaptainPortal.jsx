@@ -556,7 +556,7 @@ export default function RiderCaptainPortal({
             </p>
           </div>
           <button type="button" onClick={() => setRouteGpsEnabled((value) => !value)}
-            className="rounded-xl px-3 py-2 text-[10px] font-black ${routeGpsEnabled ? "bg-emerald-500 text-slate-950" : "bg-cyan-500 text-slate-950"}">
+            className={`rounded-xl px-3 py-2 text-[10px] font-black ${routeGpsEnabled ? "bg-emerald-500 text-slate-950" : "bg-cyan-500 text-slate-950"}`}>
             {routeGpsEnabled ? "Stop route GPS" : "Enable route GPS"}
           </button>
           {(activeAcceptedTrips || []).length === 0 ? (
