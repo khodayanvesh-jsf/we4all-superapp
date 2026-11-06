@@ -1186,6 +1186,41 @@ export async function setServerPartnerAvailability({ partnerId, availabilityRule
   return invokeWe4AllOperations("set_availability", { partnerId, availabilityRules });
 }
 
+/** Public, column-limited partner directory for the customer service catalogue. */
+export async function loadPublicServiceProviders() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase
+    .from("we4all_partners")
+    .select("id,partner_type,display_name,zone_id,approval_status,availability_rules")
+    .eq("partner_type", "service_provider")
+    .eq("approval_status", "approved")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((partner) => {
+    const rules = partner.availability_rules || {};
+    const rate = rules.serviceRateCard || {};
+    return {
+      id: partner.id,
+      partnerId: partner.id,
+      partnerType: partner.partner_type,
+      providerName: partner.display_name || "WE4ALL Service Provider",
+      displayName: partner.display_name || "WE4ALL Service Provider",
+      zoneId: partner.zone_id,
+      status: "Approved",
+      isPublished: true,
+      availabilityRules: rules,
+      availableSlots: Array.isArray(rules.availableSlots) ? rules.availableSlots : [],
+      serviceCategoryId: rate.serviceCategoryId || "",
+      serviceCategory: rate.serviceCategory || "",
+      specialization: rate.specialization || "",
+      visitingFee: Number(rate.visitingFeeInr || 0),
+      hourlyRate: Number(rate.hourlyRateInr || 0),
+      emergencyFee: Number(rate.emergencyFeeInr || 0),
+      rateCardItems: Array.isArray(rate.rateCardItems) ? rate.rateCardItems : []
+    };
+  });
+}
+
 /** Public read-only registry: only published public modules are returned. */
 export async function loadPublishedDynamicModules({ portalTarget, zoneCode = "*" } = {}) {
   if (!supabase) throw new Error("WE4ALL backend is not configured.");
