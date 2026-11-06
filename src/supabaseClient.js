@@ -1103,3 +1103,18 @@ export async function createServerP2PDelivery({
     vehicleClass, zoneId, idempotencyKey: key
   });
 }
+
+
+/** Issue an optional in-app test code for an already-assigned delivery. No SMS is sent. */
+export async function issueDeliveryTestOtp({ deliveryType, deliveryId }) {
+  if (!["M2C", "P2P", "TAXI"].includes(String(deliveryType))) throw new Error("Unsupported delivery type.");
+  if (!deliveryId) throw new Error("A delivery reference is required.");
+  return invokeWe4AllOperations("issue_delivery_test_otp", { deliveryType, deliveryId });
+}
+
+/** Assigned rider verifies the optional test code. This never completes a trip or pays out. */
+export async function verifyDeliveryTestOtp({ deliveryType, deliveryId, code }) {
+  if (!["M2C", "P2P", "TAXI"].includes(String(deliveryType))) throw new Error("Unsupported delivery type.");
+  if (!deliveryId || !/^\\d{6}$/.test(String(code || ""))) throw new Error("Enter the six-digit customer test code.");
+  return invokeWe4AllOperations("verify_delivery_test_otp", { deliveryType, deliveryId, code: String(code) });
+}
