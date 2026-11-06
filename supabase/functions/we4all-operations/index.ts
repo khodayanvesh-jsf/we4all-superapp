@@ -44,7 +44,7 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
   if(!uuid(bookingId)||!uuid(partnerId))return fail("INVALID_BOOKING_REVIEW");
   const {data:p,error}=await admin.from("we4all_partners").select("id,partner_type").eq("id",partnerId).eq("owner_user_id",user.id).eq("approval_status","approved").maybeSingle();
   if(error||!p)return fail("PARTNER_OWNERSHIP_REQUIRED",403);
-  const role=p.partner_type,authorized=(role==="service_provider"&&has("service_provider"))||(role==="decorator"&&has("decorator"))||(role==="function_hall"&&(has("decorator")||founder));
+  const role=p.partner_type,authorized=(role==="service_provider"&&has("service_provider"))||(role==="labour"&&has("labour"))||(role==="decorator"&&has("decorator"))||(role==="function_hall"&&(has("decorator")||founder));
   if(!authorized)return fail("APPROVED_PARTNER_REQUIRED",403);
   const total=Number(body.quotedTotalInr),advance=Number(body.advanceRequiredInr||0);
   if(!Number.isFinite(total)||total<=0||!Number.isFinite(advance)||advance<0||advance>total)return fail("INVALID_BOOKING_QUOTE");
@@ -93,7 +93,9 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
   if(!validIdem)return fail("IDEMPOTENCY_KEY_REQUIRED");
   const pickup=obj(body.pickupLocation),dropoff=obj(body.dropoffLocation),details=obj(body.parcelDetails),vehicle=String(body.vehicleClass||"");
   const weight=Number(details.weightKg||0);
-  if(!["2W","3W","4W"].includes(vehicle)||!Object.keys(pickup).length||!Object.keys(dropoff).length||!Number.isFinite(weight)||weight<=0||weight>2000)return fail("INVALID_P2P_REQUEST");
+  const maxWeightByVehicle:Record<string,number>={"2W":45,"3W":300,"4W":2000};
+  const maxWeight=maxWeightByVehicle[vehicle]||0;
+  if(!maxWeight||!Object.keys(pickup).length||!Object.keys(dropoff).length||!Number.isFinite(weight)||weight<=0||weight>maxWeight)return fail("INVALID_P2P_VEHICLE_CAPACITY");
   const {data:existing}=await admin.from("we4all_p2p_deliveries").select("id,status").eq("customer_user_id",user.id).eq("idempotency_key",idem).maybeSingle();
   if(existing)return json(200,{ok:true,duplicate:true,delivery_id:existing.id,status:existing.status});
   const {data,error}=await admin.from("we4all_p2p_deliveries").insert({customer_user_id:user.id,zone_id:String(body.zoneId||"adilabad_master"),vehicle_class:vehicle,pickup_location:pickup,dropoff_location:dropoff,parcel_details:details,idempotency_key:idem}).select("id,status,vehicle_class").single();
