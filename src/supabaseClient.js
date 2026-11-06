@@ -1118,3 +1118,49 @@ export async function verifyDeliveryTestOtp({ deliveryType, deliveryId, code }) 
   if (!deliveryId || !/^\\d{6}$/.test(String(code || ""))) throw new Error("Enter the six-digit customer test code.");
   return invokeWe4AllOperations("verify_delivery_test_otp", { deliveryType, deliveryId, code: String(code) });
 }
+
+
+/** Public read-only registry: only published public modules are returned. */
+export async function loadPublishedDynamicModules({ portalTarget, zoneCode = "*" } = {}) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  let query = supabase.from("we4all_dynamic_modules")
+    .select("id,module_key,title,description,icon,category_key,portal_target,zone_codes,visibility_roles,sort_order,version,module_config")
+    .eq("status", "published")
+    .eq("is_public", true);
+  if (portalTarget) query = query.eq("portal_target", portalTarget);
+  const { data, error } = await query.order("sort_order", { ascending: true });
+  if (error) throw error;
+  return (data || []).filter((module) =>
+    !Array.isArray(module.zone_codes) || module.zone_codes.includes("*") || module.zone_codes.includes(zoneCode)
+  );
+}
+
+/** Founder-only list. The Edge Function validates the trusted app_metadata claim. */
+export async function listFounderDynamicModules() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", { body: { action: "list" } });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Founder module access denied.");
+  return Array.isArray(data.modules) ? data.modules : [];
+}
+
+export async function saveFounderDynamicModule(moduleDraft) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", {
+    body: { action: "save_draft", ...moduleDraft }
+  });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Could not save module draft.");
+  return data.result;
+}
+
+export async function setFounderDynamicModuleStatus(moduleId, action) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  if (!["publish", "disable"].includes(action)) throw new Error("Unsupported module action.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", {
+    body: { action, moduleId }
+  });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Could not update module status.");
+  return data.result;
+}
