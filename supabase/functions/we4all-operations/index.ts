@@ -206,6 +206,23 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
   await admin.from("we4all_delivery_test_otps").update({status:"verified",verified_at:new Date().toISOString()}).eq("id",challenge.id).eq("status","issued");
   return json(200,{ok:true,test_only:true,verified:true,delivery_status_changed:false,payout_released:false,message:"Optional test code verified. No delivery completion or payout was triggered."});
  }
+ case "rider_location_ping":{
+  if(!has("rider"))return fail("APPROVED_RIDER_REQUIRED",403);
+  const longitude=Number(body.longitude),latitude=Number(body.latitude);
+  const accuracy=body.accuracyM==null?null:Number(body.accuracyM);
+  const heading=body.headingDeg==null?null:Number(body.headingDeg);
+  const speed=body.speedMps==null?null:Number(body.speedMps);
+  if(!Number.isFinite(longitude)||!Number.isFinite(latitude)||longitude < -180||longitude > 180||latitude < -90||latitude > 90)return fail("INVALID_GPS_COORDINATES");
+  if(accuracy!==null&&(!Number.isFinite(accuracy)||accuracy<0||accuracy>10000))return fail("INVALID_GPS_ACCURACY");
+  if(heading!==null&&(!Number.isFinite(heading)||heading<0||heading>360))return fail("INVALID_GPS_HEADING");
+  if(speed!==null&&(!Number.isFinite(speed)||speed<0||speed>150))return fail("INVALID_GPS_SPEED");
+  const partner=await approvedPartner(admin,user.id,"rider");
+  if(!partner?.vehicle_class)return fail("FOUNDER_VERIFIED_VEHICLE_CLASS_REQUIRED",403);
+  return json(200,await rpc("we4all_upsert_rider_location_ping",{
+   p_rider_user_id:user.id,p_longitude:longitude,p_latitude:latitude,
+   p_accuracy_m:accuracy,p_heading_deg:heading,p_speed_mps:speed
+  }));
+ }
  case "list_my_operations":{
   const out:Record<string,unknown>={ok:true,bookings:[],labourEngagements:[],rides:[],dispatchJobs:[],p2pDeliveries:[],taxiRides:[]};
   if(has("customer")){
