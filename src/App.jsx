@@ -49,7 +49,8 @@ import {
   clearActiveSupabaseAccount,
   loadMarketplaceCatalog,
   loadMarketplaceOrders,
-  createMarketplaceOrder
+  createMarketplaceOrder,
+  createServerP2PDelivery
 } from "./supabaseClient";
 
 function FounderLogoBadge({ logoUrl }) {
@@ -565,6 +566,13 @@ function AppContent() {
     distanceKm: 2.5
   });
 
+  const [p2pParcelForm, setP2pParcelForm] = useState({
+    pickupAddress: "", dropAddress: "", parcelType: "Documents",
+    weightKg: "1", vehicleClass: "2W", instructions: ""
+  });
+  const [p2pSubmitting, setP2pSubmitting] = useState(false);
+
+
   const [orders, setOrders] = useState(savedCloud?.orders || []);
   const checkoutIdempotencyKeyRef = useRef(null);
   const [activeOrderId, setActiveOrderId] = useState(null);
@@ -983,12 +991,13 @@ function AppContent() {
 
           {footerTab === "home" && (
             <>
-              <div className="grid grid-cols-5 gap-1 bg-slate-200/80 p-1 rounded-xl text-[10px] font-black text-slate-800">
+              <div className="grid grid-cols-6 gap-1 bg-slate-200/80 p-1 rounded-xl text-[10px] font-black text-slate-800">
                 {[
                   { id: "stores", label: "Stores" },
                   { id: "services", label: "1-Hr Srv" },
                   { id: "events", label: "Events" },
-                  { id: "taxi", label: "Rides" },
+                  { id: "taxi", label: "Taxi" },
+                  { id: "parcel", label: "P2P Parcel" },
                   { id: "labour", label: "Mistri" }
                 ].map((tab) => (
                   <button
@@ -1403,6 +1412,52 @@ function AppContent() {
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+
+              {customerHomeSubTab === "parcel" && (
+                <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-2">
+                  <h3 className="font-black text-xs">Personal Parcel — Door-to-Door Delivery</h3>
+                  <p className="text-[10px] text-slate-600">Send documents, gifts or personal parcels from one person to another. Rider matching follows the selected vehicle class. Payment is paused; this creates an unpaid delivery request only.</p>
+                  <input value={p2pParcelForm.pickupAddress} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, pickupAddress: e.target.value })} placeholder="Pickup person's address" className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs" />
+                  <input value={p2pParcelForm.dropAddress} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, dropAddress: e.target.value })} placeholder="Receiver's delivery address" className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={p2pParcelForm.parcelType} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, parcelType: e.target.value })} className="border border-slate-300 rounded-xl px-2 py-2 text-xs">
+                      <option>Documents</option><option>Small parcel</option><option>Food / gift</option><option>Household item</option><option>Other permitted parcel</option>
+                    </select>
+                    <input type="number" min="0.1" max="2000" step="0.1" value={p2pParcelForm.weightKg} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, weightKg: e.target.value })} placeholder="Weight (kg)" className="border border-slate-300 rounded-xl px-2 py-2 text-xs" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[["2W","Bike"],["3W","Auto"],["4W","4W vehicle"]].map(([code,label]) => (
+                      <button key={code} type="button" onClick={() => setP2pParcelForm({ ...p2pParcelForm, vehicleClass: code })} className={`rounded-xl border px-2 py-2 text-[10px] font-black ${p2pParcelForm.vehicleClass === code ? "bg-emerald-600 border-emerald-700 text-white" : "bg-slate-50 border-slate-300 text-slate-700"}`}>{label}</button>
+                    ))}
+                  </div>
+                  <textarea value={p2pParcelForm.instructions} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, instructions: e.target.value })} placeholder="Parcel handling instructions (optional)" rows={2} className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs" />
+                  <button type="button" disabled={p2pSubmitting} onClick={async () => {
+                    if (!currentUser?.authUserId || currentUser?.isGuest) {
+                      triggerToast("Sign in with your free WE4ALL account before creating a parcel request.");
+                      setFooterTab("account"); return;
+                    }
+                    if (!p2pParcelForm.pickupAddress.trim() || !p2pParcelForm.dropAddress.trim()) {
+                      triggerToast("Enter both pickup and delivery addresses."); return;
+                    }
+                    setP2pSubmitting(true);
+                    try {
+                      const result = await createServerP2PDelivery({
+                        pickupLocation: { address: p2pParcelForm.pickupAddress.trim() },
+                        dropoffLocation: { address: p2pParcelForm.dropAddress.trim() },
+                        parcelDetails: { type: p2pParcelForm.parcelType, weightKg: Number(p2pParcelForm.weightKg), instructions: p2pParcelForm.instructions.slice(0,500) },
+                        vehicleClass: p2pParcelForm.vehicleClass,
+                        zoneId: activeAddressObj?.zoneId || "adilabad_master",
+                        idempotencyKey: `we4-p2p-${currentUser.authUserId}-${globalThis.crypto?.randomUUID?.() || Date.now()}`
+                      });
+                      triggerToast(`Parcel request ${result.delivery_id} added to the ${p2pParcelForm.vehicleClass} rider queue. No payment was collected.`);
+                      setP2pParcelForm({ pickupAddress: "", dropAddress: "", parcelType: "Documents", weightKg: "1", vehicleClass: "2W", instructions: "" });
+                    } catch (error) {
+                      triggerToast(error?.message || "Parcel request could not be saved. No delivery was created.");
+                    } finally { setP2pSubmitting(false); }
+                  }} className="w-full rounded-xl bg-emerald-600 disabled:bg-slate-300 text-white font-black py-3 text-xs">{p2pSubmitting ? "Submitting request…" : "Find a WE4ALL parcel rider →"}</button>
                 </div>
               )}
 
