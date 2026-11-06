@@ -12,6 +12,7 @@ test("free email/password sign-in replaces paid SMS as the active login path", (
   assert.match(ownerAccountSource, /supabase\.auth\.signInWithPassword/);
   assert.match(ownerAccountSource, /supabase\.auth\.signUp/);
   assert.doesNotMatch(ownerAccountSource, /supabase\.auth\.verifyOtp/);
+  assert.doesNotMatch(ownerAccountSource, /supabase\.auth\.signInWithOtp/);
   assert.doesNotMatch(ownerAccountSource, /Send SMS OTP|Send Registration OTP/);
   assert.match(ownerAccountSource, /No SMS was sent/);
 });
