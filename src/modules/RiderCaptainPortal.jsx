@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { invokeWe4AllOperations } from "../supabaseClient";
 import LiveRouteMap from "./LiveRouteMap";
 
 export const VEHICLE_CONSORT_RULES = {
@@ -57,6 +58,9 @@ export default function RiderCaptainPortal({
   const [dropOtpInputs, setDropOtpInputs] = useState({});
   const [otpVerifiedBanner, setOtpVerifiedBanner] = useState(null);
   const [earningsPeriod, setEarningsPeriod] = useState("ALL");
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [claimingDispatchId, setClaimingDispatchId] = useState("");
+  const [dispatchError, setDispatchError] = useState("");
 
   const myPendingCaptain = (pendingRiders || []).find(
     (r) =>
@@ -70,6 +74,43 @@ export default function RiderCaptainPortal({
     VEHICLE_CONSORT_RULES[myVehicleCode] &&
     (!myPendingCaptain || myPendingCaptain.status === "Approved")
   );
+
+  const refreshRiderDispatch = async () => {
+    if (!isPublishedLive) return;
+    setDispatchLoading(true);
+    setDispatchError("");
+    try {
+      const result = await invokeWe4AllOperations("list_rider_jobs");
+      const jobs = (result.jobs || []).map((job) => ({
+        ...job,
+        id: job.id,
+        orderId: job.order_id,
+        requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class,
+        vehicleLabel: job.vehicle_class,
+        weightKg: Number(job.we4all_orders?.total_weight_kg || 5),
+        badge: "Verified merchant delivery",
+        bookedBy: `Order ${job.we4all_orders?.order_number || job.order_id}`,
+        pickupPin: job.pickup_location?.address || job.pickup_location?.name || "Merchant pickup",
+        dropPin: job.dropoff_location?.full_address || job.dropoff_location?.address || "Customer delivery",
+        distanceKm: null,
+        captainPayout: Number(job.we4all_orders?.delivery_fee_inr || 0),
+        serverDispatchVerified: true,
+        status: "OPEN_ON_RADAR"
+      }));
+      setCaptainRadarJobs(jobs);
+    } catch (error) {
+      setDispatchError(error?.message || "Could not load verified dispatch jobs.");
+      onReportError?.("Dispatch queue unavailable", error?.message || "Could not load server dispatch jobs.", "Check that the Rider role and vehicle class have been Founder-approved.");
+    } finally {
+      setDispatchLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isPublishedLive) return undefined;
+    refreshRiderDispatch();
+    return undefined;
+  }, [isPublishedLive, currentUser?.authUserId, currentUser?.partnerId, myVehicleCode]);
 
   // Merge store orders from Merchant Portal into Radar if not already in captainRadarJobs
   const radarJobIds = new Set((captainRadarJobs || []).map((j) => j.id));
@@ -221,7 +262,7 @@ export default function RiderCaptainPortal({
       <head><title>Captain_Statement_${myVehicleCode}</title></head>
       <body style="font-family:Arial;padding:20px;">
         <h2>WE4ALL DELIVERY CAPTAIN LEDGER (${myVehicleRule.label})</h2>
-        <p><strong>Captain:</strong> ${currentUser?.fullName} | <strong>Vehicle:</strong> ${currentUser?.vehicleModel || "Verified"} (${currentUser?.rcPlate || "TS-01-EF-4599"}) | <strong>DL:</strong> ${currentUser?.dlNumber || "Verified"}</p>
+        <p><strong>Captain:</strong> ${currentUser?.fullName} | <strong>Vehicle:</strong> ${currentUser?.vehicleModel || "Verified"} (${currentUser?.rcPlate || "Not verified"}) | <strong>DL:</strong> ${currentUser?.dlNumber || "Verified"}</p>
         <table border="1" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead><tr><th>#</th><th>Order ID</th><th>Allocated Vehicle</th><th>Route</th><th>Dist</th><th>Status</th><th>Payout</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
@@ -246,7 +287,7 @@ export default function RiderCaptainPortal({
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <h3 className="font-black text-teal-300 text-xs">
-                {currentUser?.fullName || "Raju Local Rider"}
+                {currentUser?.fullName || "Rider"}
               </h3>
               <span className="bg-teal-500/20 border border-teal-400 text-teal-200 text-[8px] font-black px-2 py-0.5 rounded">
                 LOCKED VEHICLE: {myVehicleRule.shortLabel} (MAX {myVehicleRule.maxWeightKg} KG)
@@ -262,9 +303,9 @@ export default function RiderCaptainPortal({
               )}
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">
-              Model: <strong>{currentUser?.vehicleModel || "Hero Splendor / Activa"}</strong> | Plate:{" "}
-              <strong>{currentUser?.rcPlate || "TS-01-EF-4599"}</strong> | DL:{" "}
-              <strong>{currentUser?.dlNumber || "TS-01-20230098"}</strong>
+              Model: <strong>{currentUser?.vehicleModel || "Vehicle details pending verification"}</strong> | Plate:{" "}
+              <strong>{currentUser?.rcPlate || "Not verified"}</strong> | DL:{" "}
+              <strong>{currentUser?.dlNumber || "Not verified"}</strong>
             </p>
           </div>
           <button
@@ -305,7 +346,7 @@ export default function RiderCaptainPortal({
         <div className="flex justify-between items-center bg-slate-950 p-2 rounded-xl border border-slate-800">
           <span className="text-[10px] font-bold text-slate-200">
             {isOnlineForDriving
-              ? `ON-DUTY FOR ${myVehicleRule.shortLabel.toUpperCase()} ORDERS (9AM DEFAULT)`
+              ? `MANUALLY ONLINE FOR ${myVehicleRule.shortLabel.toUpperCase()} ORDERS`
               : "OFF-DUTY (RADAR PAUSED)"}
           </span>
           <button
@@ -314,14 +355,10 @@ export default function RiderCaptainPortal({
               if (isOnlineForDriving) {
                 setIsOnlineForDriving(false);
                 setLocationConsent(false);
+                onTriggerToast?.("Rider marked offline on this device. Server duty status is not yet available.");
                 return;
               }
-              const accepted = window.confirm(
-                "Share this device's location while you are online as a WE4ALL captain? Location tracking remains on this device only until the secure server tracking service is configured."
-              );
-              if (!accepted) return;
-              setLocationConsent(true);
-              setIsOnlineForDriving(true);
+              onTriggerToast?.("Live duty is temporarily unavailable: WE4ALL must first save your availability and location heartbeat on the server. Dispatch job refresh and acceptance remain available.");
             }}
             className={`px-2.5 py-1 rounded-lg font-black text-[9px] cursor-pointer ${
               isOnlineForDriving
@@ -329,62 +366,37 @@ export default function RiderCaptainPortal({
                 : "bg-rose-600 text-white"
             }`}
           >
-            {isOnlineForDriving ? "Go Offline" : "Go Live"}
+            {isOnlineForDriving ? "Go Offline" : "Server duty unavailable"}
           </button>
         </div>
       </div>
 
-      {/* INSTANT OTP VERIFIED CONFIRMATION BANNER */}
-      {otpVerifiedBanner && (
-        <div className="bg-emerald-950 border-2 border-emerald-400 p-3 rounded-2xl space-y-2 shadow-xl">
-          <div className="flex justify-between items-center">
-            <span className="font-black text-emerald-300 text-xs">
-              &#x2705; OTP ({otpVerifiedBanner.otp}) Verified! Order #{otpVerifiedBanner.id} Completed
-            </span>
-            <button
-              type="button"
-              onClick={() => setOtpVerifiedBanner(null)}
-              className="bg-slate-900 text-slate-300 px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer"
-            >
-              X
-            </button>
-          </div>
-          <p className="text-[10px] text-slate-200">
-            Route: {otpVerifiedBanner.route} | Payout Earned:{" "}
-            <strong className="text-amber-300">Rs.{otpVerifiedBanner.payout}</strong>
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setOtpVerifiedBanner(null);
-                setFooterTab("rates");
-              }}
-              className="flex-1 bg-amber-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
-            >
-              Raise UPI Payment Request &rarr;
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOtpVerifiedBanner(null);
-                setFooterTab("orders");
-              }}
-              className="flex-1 bg-emerald-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
-            >
-              View 4. Earnings Ledger &rarr;
-            </button>
-          </div>
-        </div>
-      )}
+      <div className="bg-amber-950/50 border border-amber-500/30 p-3 rounded-xl text-[10px] text-amber-200">
+        Delivery completion and earnings are credited only after the customer-bound server OTP and settlement service confirm them. No offline/manual OTP can complete a delivery.
+      </div>
 
       {/* TAB 1: VEHICLE-LOCKED RADAR ("home") */}
       {footerTab === "home" && (
         <div className="space-y-2.5">
+          <div className="bg-slate-900 p-3 rounded-2xl border border-amber-500/40 space-y-1.5">
+            <h4 className="text-amber-300 font-black text-[11px]">Rider setup & live-service checklist</h4>
+            <p className="text-[10px] text-slate-300">Vehicle class: {myVehicleCode === "UNVERIFIED" ? "Pending Founder verification" : myVehicleRule.shortLabel}</p>
+            <p className="text-[10px] text-slate-300">Driving licence / RC: {currentUser?.dlNumber && currentUser?.rcPlate ? "Details recorded — Founder verification required" : "Not yet recorded"}</p>
+            <p className="text-[10px] text-slate-300">Server duty heartbeat / GPS tracking: Not connected — live mode is disabled.</p>
+            <p className="text-[10px] text-slate-300">Dispatch queue / accept: Connected to authenticated server operations.</p>
+            <p className="text-[10px] text-slate-300">Customer delivery OTP / completion: Paused until secure server verification is available.</p>
+            <p className="text-[10px] text-slate-300">Rider settlement / payout: Paused; no payment has been initiated.</p>
+          </div>
           <div className="bg-slate-900 p-3 rounded-2xl border border-teal-500/40 space-y-2">
             <div className="flex justify-between items-center">
               <div>
-                <h4 className="font-black text-teal-300 text-xs">
+                <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] text-slate-300">{dispatchLoading ? "Refreshing dispatch queue…" : `${(myEligibleRadarJobs || []).length} eligible server jobs`}</p>
+              <button type="button" onClick={refreshRiderDispatch} disabled={dispatchLoading || !isPublishedLive}
+                className="bg-teal-400 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-bold px-2 py-1 rounded-lg text-[9px]">Refresh jobs</button>
+            </div>
+            {dispatchError && <p className="text-[10px] text-rose-300">{dispatchError}</p>}
+            <h4 className="font-black text-teal-300 text-xs">
                   1. {myVehicleRule.shortLabel} Radar ({(myEligibleRadarJobs || []).length} Eligible Orders)
                 </h4>
                 <p className="text-[10px] text-slate-400">
@@ -431,10 +443,22 @@ export default function RiderCaptainPortal({
               {job.status === "OPEN_ON_RADAR" ? (
                 <button
                   type="button"
-                  disabled
-                  className="w-full bg-slate-700 text-slate-300 font-black py-2 rounded-xl cursor-not-allowed"
+                  disabled={claimingDispatchId === job.id || !isPublishedLive}
+                  onClick={async () => {
+                    setClaimingDispatchId(job.id);
+                    try {
+                      await invokeWe4AllOperations("claim_dispatch", { dispatchId: job.id });
+                      await refreshRiderDispatch();
+                      onTriggerToast?.("Dispatch accepted by WE4ALL server. Check your active route.");
+                    } catch (error) {
+                      onTriggerToast?.(error?.message || "Dispatch claim failed. No local assignment was created.");
+                    } finally {
+                      setClaimingDispatchId("");
+                    }
+                  }}
+                  className="w-full bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black py-2 rounded-xl"
                 >
-                  Dispatch allocation service required
+                  {claimingDispatchId === job.id ? "Accepting…" : "Accept delivery"}
                 </button>
               ) : (
                 <button
@@ -495,7 +519,7 @@ export default function RiderCaptainPortal({
               2. Active {myVehicleRule.shortLabel} Route Map &amp; OTP Verification ({(activeAcceptedTrips || []).length})
             </h4>
             <p className="text-[10px] text-slate-400">
-              Live GPS route for {currentUser?.vehicleModel || myVehicleRule.shortLabel} ({currentUser?.rcPlate || "TS-01-EF-4599"})
+              Live GPS route for {currentUser?.vehicleModel || myVehicleRule.shortLabel} ({currentUser?.rcPlate || "Not verified"})
             </p>
           </div>
           {(activeAcceptedTrips || []).length === 0 ? (
@@ -539,7 +563,7 @@ export default function RiderCaptainPortal({
                   <LiveRouteMap
                     pickupLabel={trip.pickupPin || trip.shopName}
                     dropLabel={trip.dropPin || trip.address}
-                    riderName={currentUser?.fullName || "Raju Local Rider"}
+                    riderName={currentUser?.fullName || "Rider"}
                     vehicle={`${myVehicleRule.shortLabel} (${currentUser?.rcPlate || "Vehicle pending"})`}
                     distanceKm={trip.distanceKm || null}
                     trackingEnabled={isOnlineForDriving && locationConsent}
@@ -678,7 +702,7 @@ export default function RiderCaptainPortal({
                   4. {myVehicleRule.shortLabel} Earnings &amp; 09:00 AM Default Online Duty
                 </h4>
                 <p className="text-[10px] text-slate-400">
-                  09:00 AM auto-duty requires a server scheduler and explicit consent. Manual online mode is used until then.
+                  Auto-duty is paused. Server-side availability and location heartbeat are not yet connected; no automatic duty starts.
                 </p>
               </div>
               <button
