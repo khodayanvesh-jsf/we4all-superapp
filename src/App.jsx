@@ -50,7 +50,8 @@ import {
   loadMarketplaceCatalog,
   loadMarketplaceOrders,
   createMarketplaceOrder,
-  createServerP2PDelivery
+  createServerP2PDelivery,
+  issueDeliveryTestOtp
 } from "./supabaseClient";
 
 function FounderLogoBadge({ logoUrl }) {
@@ -568,7 +569,7 @@ function AppContent() {
 
   const [p2pParcelForm, setP2pParcelForm] = useState({
     pickupAddress: "", dropAddress: "", parcelType: "Documents",
-    weightKg: "1", vehicleClass: "2W", instructions: ""
+    weightKg: "1", vehicleClass: "2W", instructions: "", deliveryId: "", testOtp: "", otpExpiresAt: ""
   });
   const [p2pSubmitting, setP2pSubmitting] = useState(false);
 
@@ -1453,11 +1454,28 @@ function AppContent() {
                         idempotencyKey: `we4-p2p-${currentUser.authUserId}-${globalThis.crypto?.randomUUID?.() || Date.now()}`
                       });
                       triggerToast(`Parcel request ${result.delivery_id} added to the ${p2pParcelForm.vehicleClass} rider queue. No payment was collected.`);
-                      setP2pParcelForm({ pickupAddress: "", dropAddress: "", parcelType: "Documents", weightKg: "1", vehicleClass: "2W", instructions: "" });
+                      setP2pParcelForm({ ...p2pParcelForm, deliveryId: result.delivery_id, testOtp: "", otpExpiresAt: "" });
                     } catch (error) {
                       triggerToast(error?.message || "Parcel request could not be saved. No delivery was created.");
                     } finally { setP2pSubmitting(false); }
                   }} className="w-full rounded-xl bg-emerald-600 disabled:bg-slate-300 text-white font-black py-3 text-xs">{p2pSubmitting ? "Submitting request…" : "Find a WE4ALL parcel rider →"}</button>
+                  {p2pParcelForm.deliveryId && (
+                    <div className="rounded-xl border border-amber-400/50 bg-amber-50 p-3 space-y-2">
+                      <p className="text-[10px] font-black text-slate-800">P2P request: {p2pParcelForm.deliveryId}</p>
+                      <p className="text-[10px] text-slate-600">Optional test-only handover code. Generate after a rider accepts the parcel. No SMS is sent, and this code does not complete the delivery.</p>
+                      <button type="button" onClick={async () => {
+                        try {
+                          const result = await issueDeliveryTestOtp({ deliveryType: "P2P", deliveryId: p2pParcelForm.deliveryId });
+                          setP2pParcelForm({ ...p2pParcelForm, testOtp: result.test_otp, otpExpiresAt: result.expires_at });
+                          triggerToast("Optional test code generated. Share it only with the assigned rider.");
+                        } catch (error) {
+                          triggerToast(error?.message || "A test code is available only after the assigned rider accepts.");
+                        }
+                      }} className="rounded-lg bg-amber-400 text-slate-950 font-black text-[10px] px-3 py-2">Generate optional test code</button>
+                      {p2pParcelForm.testOtp && <p className="font-mono text-xl font-black tracking-[0.35em] text-slate-950">{p2pParcelForm.testOtp}</p>}
+                      {p2pParcelForm.otpExpiresAt && <p className="text-[9px] text-slate-600">Expires: {new Date(p2pParcelForm.otpExpiresAt).toLocaleTimeString()}</p>}
+                    </div>
+                  )}
                 </div>
               )}
 
