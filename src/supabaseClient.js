@@ -1083,3 +1083,23 @@ export async function invokeWe4AllOperations(action, fields = {}) {
   if (!data || data.ok !== true) throw new Error(data?.error || "WE4ALL server did not confirm this action.");
   return data;
 }
+
+
+export async function createServerP2PDelivery({
+  pickupLocation, dropoffLocation, parcelDetails, vehicleClass, zoneId = "adilabad_master", idempotencyKey
+}) {
+  const allowedVehicles = new Set(["2W", "3W", "4W"]);
+  if (!allowedVehicles.has(String(vehicleClass))) throw new Error("Choose Bike, Auto or 4W parcel vehicle.");
+  const pickup = pickupLocation && typeof pickupLocation === "object" ? pickupLocation : {};
+  const dropoff = dropoffLocation && typeof dropoffLocation === "object" ? dropoffLocation : {};
+  const details = parcelDetails && typeof parcelDetails === "object" ? parcelDetails : {};
+  const weight = Number(details.weightKg);
+  const key = String(idempotencyKey || "");
+  if (!pickup.address || !dropoff.address) throw new Error("Enter both pickup and delivery addresses.");
+  if (!Number.isFinite(weight) || weight <= 0 || weight > 2000) throw new Error("Enter parcel weight from 0.1 to 2000 kg.");
+  if (key.length < 8 || key.length > 160) throw new Error("A valid retry-safe request key is required.");
+  return invokeWe4AllOperations("create_p2p_delivery", {
+    pickupLocation: pickup, dropoffLocation: dropoff, parcelDetails: details,
+    vehicleClass, zoneId, idempotencyKey: key
+  });
+}
