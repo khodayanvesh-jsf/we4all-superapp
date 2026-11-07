@@ -40,6 +40,13 @@ test("account screen keeps guest shopping but hides connection and guest mode no
   assert.match(ownerAccountSource, /activateSupabaseAccount\(user\.id\)/);
 });
 
+test("login lists all defined portals even when role settings cannot load", () => {
+  assert.match(ownerAccountSource, /useState\(ROLE_OPTIONS\)/);
+  assert.match(ownerAccountSource, /\{ROLE_OPTIONS\.map\(\(opt\) =>/);
+  assert.match(ownerAccountSource, /Select Portal to Log Into:/);
+  assert.match(ownerAccountSource, /\{registrationRoleOptions\.map\(\(opt\) =>/);
+});
+
 test("Supabase auth persists and refreshes signed-in sessions automatically", async () => {
   const client = await read("../src/supabaseClient.js");
   assert.match(client, /persistSession:\s*true/);
@@ -77,6 +84,12 @@ test("Founder bootstrap is server-verified and requires password rotation plus M
   assert.match(adminFunction, /must_change_password/);
   assert.match(adminFunction, /Change the initial Founder password/);
   assert.match(adminFunction, /claims\.aal !== "aal2"/);
+});
+
+test("Founder pending approval lists initialize product and hall inputs before filtering", async () => {
+  const founderAdmin = await read("../src/modules/FounderAdminSuite.jsx");
+  assert.ok(founderAdmin.indexOf("const safeProducts =") < founderAdmin.indexOf("const safePendingProductApprovals ="));
+  assert.ok(founderAdmin.indexOf("const safeHalls =") < founderAdmin.indexOf("const safePendingHallApprovals ="));
 });
 
 test("PIN and biometric sign-in use Supabase Auth and native device authentication", () => {

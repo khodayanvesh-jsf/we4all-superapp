@@ -53,7 +53,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [authMode, setAuthMode] = useState("login"); // login | register
   const [loginMethod, setLoginMethod] = useState("pin"); // OTP is reserved for registration and PIN recovery
   const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
-  const [registrationRoleOptions, setRegistrationRoleOptions] = useState([ROLE_OPTIONS[0]]);
+  const [registrationRoleOptions, setRegistrationRoleOptions] = useState(ROLE_OPTIONS);
   const [showPinText, setShowPinText] = useState(false);
 
   const isConsumerSelected = selectedRoleKey === "customer";
@@ -188,7 +188,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         return baseline ? { ...baseline, label: row.label || baseline.label } : null;
       }).filter(Boolean);
       if (!active) return;
-      const safeRoles = activeRoles.some((role) => role.id === "customer") ? activeRoles : [ROLE_OPTIONS[0]];
+      const safeRoles = activeRoles.some((role) => role.id === "customer") ? activeRoles : ROLE_OPTIONS;
       setRegistrationRoleOptions(safeRoles);
       setSelectedRoleKey((current) => safeRoles.some((role) => role.id === current) ? current : "customer");
     })().catch((error) => console.warn("Registration role list could not be loaded:", error?.message || error));
@@ -772,7 +772,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
                 >
-                  {registrationRoleOptions.map((opt) => (
+                  {ROLE_OPTIONS.map((opt) => (
                     <option key={opt.id} value={opt.id}>
                       {opt.label}
                     </option>
