@@ -104,6 +104,7 @@ test("trial OTP is server generated, short-lived and disabled unless an Edge sec
   const otpFunction = await read("../supabase/functions/we4all-trial-otp-auth/index.ts");
   const otpMigration = await read("../supabase/migrations/20261107180000_we4all_trial_otp_auth.sql");
   assert.match(ownerAccountSource, /we4all-trial-otp-auth/);
+  assert.match(ownerAccountSource, /VITE_WE4ALL_TRIAL_OTP_MODE === "true" \|\| import\.meta\.env\.DEV/);
   assert.match(otpFunction, /WE4ALL_TRIAL_OTP_ENABLED/);
   assert.match(otpFunction, /trial_code: code/);
   assert.match(otpFunction, /expires_at: new Date\(Date\.now\(\) \+ 2 \* 60 \* 1000\)/);

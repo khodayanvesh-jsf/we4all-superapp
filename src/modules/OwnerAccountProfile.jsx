@@ -57,6 +57,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [showPinText, setShowPinText] = useState(false);
 
   const isConsumerSelected = selectedRoleKey === "customer";
+  // Local Vite development defaults to the server-generated trial flow. The
+  // Edge Function remains disabled unless its separate server secrets enable
+  // preview mode, so this client flag cannot turn on trial OTP in production.
+  const trialOtpModeEnabled = import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true" || import.meta.env.DEV;
 
   const [loginForm, setLoginForm] = useState({ identifier: "", pin: "" });
 
@@ -385,7 +389,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
           const detailsError = validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
           if (detailsError) throw new Error(detailsError);
         }
-        if (import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true") {
+        if (trialOtpModeEnabled) {
           const { data, error } = await supabase.functions.invoke("we4all-trial-otp-auth", {
             body: {
               action: "request", phone, requested_role: selectedRoleKey,
@@ -996,7 +1000,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   onClick={sendPhoneOtp}
                   className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
                 >
-                  {otpState.sent ? (trialChallengeId ? "Generate new trial code" : "Resend Registration OTP") : (import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true" ? "Generate Trial OTP" : "Send Registration OTP")}
+                  {otpState.sent ? (trialChallengeId ? "Generate new trial code" : "Resend Registration OTP") : (trialOtpModeEnabled ? "Generate Trial OTP" : "Send Registration OTP")}
                 </button>
                 {otpState.sent && (
                   <input
