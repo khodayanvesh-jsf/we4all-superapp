@@ -35,6 +35,7 @@ import RiderCaptainPortal from "./modules/RiderCaptainPortal";
 import { canOpenPartnerPortal, isCustomerVisibleListing, calculateDecoratorAdvance } from "./modules/workflows/portalRules";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
+import AdminSecurityGate from "./modules/AdminSecurityGate";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
 import {
@@ -45,10 +46,19 @@ import {
   checkLiveCloudOtaManifest,
   performZeroLossOtaUpdate,
   createMarketplaceOrder,
+  getMarketplaceFeeQuote,
   supabase,
   activateSupabaseAccount,
   clearActiveSupabaseAccount
 } from "./supabaseClient";
+
+function checkoutFingerprintFor(cart = []) {
+  return JSON.stringify(cart.map((item) => ({
+    catalogItemId: String(item.catalogItemId || item.productId),
+    partnerId: String(item.partnerId),
+    quantity: Number(item.qty)
+  })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+}
 
 function FounderLogoBadge({ logoUrl }) {
   return (
@@ -584,11 +594,13 @@ function AppContent() {
 
   const [merchantCart, setMerchantCart] = useState(savedCloud?.merchantCart || []);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [checkoutQuote, setCheckoutQuote] = useState(null);
   const checkoutAttemptRef = useRef(null);
   const [serviceCart, setServiceCart] = useState(savedCloud?.serviceCart || []);
   const [decorCart, setDecorCart] = useState(savedCloud?.decorCart || []);
   const [taxiCart, setTaxiCart] = useState(savedCloud?.taxiCart || []);
   const [activeCartViewTab, setActiveCartViewTab] = useState("merchant_cart");
+  const visibleCheckoutQuote = checkoutQuote?.fingerprint === checkoutFingerprintFor(merchantCart) ? checkoutQuote : null;
 
   const [taxiBookingForm, setTaxiBookingForm] = useState({
     pickupPin: "Adilabad Bus Stand",
@@ -814,11 +826,25 @@ function AppContent() {
       return;
     }
 
-    const checkoutFingerprint = JSON.stringify(merchantCart.map((item) => ({
-      catalogItemId: String(item.catalogItemId || item.productId),
-      partnerId: String(item.partnerId),
-      quantity: Number(item.qty)
-    })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+    const checkoutFingerprint = checkoutFingerprintFor(merchantCart);
+    if (checkoutQuote?.fingerprint !== checkoutFingerprint) {
+      setCheckoutSubmitting(true);
+      try {
+        const quote = await getMarketplaceFeeQuote({
+          items: merchantCart.map((item) => ({
+            catalogItemId: String(item.catalogItemId || item.productId),
+            quantity: Number(item.qty)
+          })),
+          zoneId: activeAddressObj.zoneId || "adilabad_master"
+        });
+        setCheckoutQuote({ ...quote, fingerprint: checkoutFingerprint });
+      } catch (error) {
+        triggerToast(error?.message || "Could not verify the current order total. No order was placed.");
+      } finally {
+        setCheckoutSubmitting(false);
+      }
+      return;
+    }
     const attemptStorageKey = `we4all_checkout_attempt_${currentUser.authUserId}`;
     let attempt = checkoutAttemptRef.current;
     if (!attempt || attempt.fingerprint !== checkoutFingerprint || attempt.userId !== currentUser.authUserId) {
@@ -864,7 +890,8 @@ function AppContent() {
           fullAddress: activeAddressObj.fullAddress || "",
           area: activeAddressObj.area || ""
         },
-        idempotencyKey: attempt.idempotencyKey
+        idempotencyKey: attempt.idempotencyKey,
+        feePolicyVersions: checkoutQuote.policy_versions || {}
       });
       const placedAt = new Date().toISOString();
       const serverOrder = {
@@ -879,7 +906,9 @@ function AppContent() {
         items: merchantCart,
         itemsTotal: Number(created.subtotal_inr || created.total_inr || 0),
         deliveryFee: Number(created.delivery_fee_inr || 0),
+        platformFee: Number(created.customer_platform_fee_inr || 0),
         gst: Number(created.tax_inr || 0),
+        feeBreakdown: created.fee_breakdown || [],
         grandTotal: Number(created.total_inr || 0),
         status: created.status || "awaiting_payment",
         paymentStatus: String(created.payment_status || "pending").toUpperCase(),
@@ -890,11 +919,13 @@ function AppContent() {
       setOrders((currentOrders) => [serverOrder, ...(currentOrders || []).filter((order) => order.serverOrderId !== created.order_id)]);
       setActiveOrderId(serverOrder.id);
       setMerchantCart([]);
+      setCheckoutQuote(null);
       checkoutAttemptRef.current = null;
       try { sessionStorage.removeItem(attemptStorageKey); } catch {}
       setFooterTab("orders");
       triggerToast("Order created on the WE4ALL server. Merchant confirmation and payment status will appear in Orders.");
     } catch (error) {
+      if (/FEE_POLICY_CHANGED/.test(String(error?.message || ""))) setCheckoutQuote(null);
       triggerToast(error?.message || "Server checkout failed. Your cart was kept; retrying will reuse the same order request.");
     } finally {
       setCheckoutSubmitting(false);
@@ -1489,13 +1520,28 @@ function AppContent() {
                           </p>
                         </div>
                       ))}
+                      {visibleCheckoutQuote && (
+                        <div className="rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-[11px] space-y-1.5" aria-live="polite">
+                          <div className="flex justify-between"><span>Items subtotal</span><strong>Rs.{visibleCheckoutQuote.subtotal_inr.toFixed(2)}</strong></div>
+                          {visibleCheckoutQuote.breakdown.filter((line) => line.platform_fee_inr > 0).map((line) => (
+                            <div key={line.catalog_item_id} className="flex justify-between gap-3 text-amber-200">
+                              <div><span>{line.fee_label} · {line.title}</span><p className="text-[10px] text-slate-300">{line.disclosure_text}</p></div><strong>Rs.{line.platform_fee_inr.toFixed(2)}</strong>
+                            </div>
+                          ))}
+                          <div className="flex justify-between"><span>WE4ALL platform fee</span><strong>Rs.{visibleCheckoutQuote.customer_platform_fee_inr.toFixed(2)}</strong></div>
+                          <div className="flex justify-between border-t border-emerald-800 pt-1 font-black text-white"><span>Total before payment</span><strong>Rs.{visibleCheckoutQuote.total_inr.toFixed(2)}</strong></div>
+                          <p className="text-[10px] text-slate-300">This fee breakdown is shown before you confirm. If a fee schedule changes, WE4ALL will ask you to review the updated total.</p>
+                        </div>
+                      )}
                       <button
                         type="button"
                         disabled={checkoutSubmitting}
                         onClick={handlePlaceOrderForCheckout}
                         className="w-full bg-emerald-600 disabled:bg-slate-400 text-white font-black py-2.5 rounded-xl cursor-pointer"
                       >
-                        {checkoutSubmitting ? "Creating secure order…" : "Place Secure Order"}
+                        {checkoutSubmitting
+                          ? (visibleCheckoutQuote ? "Creating secure order…" : "Checking current price and fees…")
+                          : (visibleCheckoutQuote ? "Confirm total & place secure order" : "Review total before placing order")}
                       </button>
                     </>
                   )}
@@ -1913,80 +1959,13 @@ function AppContent() {
 
       {viewMode === "founder_web" ? (
         !isAdminAuthenticated ? (
-          <div className="max-w-md mx-auto mt-12 bg-slate-900 border border-amber-400/50 rounded-3xl p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="font-black text-amber-400 text-base">
-                WE4ALL Founder Admin 2-Factor Gate
-              </h2>
-              <button
-                type="button"
-                onClick={() => setViewMode("mobile_app")}
-                className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer"
-              >
-                Back to App
-              </button>
-            </div>
-            {adminLoginError && (
-              <p className="text-rose-400 text-xs font-bold">{adminLoginError}</p>
-            )}
-            {adminAuthStep === 1 ? (
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={adminLoginForm.username}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, username: e.target.value })
-                  }
-                  placeholder="Founder username (server authentication required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <input
-                  type="password"
-                  value={adminLoginForm.password}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, password: e.target.value })
-                  }
-                  placeholder="Founder password (server authentication required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    setAdminAuthStep(1);
-                    setAdminLoginError(
-                      "Founder login is disabled until server-side founder authentication and step-up verification are configured. No browser-stored fallback credentials are accepted."
-                    );
-                  }}
-                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Founder authentication unavailable
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <input
-                  type="password"
-                  value={adminPinInput}
-                  onChange={(e) => setAdminPinInput(e.target.value)}
-                  placeholder="Founder PIN (server verification required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-center font-black tracking-widest text-amber-300"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    setAdminLoginError(
-                      "Founder PIN verification is unavailable until a server-validated founder session is implemented."
-                    );
-                  }}
-                  className="w-full bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Server verification required
-                </button>
-              </div>
-            )}
-          </div>
+          <AdminSecurityGate
+            onBackToApp={() => setViewMode("mobile_app")}
+            onAuthorized={(access) => {
+              setAdminAccess(access);
+              setIsAdminAuthenticated(true);
+            }}
+          />
         ) : (
           <div className="p-4 space-y-4">
             <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-900 p-3 rounded-2xl border border-amber-400/40">

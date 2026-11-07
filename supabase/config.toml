@@ -1,5 +1,15 @@
 project_id = "bdmbziwazpuzbukazmug"
 
+[functions.we4all-admin-review]
+verify_jwt = false
+
+# The Founder endpoint validates credentials itself; admin requests are verified inside the handler.
+[functions.we4all-founder-auth]
+verify_jwt = false
+
+[functions.we4all-submit-partner-kyc]
+verify_jwt = true
+
 [functions.we4all-create-order]
 verify_jwt = true
 
@@ -26,5 +36,9 @@ verify_jwt = false
 
 # Cashfree authenticates this endpoint with its timestamp + raw-body signature.
 [functions.we4all-cashfree-webhook]
+verify_jwt = false
+
+# Public unauthenticated endpoint is disabled unless preview-only trial secrets are set.
+[functions.we4all-trial-otp-auth]
 verify_jwt = false
 

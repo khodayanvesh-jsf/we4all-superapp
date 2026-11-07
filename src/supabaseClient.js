@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { Capacitor } from "@capacitor/core";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";
 import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
+import { quoteMarketplaceFees } from "./modules/workflows/feePolicies.js";
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
 const CURRENT_SCHEMA_VERSION = "3.3.0";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
@@ -866,7 +867,8 @@ export async function createMarketplaceOrder({
   items,
   zoneId,
   deliveryAddress,
-  idempotencyKey
+  idempotencyKey,
+  feePolicyVersions = {}
 }) {
   if (!supabase) throw new Error("WE4ALL backend is not configured.");
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -893,7 +895,8 @@ export async function createMarketplaceOrder({
       items: safeItems.map((item) => ({ catalogItemId: item.catalog_item_id, quantity: item.quantity })),
       zoneId,
       deliveryAddress,
-      idempotencyKey: String(idempotencyKey)
+      idempotencyKey: String(idempotencyKey),
+      feePolicyVersions
     }
   });
   if (error) throw new Error(error.message || "The server could not create your order.");
@@ -901,6 +904,35 @@ export async function createMarketplaceOrder({
     throw new Error("Order creation did not return a valid pending-payment record.");
   }
   return data;
+}
+
+export async function getMarketplaceFeeQuote({ items, zoneId }) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) throw new Error("Sign in before reviewing checkout fees.");
+  if (!Array.isArray(items) || items.length < 1 || items.length > 50) throw new Error("A valid cart is required to review fees.");
+  const itemIds = items.map((item) => String(item.catalogItemId || ""));
+  if (itemIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) throw new Error("The cart contains an item that is not linked to the live catalogue.");
+
+  const [{ data: catalogue, error: catalogueError }, { data: policies, error: policyError }] = await Promise.all([
+    supabase.from("we4all_catalog_items").select("id,title,category_key,price_inr").in("id", itemIds),
+    supabase.from("we4all_fee_policies")
+      .select("id,fee_type,scope_type,scope_key,rate_percent,fixed_inr,fee_basis,display_name,disclosure_text,active,effective_at,ends_at,version")
+      .eq("fee_type", "customer_platform_fee")
+      .eq("active", true)
+      .lte("effective_at", new Date().toISOString())
+      .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
+  ]);
+  if (catalogueError) throw new Error("Could not verify live catalogue prices. No order was placed.");
+  if (policyError) throw new Error("Checkout fee details are unavailable. Retry once the server is connected.");
+  const byId = new Map((catalogue || []).map((item) => [item.id, item]));
+  if (itemIds.some((id) => !byId.has(id))) throw new Error("A cart item is no longer available in the live catalogue.");
+  const pricedItems = items.map((item) => ({
+    ...byId.get(String(item.catalogItemId)),
+    catalog_item_id: String(item.catalogItemId),
+    quantity: Number(item.quantity)
+  }));
+  return quoteMarketplaceFees(pricedItems, policies || [], zoneId);
 }
 
 export async function createUPIPaymentIntent(orderId) {

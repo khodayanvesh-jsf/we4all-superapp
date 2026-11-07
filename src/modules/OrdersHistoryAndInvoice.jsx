@@ -200,6 +200,7 @@ export default function OrdersHistoryAndInvoice({
         </table>
         <div class="totals">
           <div>Items Subtotal: <strong>Rs.${ord.itemsTotal || ord.grandTotal}</strong></div>
+          <div>WE4ALL Platform Fee (shown before confirmation): <strong>Rs.${ord.platformFee || 0}</strong></div>
           <div>Logistics / Delivery Fee: <strong>Rs.${ord.deliveryFee || 0}</strong></div>
           <div>5% GST & Governance: <strong>Rs.${ord.gst || 0}</strong></div>
           <div style="font-size:16px;color:#059669;">Grand Total Paid: <strong>Rs.${ord.grandTotal}</strong></div>
@@ -308,6 +309,13 @@ export default function OrdersHistoryAndInvoice({
                     <span>Items Subtotal:</span>
                     <span>Rs.{ord.itemsTotal}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span>WE4ALL Platform Fee:</span>
+                    <span>Rs.{ord.platformFee || 0}</span>
+                  </div>
+                  {(ord.feeBreakdown || []).some((line) => Number(line.platform_fee_inr || 0) > 0) && (
+                    <p className="text-slate-500">Fee details were shown before checkout confirmation.</p>
+                  )}
                   <div className="flex justify-between">
                     <span>Logistics / Delivery ({ord.vehicle || "2W"}):</span>
                     <span>Rs.{ord.deliveryFee}</span>

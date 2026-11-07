@@ -37,6 +37,9 @@ Deno.serve(async (req: Request) => {
   const partnerId = String(body.partnerId || "");
   const zoneId = String(body.zoneId || "");
   const idempotencyKey = String(body.idempotencyKey || "");
+  const feePolicyVersions = body.feePolicyVersions && typeof body.feePolicyVersions === "object" && !Array.isArray(body.feePolicyVersions)
+    ? body.feePolicyVersions as Record<string, unknown>
+    : {};
   const items = body.items;
   const deliveryAddress = body.deliveryAddress;
   if (!partnerId || !zoneId || !idempotencyKey || !Array.isArray(items) || !items.length || items.length > 50 ||
@@ -63,10 +66,11 @@ Deno.serve(async (req: Request) => {
 
   const { data, error } = await admin.rpc("we4all_create_order", {
     p_customer_user_id: user.id, p_partner_id: partnerId, p_items: cleanItems,
-    p_zone_id: zoneId, p_delivery_address: deliveryAddress, p_idempotency_key: idempotencyKey
+    p_zone_id: zoneId, p_delivery_address: deliveryAddress, p_idempotency_key: idempotencyKey,
+    p_fee_policy_versions: feePolicyVersions
   });
   if (error) {
-    const safe = ["MERCHANT_NOT_APPROVED","CATALOG_ITEM_UNAVAILABLE","INSUFFICIENT_STOCK","INVALID_CHECKOUT_CONTEXT","INVALID_IDEMPOTENCY_KEY","INVALID_ORDER_ITEMS","INVALID_ITEM_QUANTITY","DUPLICATE_CATALOG_ITEM","DELIVERY_ADDRESS_REQUIRED"];
+    const safe = ["MERCHANT_NOT_APPROVED","CATALOG_ITEM_UNAVAILABLE","INSUFFICIENT_STOCK","INVALID_CHECKOUT_CONTEXT","INVALID_IDEMPOTENCY_KEY","INVALID_ORDER_ITEMS","INVALID_ITEM_QUANTITY","DUPLICATE_CATALOG_ITEM","DELIVERY_ADDRESS_REQUIRED","FEE_POLICY_CHANGED"];
     const match = safe.find((code) => (error.message || "").includes(code));
     if (match) return json(409, { ok: false, error: match });
     console.error("we4all-create-order failed:", error.code || "DATABASE_ERROR");

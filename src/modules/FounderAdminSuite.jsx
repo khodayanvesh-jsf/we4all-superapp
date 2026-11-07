@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
+import { validateFeePolicy } from "./workflows/feePolicies";
 import {
-  getFounderCredentials,
-  saveFounderCredentials,
   saveCloudAndLocalState,
   pullRemoteSupabaseState,
   supabase,
@@ -11,6 +10,15 @@ import {
   probeSupabaseConnection,
   syncCurrentUserStateNow
 } from "../supabaseClient";
+
+const REGISTRATION_ROLE_LABELS = {
+  customer: "Consumer / Customer",
+  merchant: "Product Merchant Partner",
+  service_provider: "Home Service Provider Partner",
+  decorator: "Event Decorator & Function Hall Partner",
+  rider: "Delivery Captain & Bike/Auto Taxi Partner",
+  labour: "Labour & Mistri Worker Partner"
+};
 
 export default function FounderAdminSuite({
   founderLogoUrl,
@@ -111,6 +119,12 @@ export default function FounderAdminSuite({
 
   const [adminDisplayMode, setAdminDisplayMode] = useState("web");
   const [founderTab, setFounderTab] = useState("approvals");
+  const [adminCredentialForm, setAdminCredentialForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
+  const [adminCredentialMessage, setAdminCredentialMessage] = useState("");
+  const [adminCredentialBusy, setAdminCredentialBusy] = useState(false);
+  const [registrationRoleSettings, setRegistrationRoleSettings] = useState([]);
+  const [registrationRoleBusy, setRegistrationRoleBusy] = useState(false);
+  const [registrationRoleMessage, setRegistrationRoleMessage] = useState("");
   const [locatorSearch, setLocatorSearch] = useState("");
   const [locatorRoleFilter, setLocatorRoleFilter] = useState("ALL");
   const [selectedInspectEntity, setSelectedInspectEntity] = useState(null);
@@ -182,10 +196,6 @@ export default function FounderAdminSuite({
     image: "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=300&auto=format&fit=crop&q=80"
   });
 
-  // Dynamic Admin Credentials State
-  const [adminCredsForm, setAdminCredsForm] = useState(() => getFounderCredentials());
-  const [showCredsPass, setShowCredsPass] = useState(false);
-
   // Supabase status is verified against the active Auth session; config presence alone is not authentication.
   const [syncStatusMsg, setSyncStatusMsg] = useState(
     isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
@@ -195,6 +205,77 @@ export default function FounderAdminSuite({
   const [serverPartnerApplicationsLoading, setServerPartnerApplicationsLoading] = useState(false);
   const [serverPartnerApplicationsError, setServerPartnerApplicationsError] = useState("");
   const [serverReviewBusyId, setServerReviewBusyId] = useState("");
+  const [feePolicies, setFeePolicies] = useState([]);
+  const [feePolicyLoading, setFeePolicyLoading] = useState(false);
+  const [feePolicyMessage, setFeePolicyMessage] = useState("");
+  const [feePolicyDraft, setFeePolicyDraft] = useState({
+    fee_type: "customer_platform_fee",
+    scope_type: "global",
+    scope_key: "*",
+    rate_percent: 0,
+    fixed_inr: 0,
+    fee_basis: "order",
+    display_name: "WE4ALL platform fee",
+    disclosure_text: "",
+    terms_version: "",
+    active: false,
+    effective_at: new Date().toISOString()
+  });
+
+  const refreshFeePolicies = async () => {
+    if (!supabase) {
+      setFeePolicyMessage("Supabase client is not configured. Fee settings have not been saved.");
+      return;
+    }
+    setFeePolicyLoading(true);
+    setFeePolicyMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "fee_list" } });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Founder fee access was denied.");
+      setFeePolicies(Array.isArray(data.policies) ? data.policies : []);
+      setFeePolicyMessage("Server fee policies loaded. The launch policy is 0%; active customer fees appear before checkout confirmation.");
+    } catch (error) {
+      setFeePolicyMessage(error?.message || "Could not load server fee policies.");
+    } finally {
+      setFeePolicyLoading(false);
+    }
+  };
+
+  const saveFeePolicy = async () => {
+    const localError = validateFeePolicy(feePolicyDraft);
+    if (localError) {
+      setFeePolicyMessage(localError);
+      return;
+    }
+    if (feePolicyDraft.active && Number(feePolicyDraft.rate_percent || 0) + Number(feePolicyDraft.fixed_inr || 0) > 0) {
+      if (feePolicyDraft.fee_type !== "customer_platform_fee") {
+        setFeePolicyMessage("This fee can be saved as a draft. It cannot be activated until the related merchant settlement or rider selection flow is connected and verified.");
+        return;
+      }
+      if (!["global", "category", "catalog_item"].includes(feePolicyDraft.scope_type)) {
+        setFeePolicyMessage("This fee can be saved as a draft. Service and zone transactions must be connected to server checkout before activation.");
+        return;
+      }
+    }
+    setFeePolicyLoading(true);
+    setFeePolicyMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "fee_save", policy: feePolicyDraft }
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Could not save the fee policy.");
+      setFeePolicyMessage("Fee policy saved to Supabase and recorded in the audit history.");
+      await refreshFeePolicies();
+    } catch (error) {
+      setFeePolicyMessage(error?.message || "Could not save the fee policy.");
+    } finally {
+      setFeePolicyLoading(false);
+    }
+  };
+  const [serverKycChecklist, setServerKycChecklist] = useState({});
+  const [serverReviewReasons, setServerReviewReasons] = useState({});
 
   const refreshServerPartnerApplications = async () => {
     if (!supabase) {
@@ -220,13 +301,31 @@ export default function FounderAdminSuite({
     }
   };
 
-  const reviewServerPartnerApplication = async (applicationId, decision) => {
+  const reviewServerPartnerApplication = async (application, decision) => {
+    const applicationId = application?.id;
     if (!supabase || !applicationId) return;
+    const checklist = serverKycChecklist[applicationId] || {};
+    const allChecksComplete = ["identity", "role_proof", "payout_proof", "terms", "signature"].every((key) => checklist[key] === true);
+    const reason = String(serverReviewReasons[applicationId] || "").trim();
+    if (decision === "approved") {
+      if (!allChecksComplete) {
+        setServerPartnerApplicationsError("Complete all five evidence checks before approving this application.");
+        return;
+      }
+      if (!String(application.application_payload?.kyc?.terms?.version || "").startsWith("final-")) {
+        setServerPartnerApplicationsError("Approval is paused until the Founder publishes the final partner terms. This applicant accepted the trial declaration only.");
+        return;
+      }
+    }
+    if (decision !== "approved" && reason.length < 4) {
+      setServerPartnerApplicationsError("Enter a short reason before rejecting or suspending this application.");
+      return;
+    }
     setServerReviewBusyId(applicationId);
     setServerPartnerApplicationsError("");
     try {
       const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "review", application_id: applicationId, decision }
+        body: { action: "review", application_id: applicationId, decision, reason, checklist }
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error || "Partner application review failed.");
@@ -249,6 +348,8 @@ export default function FounderAdminSuite({
 
   useEffect(() => {
     if (founderTab === "approvals") refreshServerPartnerApplications();
+    if (founderTab === "monetization") refreshFeePolicies();
+    if (founderTab === "security_server") refreshRegistrationRoles();
   }, [founderTab]);
 
   const [otaForm, setOtaForm] = useState({
@@ -407,6 +508,81 @@ export default function FounderAdminSuite({
       String(entry.address || "").toLowerCase().includes(q)
     );
   });
+
+  const refreshRegistrationRoles = async () => {
+    if (!supabase) { setRegistrationRoleMessage("Supabase is not configured; role settings are unavailable."); return; }
+    setRegistrationRoleBusy(true);
+    setRegistrationRoleMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "registration_roles_list" } });
+      if (error) throw error;
+      if (data?.ok !== true || !Array.isArray(data.roles)) throw new Error(data?.error || "Could not load server role settings.");
+      setRegistrationRoleSettings(data.roles);
+    } catch (error) {
+      setRegistrationRoleMessage(error?.message || "Could not load server role settings.");
+    } finally {
+      setRegistrationRoleBusy(false);
+    }
+  };
+
+  const saveRegistrationRoles = async () => {
+    const enabledRoles = registrationRoleSettings.filter((role) => role.enabled).map((role) => role.role_key);
+    if (!enabledRoles.includes("customer")) { setRegistrationRoleMessage("Consumer registration must stay enabled."); return; }
+    setRegistrationRoleBusy(true);
+    setRegistrationRoleMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "registration_roles_save", enabled_roles: enabledRoles } });
+      if (error) throw error;
+      if (data?.ok !== true || !Array.isArray(data.roles)) throw new Error(data?.error || "Could not save server role settings.");
+      setRegistrationRoleSettings(data.roles);
+      setRegistrationRoleMessage("Role availability saved to the server and added to the audit history.");
+    } catch (error) {
+      setRegistrationRoleMessage(error?.message || "Could not save registration roles.");
+    } finally {
+      setRegistrationRoleBusy(false);
+    }
+  };
+
+  const updateAdminCredentials = async (event) => {
+    event?.preventDefault?.();
+    if (!supabase) { setAdminCredentialMessage("Supabase is not configured; credentials were not changed."); return; }
+    const { username, email, password, confirmPassword } = adminCredentialForm;
+    const updates = {};
+    if (email.trim()) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setAdminCredentialMessage("Enter a valid sign-in email."); return; }
+      updates.email = email.trim();
+    }
+    if (password || confirmPassword) {
+      if (password.length < 12) { setAdminCredentialMessage("Use at least 12 characters for the administrator password."); return; }
+      if (password !== confirmPassword) { setAdminCredentialMessage("The new password entries do not match."); return; }
+      updates.password = password;
+    }
+    const nextUsername = username.trim();
+    if (nextUsername && !/^[A-Za-z0-9._-]{3,64}$/.test(nextUsername)) { setAdminCredentialMessage("Use 3–64 letters, numbers, dots, underscores or hyphens for the Founder username."); return; }
+    if (!Object.keys(updates).length && !nextUsername) { setAdminCredentialMessage("Enter a new username, email or password."); return; }
+    setAdminCredentialBusy(true);
+    setAdminCredentialMessage("Verifying the administrator session…");
+    try {
+      const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assuranceError) throw assuranceError;
+      if (assurance?.currentLevel !== "aal2") throw new Error("Complete the administrator authenticator check again before changing credentials.");
+      if (nextUsername) {
+        const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "credentials_update", username: nextUsername } });
+        if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not update the Founder username.");
+      }
+      if (Object.keys(updates).length) {
+        const { error } = await supabase.auth.updateUser(updates);
+        if (error) throw error;
+      }
+      setAdminCredentialForm({ username: "", email: "", password: "", confirmPassword: "" });
+      const changes = [nextUsername && "username updated", updates.email && "email change submitted for confirmation", updates.password && "password updated"].filter(Boolean);
+      setAdminCredentialMessage(`Founder ${changes.join("; ")}.`);
+    } catch (error) {
+      setAdminCredentialMessage(error?.message || "Could not update administrator credentials.");
+    } finally {
+      setAdminCredentialBusy(false);
+    }
+  };
 
   const ADMIN_TABS = [
     { id: "approvals", label: "1. All-Sector Approvals & KYC", badge: `${totalPendingCount} Pending` },
@@ -714,6 +890,17 @@ export default function FounderAdminSuite({
               serverPartnerApplications.map((application) => {
                 const profile = application.profile || {};
                 const payload = application.application_payload || {};
+                const kyc = payload.kyc || {};
+                const documentKeys = Object.keys(kyc.files || {});
+                const checklist = serverKycChecklist[application.id] || {};
+                const allChecksComplete = ["identity", "role_proof", "payout_proof", "terms", "signature"].every((key) => checklist[key] === true);
+                const reviewItems = [
+                  ["identity", "Identity document matches applicant"],
+                  ["role_proof", "Role, trade, skill, or vehicle proof checked"],
+                  ["payout_proof", "Payout identity proof checked"],
+                  ["terms", "Terms version and acceptance checked"],
+                  ["signature", "Signature/name checked"]
+                ];
                 const name = profile.full_name || payload.full_name || "Partner applicant";
                 const phone = profile.phone || payload.phone || "Phone not recorded";
                 const area = profile.area || payload.area || "Area not recorded";
@@ -724,32 +911,63 @@ export default function FounderAdminSuite({
                       <div>
                         <strong className="text-white">{name}</strong>
                         <p className="text-[10px] text-slate-300">
-                          {application.requested_role.replaceAll("_", " ")} · {business || phone} · {area}
+                          {(application.requested_role || "partner").replaceAll("_", " ")} · {business || phone} · {area}
                         </p>
                         <p className="text-[9px] text-slate-500">
                           Application {application.id} · {new Date(application.created_at).toLocaleString()}
                         </p>
                       </div>
-                      <span className="text-amber-300 text-[9px] font-black">PENDING SERVER REVIEW</span>
+                      <span className="text-amber-300 text-[9px] font-black">{kyc.status === "submitted" ? "DOCUMENTS READY TO REVIEW" : "WAITING FOR APPLICANT DOCUMENTS"}</span>
                     </div>
-                    <div className="flex gap-2">
+                    {kyc.status === "submitted" ? (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {documentKeys.map((key) => (
+                            <a key={key} href={application.kyc_document_urls?.[key] || undefined} target="_blank" rel="noreferrer" className={`rounded-lg border p-2 text-[10px] font-bold ${application.kyc_document_urls?.[key] ? "border-sky-700 bg-sky-950/40 text-sky-200 hover:bg-sky-900/50" : "border-slate-700 bg-slate-950 text-slate-500 pointer-events-none"}`}>
+                              {application.kyc_document_urls?.[key] ? `Open ${key.replaceAll("_", " ")} ↗` : `${key.replaceAll("_", " ")} · unavailable`}
+                            </a>
+                          ))}
+                          {application.kyc_document_urls?.signature && <a href={application.kyc_document_urls.signature} target="_blank" rel="noreferrer" className="rounded-lg border border-sky-700 bg-sky-950/40 p-2 text-[10px] font-bold text-sky-200">Open uploaded signature ↗</a>}
+                          {!application.kyc_document_urls?.signature && kyc.signature?.signer_name && <p className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-300">Typed signer: {kyc.signature.signer_name} · method: {kyc.signature.method || "typed name"}</p>}
+                        </div>
+                        <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2">
+                          <p className="text-[10px] text-slate-300">Documents are private. Review each file before checking its box. Links expire after a few minutes; refresh the queue if one expires.</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {reviewItems.map(([key, label]) => (
+                              <label key={key} className="flex items-start gap-2 rounded-lg bg-slate-900 p-2 text-[10px] text-slate-200">
+                                <input type="checkbox" checked={Boolean(checklist[key])} onChange={() => setServerKycChecklist((current) => ({ ...current, [application.id]: { ...(current[application.id] || {}), [key]: !current[application.id]?.[key] } }))} className="mt-0.5 accent-emerald-400" />
+                                <span>{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-amber-200">Accepted terms: {kyc.terms?.version || "not recorded"}. Final terms required to activate this partner.</p>
+                        </div>
+                      </>
+                    ) : <p className="rounded-lg bg-slate-950 p-3 text-[10px] text-slate-400">The applicant still needs to upload the documents listed for this role and complete the trial declaration before review can begin.</p>}
+                    {kyc.status === "submitted" && (
+                    <div className="space-y-2">
+                      <input value={serverReviewReasons[application.id] || ""} onChange={(event) => setServerReviewReasons((current) => ({ ...current, [application.id]: event.target.value }))} placeholder="Reason required for rejection or suspension" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] text-white" />
+                      <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id}
-                        onClick={() => reviewServerPartnerApplication(application.id, "approved")}
+                        disabled={serverReviewBusyId === application.id || kyc.status !== "submitted" || !allChecksComplete || !String(kyc.terms?.version || "").startsWith("final-")}
+                        onClick={() => reviewServerPartnerApplication(application, "approved")}
+                        title={!String(kyc.terms?.version || "").startsWith("final-") ? "Publish final partner terms before activation" : "Complete all five checks first"}
                         className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
-                        Approve {application.requested_role.replaceAll("_", " ")}
+                        Approve {(application.requested_role || "partner").replaceAll("_", " ")}
                       </button>
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id}
-                        onClick={() => reviewServerPartnerApplication(application.id, "rejected")}
+                        disabled={serverReviewBusyId === application.id || reason.length < 4}
+                        onClick={() => reviewServerPartnerApplication(application, "rejected")}
                         className="bg-rose-700 disabled:bg-slate-700 text-white disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
-                        Reject
+                        Reject with reason
                       </button>
+                      </div>
                     </div>
+                    )}
                   </div>
                 );
               })
@@ -1638,87 +1856,47 @@ export default function FounderAdminSuite({
       ===================================================================== */}
       {founderTab === "security_server" && (
         <div className="space-y-4">
-          {/* 1. DYNAMIC ADMIN CREDENTIALS CHANGER */}
+          {/* 1. SERVER-MANAGED FOUNDER IDENTITY */}
           <div className="bg-slate-900 border-2 border-amber-400 rounded-2xl p-4 space-y-3">
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-amber-400 text-sm">
-                  \uD83D\uDD10 Founder Admin Login Credentials Changer (Modify Anytime)
-                </h3>
-                <p className="text-[11px] text-slate-300">
-                  Change your Admin Username, Password, and 4-Digit Security PIN whenever you want. Changes sync immediately to the login gate and Cloud Server.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCredsPass(!showCredsPass)}
-                className="bg-slate-800 text-amber-300 px-3 py-1 rounded-xl text-[10px] font-black cursor-pointer"
-              >
-                {showCredsPass ? "Hide Secrets" : "Show Secrets"}
-              </button>
+            <h3 className="font-black text-amber-400 text-sm">\uD83D\uDD10 Founder and City Manager security</h3>
+            <div className="bg-amber-950/50 border border-amber-500/50 rounded-xl p-3 text-[11px] text-amber-100 space-y-1">
+              <p>Admin identity is verified by Supabase Auth and the server. A verified authenticator code (AAL2) is required for admin access.</p>
+              <p>The Founder role must be assigned to the founder's Auth account in trusted <code>app_metadata.we4all_role</code>. City Managers use trusted <code>app_metadata.we4all_role=city_manager</code> plus a single <code>app_metadata.we4all_zone_id</code>.</p>
+              <p>Do not use user metadata, browser PINs, shared passwords, or local storage to grant roles. City Manager actions remain zone-filtered on the server.</p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Admin Username</label>
-                <input
-                  type="text"
-                  value={adminCredsForm.username}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, username: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-bold"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Admin Password</label>
-                <input
-                  type={showCredsPass ? "text" : "password"}
-                  value={adminCredsForm.password}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, password: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">
-                  4-Digit Founder PIN
-                </label>
-                <input
-                  type={showCredsPass ? "text" : "password"}
-                  maxLength={6}
-                  value={adminCredsForm.pin}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, pin: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-emerald-300 font-mono text-center"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Recovery Mobile</label>
-                <input
-                  type="tel"
-                  value={adminCredsForm.recoveryPhone}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, recoveryPhone: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-                />
-              </div>
-            </div>
-
-            <div className="bg-amber-950/50 border border-amber-500/50 rounded-xl p-3 text-[11px] text-amber-100">
-              Founder credentials are not editable in the browser. Configure the founder identity through the secured server-side authentication process; local PIN/password storage and cross-device credential syncing are disabled.
-            </div>
-            <button
-              type="button"
-              disabled
-              className="w-full bg-slate-700 text-slate-400 font-black py-2.5 rounded-xl cursor-not-allowed shadow"
-            >
-              Server-side founder authentication required
-            </button>
           </div>
+
+          <div className="bg-slate-900 border border-indigo-400/40 rounded-2xl p-4 space-y-3">
+            <h3 className="font-black text-white text-sm">Registration role availability</h3>
+            <p className="text-[11px] text-slate-300">Choose which defined roles appear in registration. Disabled roles cannot submit new partner applications. There is no “Other” role, and consumer registration must remain enabled.</p>
+            {registrationRoleSettings.length === 0 && <p className="text-[10px] text-amber-200">{registrationRoleBusy ? "Loading server settings…" : "Role settings are not loaded. Apply the registration-role migration and refresh."}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {registrationRoleSettings.map((role) => (
+                <label key={role.role_key} className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-xs text-white">
+                  <input type="checkbox" checked={Boolean(role.enabled)} disabled={registrationRoleBusy || role.role_key === "customer"} onChange={(event) => setRegistrationRoleSettings((items) => items.map((item) => item.role_key === role.role_key ? { ...item, enabled: event.target.checked } : item))} />
+                  {REGISTRATION_ROLE_LABELS[role.role_key] || role.label || role.role_key}
+                  {role.role_key === "customer" && <span className="ml-auto text-[9px] text-emerald-300">Required</span>}
+                </label>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={registrationRoleBusy} onClick={refreshRegistrationRoles} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-black text-white">Reload roles</button>
+              <button type="button" disabled={registrationRoleBusy || registrationRoleSettings.length === 0} onClick={saveRegistrationRoles} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">Save role availability</button>
+            </div>
+            {registrationRoleMessage && <p role="status" className="text-[10px] text-amber-200">{registrationRoleMessage}</p>}
+          </div>
+
+          <form onSubmit={updateAdminCredentials} className="bg-slate-900 border border-rose-400/40 rounded-2xl p-4 space-y-3">
+            <h3 className="font-black text-white text-sm">Change administrator sign-in credentials</h3>
+            <p className="text-[11px] text-slate-300">A fresh authenticator (MFA) check is required. Username and Founder role are controlled by the server; email changes require confirmation.</p>
+            <input type="text" autoComplete="username" value={adminCredentialForm.username} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, username: event.target.value })} placeholder="New Founder username (optional)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
+            <input type="email" autoComplete="email" value={adminCredentialForm.email} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, email: event.target.value })} placeholder="New sign-in email (optional)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
+            <input type="password" autoComplete="new-password" value={adminCredentialForm.password} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, password: event.target.value })} placeholder="New password (12+ characters)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
+            <input type="password" autoComplete="new-password" value={adminCredentialForm.confirmPassword} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, confirmPassword: event.target.value })} placeholder="Confirm new password" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
+            <button type="submit" disabled={adminCredentialBusy} className="rounded-xl bg-rose-500 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{adminCredentialBusy ? "Updating…" : "Update administrator credentials"}</button>
+            {adminCredentialMessage && <p role="status" className="text-[11px] text-amber-200">{adminCredentialMessage}</p>}
+            <p className="text-[10px] text-slate-400">A short PIN does not replace the required authenticator factor. Do not reuse a password or enter the password into support chat.</p>
+          </form>
 
           {/* 2. LIVE CLOUD DATA SERVER & MULTI-DEVICE SYNC MANAGER */}
           <div className="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl p-4 space-y-3">
@@ -2217,110 +2395,74 @@ export default function FounderAdminSuite({
       )}
 
       {/* =====================================================================
-          TAB 8: COMMISSIONS & SILENT BACKEND MONETIZATION ENGINE
+          TAB 8: SERVER-SIDE FEE GOVERNANCE
       ===================================================================== */}
       {founderTab === "monetization" && (
         <div className="space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h3 className="font-black text-emerald-400 text-sm">
-              Town Commission Governance Sliders
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <p className="font-bold">Merchant Commission: {merchantCommissionPct}%</p>
-                <input
-                  type="range"
-                  min="0"
-                  max="15"
-                  step="0.5"
-                  value={merchantCommissionPct}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setMerchantCommissionPct(v);
-                    saveCloudAndLocalState({ merchantCommissionPct: v });
-                  }}
-                  className="w-full mt-2 accent-emerald-400"
-                />
-              </div>
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <p className="font-bold">Consumer Platform Fee: {consumerFeePct}%</p>
-                <input
-                  type="range"
-                  min="0"
-                  max="10"
-                  step="0.5"
-                  value={consumerFeePct}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setConsumerFeePct(v);
-                    saveCloudAndLocalState({ consumerFeePct: v });
-                  }}
-                  className="w-full mt-2 accent-emerald-400"
-                />
-              </div>
-            </div>
+          <div className="rounded-2xl border border-emerald-700/60 bg-emerald-950/30 p-4 space-y-2">
+            <h3 className="font-black text-emerald-300 text-sm">Zero-commission launch and fee controls</h3>
+            <p className="text-[11px] text-slate-200">Launch defaults: merchant commission 0%, customer platform fee Rs.0, and rider priority fee Rs.0. Customer fees appear in the itemized checkout total before confirmation. A new merchant deduction requires final merchant terms and a working settlement flow.</p>
+            <p className="text-[10px] text-amber-200">Changes are versioned in Supabase and written to an audit history. New policies apply only from their effective time; existing orders keep their original fee snapshot.</p>
           </div>
 
-          <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-4 space-y-3">
-            <h3 className="font-black text-amber-400 text-sm">
-              Silent Backend Monetization Engine
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <label className="text-[10px] text-slate-400 block">
-                  Global Checkout Surcharge (Rs.)
-                </label>
-                <input
-                  type="number"
-                  value={monetizationConfig?.globalPlatformFee || 0}
-                  onChange={(e) => {
-                    const next = {
-                      ...monetizationConfig,
-                      globalPlatformFee: Number(e.target.value) || 0
-                    };
-                    setMonetizationConfig(next);
-                    saveCloudAndLocalState({ monetizationConfig: next });
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white mt-1"
-                />
-              </div>
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <label className="text-[10px] text-slate-400 block">
-                  Service Booking Surcharge (Rs.)
-                </label>
-                <input
-                  type="number"
-                  value={monetizationConfig?.serviceBookingSurcharge || 0}
-                  onChange={(e) => {
-                    const next = {
-                      ...monetizationConfig,
-                      serviceBookingSurcharge: Number(e.target.value) || 0
-                    };
-                    setMonetizationConfig(next);
-                    saveCloudAndLocalState({ monetizationConfig: next });
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white mt-1"
-                />
-              </div>
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <label className="text-[10px] text-slate-400 block">
-                  Per-Product Surcharge (Rs.)
-                </label>
-                <input
-                  type="number"
-                  value={monetizationConfig?.productSpecificFee || 0}
-                  onChange={(e) => {
-                    const next = {
-                      ...monetizationConfig,
-                      productSpecificFee: Number(e.target.value) || 0
-                    };
-                    setMonetizationConfig(next);
-                    saveCloudAndLocalState({ monetizationConfig: next });
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white mt-1"
-                />
-              </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-black text-amber-300 text-sm">Create or update a fee policy</h3>
+              <button type="button" onClick={refreshFeePolicies} disabled={feePolicyLoading} className="rounded-lg bg-slate-700 px-3 py-2 text-[10px] font-bold disabled:opacity-50">{feePolicyLoading ? "Loading…" : "Refresh server policies"}</button>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <label className="text-[10px] text-slate-300">Fee type
+                <select value={feePolicyDraft.fee_type} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, fee_type: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white">
+                  <option value="customer_platform_fee">Customer platform fee</option>
+                  <option value="merchant_commission">Merchant commission</option>
+                  <option value="rider_priority_fee">Rider priority fee</option>
+                </select>
+              </label>
+              <label className="text-[10px] text-slate-300">Apply to
+                <select value={feePolicyDraft.scope_type} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_type: e.target.value, scope_key: e.target.value === "global" ? "*" : "" }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white">
+                  <option value="global">All supported orders</option><option value="category">Product category</option><option value="catalog_item">Specific catalogue item</option><option value="service">Service selection</option><option value="zone">Zone</option>
+                </select>
+              </label>
+              {feePolicyDraft.scope_type !== "global" && <label className="text-[10px] text-slate-300">Category, item, service, or zone key
+                <input value={feePolicyDraft.scope_key} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_key: e.target.value }))} placeholder="e.g. daily_needs or catalogue UUID" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>}
+              <label className="text-[10px] text-slate-300">Percentage (max merchant 10%, customer 5%)
+                <input type="number" min="0" max={feePolicyDraft.fee_type === "customer_platform_fee" ? "5" : "10"} step="0.5" value={feePolicyDraft.rate_percent} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, rate_percent: Number(e.target.value) || 0, fixed_inr: 0 }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              <label className="text-[10px] text-slate-300">Or fixed fee (Rs.)
+                <input type="number" min="0" max="10000" step="1" value={feePolicyDraft.fixed_inr} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, fixed_inr: Number(e.target.value) || 0, rate_percent: 0 }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              <label className="text-[10px] text-slate-300">Fee label shown to users
+                <input value={feePolicyDraft.display_name} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, display_name: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              <label className="text-[10px] text-slate-300 md:col-span-2">Plain-language disclosure shown before confirmation
+                <textarea value={feePolicyDraft.disclosure_text} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, disclosure_text: e.target.value }))} placeholder="Explain who pays this fee and how it is calculated." rows={2} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              <label className="text-[10px] text-slate-300">Effective from
+                <input type="datetime-local" value={new Date(feePolicyDraft.effective_at).toISOString().slice(0, 16)} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, effective_at: new Date(e.target.value).toISOString() }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              {feePolicyDraft.fee_type === "merchant_commission" && <label className="text-[10px] text-slate-300">Final merchant terms version
+                <input value={feePolicyDraft.terms_version} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, terms_version: e.target.value }))} placeholder="final-2026-01" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>}
+              <label className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-200 md:col-span-2">
+                <input type="checkbox" checked={Boolean(feePolicyDraft.active)} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, active: e.target.checked }))} className="accent-emerald-400" /> Save as active from the effective time
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={saveFeePolicy} disabled={feePolicyLoading} className="rounded-lg bg-emerald-500 px-4 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">{feePolicyLoading ? "Saving…" : "Save policy to server"}</button>
+              <p className="self-center text-[10px] text-slate-400">Merchant commission and rider priority fees stay draft-only until their settlement/selection modules are connected.</p>
+            </div>
+            {feePolicyMessage && <p role="status" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-amber-100">{feePolicyMessage}</p>}
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
+            <div className="flex justify-between items-center"><h3 className="font-black text-white text-sm">Server fee policies</h3><span className="text-[10px] text-slate-400">{feePolicies.length} records</span></div>
+            {feePolicies.length === 0 ? <p className="text-[10px] text-slate-400">No server policies loaded yet. Refresh after the fee-policy migration is installed in staging.</p> : feePolicies.map((policy) => (
+              <div key={policy.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3 text-[10px]">
+                <div><strong className="text-white">{policy.display_name}</strong><p className="text-slate-400">{policy.fee_type.replaceAll("_", " ")} · {policy.scope_type}:{policy.scope_key} · v{policy.version}</p><p className="text-amber-200">{policy.rate_percent}% {Number(policy.fixed_inr) ? `+ Rs.${policy.fixed_inr}` : ""} · {policy.active ? "Active" : "Draft"}</p></div>
+                <button type="button" onClick={() => setFeePolicyDraft({ ...policy, active: Boolean(policy.active), rate_percent: Number(policy.rate_percent || 0), fixed_inr: Number(policy.fixed_inr || 0) })} className="rounded-lg bg-slate-700 px-3 py-1.5 font-bold text-white">Edit policy</button>
+              </div>
+            ))}
           </div>
         </div>
       )}
