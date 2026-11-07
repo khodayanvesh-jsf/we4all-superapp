@@ -34,3 +34,7 @@ verify_jwt = false
 [functions.we4all-cashfree-webhook]
 verify_jwt = false
 
+# Public unauthenticated endpoint is disabled unless preview-only trial secrets are set.
+[functions.we4all-trial-otp-auth]
+verify_jwt = false
+

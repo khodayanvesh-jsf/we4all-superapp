@@ -10,14 +10,15 @@
         "test": "node --test"
     },
     "dependencies": {
+        "@aparajita/capacitor-biometric-auth": "^10.0.0",
         "@capacitor/android": "^8.5.3",
         "@capacitor/cli": "^8.5.3",
         "@capacitor/core": "^8.5.3",
+        "@capgo/capacitor-updater": "8.54.2",
         "@supabase/supabase-js": "^2.118.0",
         "lucide-react": "^0.454.0",
         "react": "^18.3.1",
-        "react-dom": "^18.3.1",
-        "@capgo/capacitor-updater": "8.54.2"
+        "react-dom": "^18.3.1"
     },
     "devDependencies": {
         "@vitejs/plugin-react": "^4.3.3",

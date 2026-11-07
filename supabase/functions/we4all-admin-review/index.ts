@@ -43,6 +43,26 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
 
   const admin = ctx.supabaseAdmin;
 
+  if (body.action === "registration_roles_list") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage registration roles" }, 403);
+    const { data: roles, error } = await admin.from("we4all_registration_roles").select("role_key,label,enabled,sort_order,updated_at").order("sort_order");
+    if (error) return json({ ok: false, error: "Could not load registration roles" }, 500);
+    return json({ ok: true, roles: roles || [] });
+  }
+
+  if (body.action === "registration_roles_save") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage registration roles" }, 403);
+    const allowed = new Set(["customer", "merchant", "service_provider", "decorator", "rider", "labour"]);
+    if (!Array.isArray(body.enabled_roles) || body.enabled_roles.some((role) => typeof role !== "string" || !allowed.has(role)) || !body.enabled_roles.includes("customer")) {
+      return json({ ok: false, error: "Choose only the defined registration roles. Customer registration must remain enabled." }, 400);
+    }
+    const { data: roles, error: saveError } = await admin.rpc("we4all_save_registration_roles", {
+      p_enabled_roles: body.enabled_roles as string[], p_actor_user_id: reviewerId
+    });
+    if (saveError) return json({ ok: false, error: "Could not save registration role settings" }, 500);
+    return json({ ok: true, roles });
+  }
+
   if (body.action === "fee_list") {
     if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage fee policies" }, 403);
     const { data: policies, error } = await admin
@@ -154,6 +174,13 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
       .maybeSingle();
     if (applicationError) return json({ ok: false, error: "Could not verify application zone" }, 500);
     if (!application || application.status !== "pending") return json({ ok: false, error: "Pending application not found" }, 404);
+    if (decision === "approved") {
+      const { data: applicant, error: applicantError } = await admin.auth.admin.getUserById(application.user_id);
+      if (applicantError) return json({ ok: false, error: "Could not verify applicant authentication status" }, 500);
+      if (applicant?.user?.user_metadata?.trial_phone_verification === true) {
+        return json({ ok: false, error: "This account used a trial-generated code, which does not prove phone ownership. Complete real phone verification before partner approval." }, 409);
+      }
+    }
     if (adminRole === "city_manager" && application.application_payload?.zone_id !== zoneId) {
       return json({ ok: false, error: "Application is outside your assigned city zone" }, 403);
     }

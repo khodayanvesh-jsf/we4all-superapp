@@ -1,4 +1,6 @@
 ﻿import React, { useState, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
+import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import {
   loadCloudAndLocalState,
   performZeroLossOtaUpdate,
@@ -50,15 +52,14 @@ export default function OwnerAccountProfile(rawProps = {}) {
   // If logged in, default to account details; if guest, show login/register gate
   const [subTab, setSubTab] = useState(() => (isLoggedIn ? "account_details" : "kyc_gate"));
   const [authMode, setAuthMode] = useState("login"); // login | register
-  const [loginMethod, setLoginMethod] = useState("otp"); // OTP is the only enabled login method
+  const [loginMethod, setLoginMethod] = useState("pin"); // OTP is reserved for registration and PIN recovery
   const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
+  const [registrationRoleOptions, setRegistrationRoleOptions] = useState([ROLE_OPTIONS[0]]);
   const [showPinText, setShowPinText] = useState(false);
 
   const isConsumerSelected = selectedRoleKey === "customer";
 
-  const [loginForm, setLoginForm] = useState({
-    identifier: "", // phone or username
-  });
+  const [loginForm, setLoginForm] = useState({ identifier: "", pin: "" });
 
   const [regForm, setRegForm] = useState({
     fullName: "",
@@ -67,11 +68,14 @@ export default function OwnerAccountProfile(rawProps = {}) {
     upiId: "",
     zoneId: "adilabad_master",
     area: "Subhash Nagar, Adilabad",
+    pin: "",
+    pinConfirm: "",
     partnerDetails: {}
   });
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
   const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
+  const [trialChallengeId, setTrialChallengeId] = useState("");
   const [partnerApplication, setPartnerApplication] = useState(null);
   const [partnerApplicationLoading, setPartnerApplicationLoading] = useState(false);
   const [kycFiles, setKycFiles] = useState({});
@@ -80,6 +84,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [signatureFile, setSignatureFile] = useState(null);
   const [signatureName, setSignatureName] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(() => {
+    try { return typeof window !== "undefined" && window.localStorage.getItem("we4all_biometric_login_v1") === "enabled"; }
+    catch { return false; }
+  });
   const [kycSubmitting, setKycSubmitting] = useState(false);
   const [kycFeedback, setKycFeedback] = useState({ type: "", message: "" });
   const [connectionHealth, setConnectionHealth] = useState({
@@ -168,6 +176,29 @@ export default function OwnerAccountProfile(rawProps = {}) {
     });
     return () => { active = false; };
   }, [currentUser?.authUserId]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!supabase) return;
+      const { data, error } = await supabase.from("we4all_registration_roles")
+        .select("role_key,label").eq("enabled", true).order("sort_order");
+      if (error) {
+        console.warn("Could not load Founder-controlled registration roles:", error.message);
+        return;
+      }
+      const known = new Map(ROLE_OPTIONS.map((role) => [role.id, role]));
+      const activeRoles = (data || []).map((row) => {
+        const baseline = known.get(row.role_key);
+        return baseline ? { ...baseline, label: row.label || baseline.label } : null;
+      }).filter(Boolean);
+      if (!active) return;
+      const safeRoles = activeRoles.some((role) => role.id === "customer") ? activeRoles : [ROLE_OPTIONS[0]];
+      setRegistrationRoleOptions(safeRoles);
+      setSelectedRoleKey((current) => safeRoles.some((role) => role.id === current) ? current : "customer");
+    })().catch((error) => console.warn("Registration role list could not be loaded:", error?.message || error));
+    return () => { active = false; };
+  }, []);
 
 
   useEffect(() => {
@@ -322,7 +353,13 @@ export default function OwnerAccountProfile(rawProps = {}) {
     return fallbackPhone ? `${fallbackPhone}@ybl` : "";
   };
 
+  const cleanPinDigits = (value) => String(value || "").replace(/\D/g, "");
+
   const sendPhoneOtp = async () => {
+    if (authMode !== "register" && loginMethod !== "otp") {
+      setFormFeedback({ type: "error", message: "Phone verification is used only for registration or PIN recovery." });
+      return;
+    }
     const phoneDigits = cleanPhoneDigits(authMode === "register" ? regForm.phone : loginForm.identifier);
     if (phoneDigits.length !== 10) {
       setFormFeedback({ type: "error", message: "Enter a valid 10-digit Indian mobile number." });
@@ -338,11 +375,31 @@ export default function OwnerAccountProfile(rawProps = {}) {
       const isRegistration = authMode === "register";
       if (isRegistration) {
         if (!regForm.fullName.trim()) throw new Error("Enter your full name before requesting OTP.");
+        if (!/^\d{6}$/.test(regForm.pin)) throw new Error("Create a 6-digit sign-in PIN.");
+        if (regForm.pin !== regForm.pinConfirm) throw new Error("The two PIN entries do not match.");
         if (!isConsumerSelected && !regForm.businessName.trim()) throw new Error("Enter your business or partner name.");
         if (!isConsumerSelected) {
           const detailsError = validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
           if (detailsError) throw new Error(detailsError);
         }
+        if (import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true") {
+          const { data, error } = await supabase.functions.invoke("we4all-trial-otp-auth", {
+            body: {
+              action: "request", phone, requested_role: selectedRoleKey,
+              full_name: regForm.fullName.trim(), business_name: regForm.businessName.trim(),
+              area: regForm.area || "", zone_id: regForm.zoneId
+            }
+          });
+          if (error) throw new Error(data?.error || error.message || "Trial OTP service is unavailable.");
+          if (data?.ok !== true || !data.challenge_id || !/^\d{6}$/.test(String(data.trial_code || ""))) {
+            throw new Error(data?.error || "Trial OTP service returned an invalid challenge.");
+          }
+          setTrialChallengeId(data.challenge_id);
+          setOtpState({ sent: true, phone, token: String(data.trial_code), busy: false });
+          setFormFeedback({ type: "success", message: `Trial code generated by WE4ALL server: ${data.trial_code}. This is not proof of phone ownership; use this mode only for private testing.` });
+          return;
+        }
+        setTrialChallengeId("");
         const { error } = await supabase.auth.signInWithOtp({
           phone,
           options: {
@@ -365,7 +422,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         if (error) throw error;
       }
       setOtpState({ sent: true, phone, token: "", busy: false });
-      setFormFeedback({ type: "success", message: `SMS verification code sent to +91 ${phoneDigits}. Enter it below to continue.` });
+      setFormFeedback({ type: "success", message: `SMS verification code sent to +91 ${phoneDigits}. Enter it below to ${isRegistration ? "create your account" : "set a new PIN"}.` });
     } catch (error) {
       setOtpState({ sent: false, phone: "", token: "", busy: false });
       setFormFeedback({
@@ -376,22 +433,42 @@ export default function OwnerAccountProfile(rawProps = {}) {
   };
 
   const handleLoginSubmit = async () => {
-    if (loginMethod !== "otp") {
-      setFormFeedback({ type: "error", message: "Only server-verified SMS OTP sign-in is enabled. PIN and biometric login are not active." });
+    const phoneDigits = cleanPhoneDigits(loginForm.identifier);
+    if (phoneDigits.length !== 10) {
+      setFormFeedback({ type: "error", message: "Enter the 10-digit mobile number used for this account." });
       return;
     }
-    if (!otpState.sent || otpState.token.trim().length < 6) {
-      setFormFeedback({ type: "error", message: "Request an SMS OTP and enter the six-digit code." });
+    if (loginMethod === "otp" && (!otpState.sent || otpState.token.trim().length !== 6 || !/^\d{6}$/.test(loginForm.pin))) {
+      setFormFeedback({ type: "error", message: "Request a phone verification code and enter it with your new 6-digit PIN." });
+      return;
+    }
+    if (loginMethod === "pin" && !/^\d{6}$/.test(loginForm.pin)) {
+      setFormFeedback({ type: "error", message: "Enter your 6-digit PIN." });
       return;
     }
     setOtpState((s) => ({ ...s, busy: true }));
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: otpState.phone,
-        token: otpState.token.trim(),
-        type: "sms"
-      });
-      if (error) throw error;
+      const phone = `+91${phoneDigits}`;
+      let data;
+      if (loginMethod === "otp") {
+        const verified = await supabase.auth.verifyOtp({ phone, token: otpState.token.trim(), type: "sms" });
+        if (verified.error) throw verified.error;
+        data = verified.data;
+        const pinUpdate = await supabase.auth.updateUser({ password: loginForm.pin });
+        if (pinUpdate.error) throw pinUpdate.error;
+      } else {
+        const signedIn = await supabase.auth.signInWithPassword({ phone, password: loginForm.pin });
+        if (signedIn.error) throw signedIn.error;
+        data = signedIn.data;
+        if (biometricEnabled && Capacitor.isNativePlatform()) {
+          try {
+            await BiometricAuth.authenticate({ reason: "Confirm your WE4ALL sign-in", cancelTitle: "Use PIN" });
+          } catch (biometricError) {
+            await supabase.auth.signOut({ scope: "local" });
+            throw new Error(biometricError?.message || "Biometric check was cancelled. Sign in again with your PIN.");
+          }
+        }
+      }
       const user = data?.user;
       if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified user session.");
 
@@ -413,7 +490,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       const baseUser = {
         id: user.id,
         authUserId: user.id,
-        phone: user.phone || profile?.phone || otpState.phone.replace("+91", ""),
+        phone: user.phone || profile?.phone || phone.replace("+91", ""),
         fullName: profile?.full_name || user.user_metadata?.full_name || "",
         businessName: profile?.business_name || user.user_metadata?.business_name || "",
         area: profile?.area || user.user_metadata?.area || "",
@@ -480,14 +557,36 @@ export default function OwnerAccountProfile(rawProps = {}) {
     }
     try {
       setOtpState((s) => ({ ...s, busy: true }));
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: otpState.phone,
-        token: otpState.token.trim(),
-        type: "sms"
-      });
-      if (error) throw error;
+      let data;
+      const isTrialRegistration = Boolean(trialChallengeId);
+      if (isTrialRegistration) {
+        const { data: trialData, error } = await supabase.functions.invoke("we4all-trial-otp-auth", {
+          body: {
+            action: "verify", phone: otpState.phone, challenge_id: trialChallengeId,
+            code: otpState.token.trim(), pin: regForm.pin, requested_role: selectedRoleKey,
+            full_name: regForm.fullName.trim(), business_name: regForm.businessName.trim(),
+            area: regForm.area || "", zone_id: regForm.zoneId
+          }
+        });
+        if (error) throw new Error(trialData?.error || error.message || "Could not verify trial code.");
+        if (trialData?.ok !== true || !trialData.session?.access_token || !trialData.session?.refresh_token) {
+          throw new Error(trialData?.error || "Trial registration did not return a server-authenticated session.");
+        }
+        const { error: sessionError } = await supabase.auth.setSession({ access_token: trialData.session.access_token, refresh_token: trialData.session.refresh_token });
+        if (sessionError) throw sessionError;
+        data = trialData;
+      } else {
+        const verified = await supabase.auth.verifyOtp({ phone: otpState.phone, token: otpState.token.trim(), type: "sms" });
+        if (verified.error) throw verified.error;
+        data = verified.data;
+      }
       const user = data?.user;
       if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified account.");
+      if (!isTrialRegistration) {
+        const pinUpdate = await supabase.auth.updateUser({ password: regForm.pin });
+        if (pinUpdate.error) throw pinUpdate.error;
+      }
+      setTrialChallengeId("");
       const profilePayload = {
         user_id: user.id,
         full_name: regForm.fullName.trim(),
@@ -567,6 +666,29 @@ export default function OwnerAccountProfile(rawProps = {}) {
     setSubTab("kyc_gate");
     onTriggerToast("Signed out of Supabase. Returned to Guest Visitor mode.");
     if (typeof window !== "undefined") window.location.reload();
+  };
+
+  const handleBiometricSetup = async () => {
+    try {
+      if (biometricEnabled) {
+        window.localStorage.removeItem("we4all_biometric_login_v1");
+        setBiometricEnabled(false);
+        setFormFeedback({ type: "success", message: "Biometric sign-in has been turned off on this device." });
+        return;
+      }
+      if (!Capacitor.isNativePlatform()) {
+        setFormFeedback({ type: "error", message: "Biometric sign-in is available in the Android/iOS app after the native build is installed." });
+        return;
+      }
+      const availability = await BiometricAuth.checkBiometry();
+      if (!availability?.isAvailable) throw new Error("No enrolled device biometric is available. Set up fingerprint or face unlock in device settings first.");
+      await BiometricAuth.authenticate({ reason: "Enable biometric confirmation for WE4ALL sign-in", cancelTitle: "Cancel" });
+      window.localStorage.setItem("we4all_biometric_login_v1", "enabled");
+      setBiometricEnabled(true);
+      setFormFeedback({ type: "success", message: "Biometric confirmation is enabled on this device. Your PIN remains available as a fallback." });
+    } catch (error) {
+      setFormFeedback({ type: "error", message: error?.message || "Could not enable device biometrics." });
+    }
   };
 
   return (
@@ -704,7 +826,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
                 >
-                  {ROLE_OPTIONS.map((opt) => (
+                  {registrationRoleOptions.map((opt) => (
                     <option key={opt.id} value={opt.id}>
                       {opt.label}
                     </option>
@@ -713,54 +835,22 @@ export default function OwnerAccountProfile(rawProps = {}) {
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-400 font-bold block mb-1">Username or Phone Number *</label>
+                <label className="text-[10px] text-slate-400 font-bold block mb-1">Mobile Number *</label>
                 <input
-                  type="text"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   value={loginForm.identifier}
-                  onChange={(e) => setLoginForm({ ...loginForm, identifier: e.target.value })}
-                  placeholder="Enter Username or 10-Digit Mobile"
+                  onChange={(e) => setLoginForm({ ...loginForm, identifier: cleanPhoneDigits(e.target.value) })}
+                  placeholder="10-digit mobile number"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
                 />
               </div>
 
-              <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
-                {[
-                  { id: "otp", label: "Mobile OTP" }
-                ].map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setLoginMethod(m.id)}
-                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black cursor-pointer ${
-                      loginMethod === m.id ? "bg-amber-400 text-slate-950" : "text-slate-400"
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-
-              {false && loginMethod === "pin" && (
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[10px] text-slate-400 font-bold">4-Digit Security PIN *</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowPinText(!showPinText)}
-                      className="text-[10px] text-emerald-400 font-bold cursor-pointer"
-                    >
-                      {showPinText ? "Hide PIN" : "Show PIN"}
-                    </button>
-                  </div>
-                  <input
-                    type={showPinText ? "text" : "password"}
-                    maxLength={4}
-                    value={loginForm.pin}
-                    onChange={(e) => setLoginForm({ ...loginForm, pin: cleanPinDigits(e.target.value) })}
-                    placeholder="••••"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-emerald-300 font-mono text-center tracking-widest text-sm font-black"
-                  />
-                </div>
+              {loginMethod === "pin" && (
+                <label className="block text-[10px] text-slate-400 font-bold">6-digit sign-in PIN *
+                  <input type={showPinText ? "text" : "password"} inputMode="numeric" autoComplete="current-password" maxLength={6} value={loginForm.pin} onChange={(e) => setLoginForm({ ...loginForm, pin: cleanPinDigits(e.target.value).slice(0, 6) })} placeholder="••••••" className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-emerald-300 font-mono text-center tracking-widest text-sm font-black" />
+                </label>
               )}
 
               {loginMethod === "otp" && (
@@ -781,38 +871,32 @@ export default function OwnerAccountProfile(rawProps = {}) {
                       maxLength={6}
                       value={otpState.token}
                       onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
-                      placeholder="Enter 6-digit SMS code"
+                      placeholder={trialChallengeId ? "Server-generated trial code" : "Enter 6-digit SMS code"}
                       className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center font-black tracking-widest"
                     />
                   )}
-                  <p className="text-[10px] text-slate-400">Codes are issued and verified by Supabase Auth. WE4ALL does not generate or display OTPs.</p>
-                </div>
-              )}
-
-              {false && loginMethod === "biometric" && (
-                <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/40 text-center space-y-2">
-                  <p className="text-emerald-300 font-bold text-xs">Touch Fingerprint Sensor or FaceID</p>
-                  <button
-                    type="button"
-                    onClick={() => setFormFeedback({
-                      type: "error",
-                      message: "Biometric/passkey sign-in is not configured yet. WE4ALL needs server-side passkey enrollment and verification before this can be enabled."
-                    })}
-                    className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl cursor-pointer text-xs"
-                  >
-                    Authenticate with Device Biometrics 👆
-                  </button>
+                  <p className="text-[10px] text-slate-400">{trialChallengeId ? "Trial-only code generated by the WE4ALL server. It does not verify phone ownership and must not be used for real registrations." : "Codes are issued and verified by Supabase Auth. OTP is used for registration or PIN recovery; normal sign-in uses your PIN."}</p>
                 </div>
               )}
 
               <button
                 type="button"
                 onClick={handleLoginSubmit}
-                disabled={otpState.busy || !otpState.sent || otpState.token.length !== 6}
+                disabled={otpState.busy || (loginMethod === "pin" && (loginForm.pin.length !== 6 || cleanPhoneDigits(loginForm.identifier).length !== 10)) || (loginMethod === "otp" && (!otpState.sent || otpState.token.length !== 6 || loginForm.pin.length !== 6))}
                 className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs"
               >
-                Verify OTP &amp; Sign In →
+                {loginMethod === "otp" ? "Verify phone & set PIN →" : "Sign in securely →"}
               </button>
+              <button type="button" onClick={() => { const next = loginMethod === "pin" ? "otp" : "pin"; setLoginMethod(next); setOtpState({ sent: false, phone: "", token: "", busy: false }); setFormFeedback({ type: "", message: "" }); }} className="w-full text-emerald-300 text-[10px] font-bold underline">
+                {loginMethod === "otp" ? "Back to PIN login" : "First sign-in or forgot PIN? Verify phone once"}
+              </button>
+              {loginMethod === "otp" && (
+                <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-[10px] text-slate-300">
+                  <button type="button" disabled={otpState.busy} onClick={sendPhoneOtp} className="w-full rounded-xl bg-amber-400 px-3 py-2 font-black text-slate-950">{otpState.busy ? "Sending…" : otpState.sent ? "Resend phone code" : "Send one-time phone code"}</button>
+                  {otpState.sent && <input aria-label="Phone verification code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otpState.token} onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })} placeholder="6-digit verification code" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-center font-mono tracking-widest text-white" />}
+                  <p>OTP is used only to create an account or recover a forgotten PIN. Normal sign-in uses your PIN.</p>
+                </div>
+              )}
             </div>
           ) : (
             /* REGISTRATION VIEW */
@@ -824,7 +908,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   onChange={(e) => setSelectedRoleKey(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
                 >
-                  {ROLE_OPTIONS.map((opt) => (
+                  {registrationRoleOptions.map((opt) => (
                     <option key={opt.id} value={opt.id}>
                       {opt.label}
                     </option>
@@ -910,6 +994,16 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 </label>
               )}
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label className="text-[10px] text-slate-300 font-bold">Create 6-digit sign-in PIN *
+                  <input type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
+                </label>
+                <label className="text-[10px] text-slate-300 font-bold">Confirm PIN *
+                  <input type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={regForm.pinConfirm} onChange={(e) => setRegForm({ ...regForm, pinConfirm: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
+                </label>
+              </div>
+              <p className="text-[10px] text-slate-400">You will use your mobile number and PIN for normal sign-in. Phone OTP is only for account creation and PIN recovery.</p>
+
               <div className="space-y-2">
                 <button
                   type="button"
@@ -917,7 +1011,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   onClick={sendPhoneOtp}
                   className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
                 >
-                  {otpState.sent ? "Resend Registration OTP" : "Send Registration OTP"}
+                  {otpState.sent ? (trialChallengeId ? "Generate new trial code" : "Resend Registration OTP") : (import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true" ? "Generate Trial OTP" : "Send Registration OTP")}
                 </button>
                 {otpState.sent && (
                   <input
@@ -927,7 +1021,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                     maxLength={6}
                     value={otpState.token}
                     onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
-                    placeholder="Enter 6-digit SMS code"
+                    placeholder={trialChallengeId ? "Server-generated trial code" : "Enter 6-digit SMS code"}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-center font-mono tracking-widest"
                   />
                 )}
@@ -956,6 +1050,13 @@ export default function OwnerAccountProfile(rawProps = {}) {
               className="bg-slate-800 text-emerald-300 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
             >
               ✏️ Edit Profile
+            </button>
+          </div>
+          <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3 space-y-2">
+            <p className="text-xs font-black text-white">Device sign-in security</p>
+            <p className="text-[10px] text-slate-400">Use your account PIN on every sign-in. You can also enable device biometrics for an additional confirmation on this phone.</p>
+            <button type="button" onClick={handleBiometricSetup} className="rounded-xl bg-emerald-500 px-3 py-2 text-[10px] font-black text-slate-950">
+              {biometricEnabled ? "Turn off biometric confirmation" : "Enable fingerprint / face confirmation"}
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">

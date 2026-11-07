@@ -11,6 +11,15 @@ import {
   syncCurrentUserStateNow
 } from "../supabaseClient";
 
+const REGISTRATION_ROLE_LABELS = {
+  customer: "Consumer / Customer",
+  merchant: "Product Merchant Partner",
+  service_provider: "Home Service Provider Partner",
+  decorator: "Event Decorator & Function Hall Partner",
+  rider: "Delivery Captain & Bike/Auto Taxi Partner",
+  labour: "Labour & Mistri Worker Partner"
+};
+
 export default function FounderAdminSuite({
   founderLogoUrl,
   onUploadFounderPhoto,
@@ -110,6 +119,12 @@ export default function FounderAdminSuite({
 
   const [adminDisplayMode, setAdminDisplayMode] = useState("web");
   const [founderTab, setFounderTab] = useState("approvals");
+  const [adminCredentialForm, setAdminCredentialForm] = useState({ email: "", password: "", confirmPassword: "" });
+  const [adminCredentialMessage, setAdminCredentialMessage] = useState("");
+  const [adminCredentialBusy, setAdminCredentialBusy] = useState(false);
+  const [registrationRoleSettings, setRegistrationRoleSettings] = useState([]);
+  const [registrationRoleBusy, setRegistrationRoleBusy] = useState(false);
+  const [registrationRoleMessage, setRegistrationRoleMessage] = useState("");
   const [locatorSearch, setLocatorSearch] = useState("");
   const [locatorRoleFilter, setLocatorRoleFilter] = useState("ALL");
   const [selectedInspectEntity, setSelectedInspectEntity] = useState(null);
@@ -334,6 +349,7 @@ export default function FounderAdminSuite({
   useEffect(() => {
     if (founderTab === "approvals") refreshServerPartnerApplications();
     if (founderTab === "monetization") refreshFeePolicies();
+    if (founderTab === "security_server") refreshRegistrationRoles();
   }, [founderTab]);
 
   const [otaForm, setOtaForm] = useState({
@@ -492,6 +508,72 @@ export default function FounderAdminSuite({
       String(entry.address || "").toLowerCase().includes(q)
     );
   });
+
+  const refreshRegistrationRoles = async () => {
+    if (!supabase) { setRegistrationRoleMessage("Supabase is not configured; role settings are unavailable."); return; }
+    setRegistrationRoleBusy(true);
+    setRegistrationRoleMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "registration_roles_list" } });
+      if (error) throw error;
+      if (data?.ok !== true || !Array.isArray(data.roles)) throw new Error(data?.error || "Could not load server role settings.");
+      setRegistrationRoleSettings(data.roles);
+    } catch (error) {
+      setRegistrationRoleMessage(error?.message || "Could not load server role settings.");
+    } finally {
+      setRegistrationRoleBusy(false);
+    }
+  };
+
+  const saveRegistrationRoles = async () => {
+    const enabledRoles = registrationRoleSettings.filter((role) => role.enabled).map((role) => role.role_key);
+    if (!enabledRoles.includes("customer")) { setRegistrationRoleMessage("Consumer registration must stay enabled."); return; }
+    setRegistrationRoleBusy(true);
+    setRegistrationRoleMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "registration_roles_save", enabled_roles: enabledRoles } });
+      if (error) throw error;
+      if (data?.ok !== true || !Array.isArray(data.roles)) throw new Error(data?.error || "Could not save server role settings.");
+      setRegistrationRoleSettings(data.roles);
+      setRegistrationRoleMessage("Role availability saved to the server and added to the audit history.");
+    } catch (error) {
+      setRegistrationRoleMessage(error?.message || "Could not save registration roles.");
+    } finally {
+      setRegistrationRoleBusy(false);
+    }
+  };
+
+  const updateAdminCredentials = async (event) => {
+    event?.preventDefault?.();
+    if (!supabase) { setAdminCredentialMessage("Supabase is not configured; credentials were not changed."); return; }
+    const { email, password, confirmPassword } = adminCredentialForm;
+    const updates = {};
+    if (email.trim()) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setAdminCredentialMessage("Enter a valid sign-in email."); return; }
+      updates.email = email.trim();
+    }
+    if (password || confirmPassword) {
+      if (password.length < 12) { setAdminCredentialMessage("Use at least 12 characters for the administrator password."); return; }
+      if (password !== confirmPassword) { setAdminCredentialMessage("The new password entries do not match."); return; }
+      updates.password = password;
+    }
+    if (!Object.keys(updates).length) { setAdminCredentialMessage("Enter a new email or password."); return; }
+    setAdminCredentialBusy(true);
+    setAdminCredentialMessage("Verifying the administrator session…");
+    try {
+      const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assuranceError) throw assuranceError;
+      if (assurance?.currentLevel !== "aal2") throw new Error("Complete the administrator authenticator check again before changing credentials.");
+      const { error } = await supabase.auth.updateUser(updates);
+      if (error) throw error;
+      setAdminCredentialForm({ email: "", password: "", confirmPassword: "" });
+      setAdminCredentialMessage(updates.email ? "Credential change submitted. Confirm the email change through the verification message; the password is updated." : "Administrator password updated.");
+    } catch (error) {
+      setAdminCredentialMessage(error?.message || "Could not update administrator credentials.");
+    } finally {
+      setAdminCredentialBusy(false);
+    }
+  };
 
   const ADMIN_TABS = [
     { id: "approvals", label: "1. All-Sector Approvals & KYC", badge: `${totalPendingCount} Pending` },
@@ -1774,6 +1856,37 @@ export default function FounderAdminSuite({
               <p>Do not use user metadata, browser PINs, shared passwords, or local storage to grant roles. City Manager actions remain zone-filtered on the server.</p>
             </div>
           </div>
+
+          <div className="bg-slate-900 border border-indigo-400/40 rounded-2xl p-4 space-y-3">
+            <h3 className="font-black text-white text-sm">Registration role availability</h3>
+            <p className="text-[11px] text-slate-300">Choose which defined roles appear in registration. Disabled roles cannot submit new partner applications. There is no “Other” role, and consumer registration must remain enabled.</p>
+            {registrationRoleSettings.length === 0 && <p className="text-[10px] text-amber-200">{registrationRoleBusy ? "Loading server settings…" : "Role settings are not loaded. Apply the registration-role migration and refresh."}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {registrationRoleSettings.map((role) => (
+                <label key={role.role_key} className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-xs text-white">
+                  <input type="checkbox" checked={Boolean(role.enabled)} disabled={registrationRoleBusy || role.role_key === "customer"} onChange={(event) => setRegistrationRoleSettings((items) => items.map((item) => item.role_key === role.role_key ? { ...item, enabled: event.target.checked } : item))} />
+                  {REGISTRATION_ROLE_LABELS[role.role_key] || role.label || role.role_key}
+                  {role.role_key === "customer" && <span className="ml-auto text-[9px] text-emerald-300">Required</span>}
+                </label>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={registrationRoleBusy} onClick={refreshRegistrationRoles} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-black text-white">Reload roles</button>
+              <button type="button" disabled={registrationRoleBusy || registrationRoleSettings.length === 0} onClick={saveRegistrationRoles} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">Save role availability</button>
+            </div>
+            {registrationRoleMessage && <p role="status" className="text-[10px] text-amber-200">{registrationRoleMessage}</p>}
+          </div>
+
+          <form onSubmit={updateAdminCredentials} className="bg-slate-900 border border-rose-400/40 rounded-2xl p-4 space-y-3">
+            <h3 className="font-black text-white text-sm">Change administrator sign-in credentials</h3>
+            <p className="text-[11px] text-slate-300">This changes the signed-in Supabase administrator account. A fresh authenticator (MFA) check is required. Email changes require confirmation. The Founder role stays server-managed.</p>
+            <input type="email" autoComplete="email" value={adminCredentialForm.email} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, email: event.target.value })} placeholder="New sign-in email (optional)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
+            <input type="password" autoComplete="new-password" value={adminCredentialForm.password} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, password: event.target.value })} placeholder="New password (12+ characters)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
+            <input type="password" autoComplete="new-password" value={adminCredentialForm.confirmPassword} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, confirmPassword: event.target.value })} placeholder="Confirm new password" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
+            <button type="submit" disabled={adminCredentialBusy} className="rounded-xl bg-rose-500 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{adminCredentialBusy ? "Updating…" : "Update administrator credentials"}</button>
+            {adminCredentialMessage && <p role="status" className="text-[11px] text-amber-200">{adminCredentialMessage}</p>}
+            <p className="text-[10px] text-slate-400">A short PIN does not replace the required authenticator factor. Do not reuse a password or enter the password into support chat.</p>
+          </form>
 
           {/* 2. LIVE CLOUD DATA SERVER & MULTI-DEVICE SYNC MANAGER */}
           <div className="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl p-4 space-y-3">
