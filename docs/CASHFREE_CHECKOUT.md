@@ -23,9 +23,9 @@ CASHFREE_API_VERSION=2026-01-01
 
 ## Database and function rollout
 
-1. Apply `20261107025054_we4all_payment_event_verification.sql` if it is not already applied.
-2. Apply `20261107055006_we4all_cashfree_payment_flow.sql`.
-3. Deploy `we4all-create-cashfree-order`, `we4all-verify-cashfree-payment`, and `we4all-cashfree-webhook`.
+1. The payment-event migration is recorded remotely as `20261107061614_we4all_payment_event_verification`.
+2. The Cashfree order-link migration is recorded remotely as `20261107061619_we4all_cashfree_payment_flow`.
+3. `we4all-create-cashfree-order`, `we4all-verify-cashfree-payment`, and `we4all-cashfree-webhook` are deployed and active.
 4. Configure Cashfree's webhook delivery to the `we4all-cashfree-webhook` function URL and enable payment success/failure notifications.
 5. Confirm the deployed frontend uses the Cashfree checkout UI and the correct Supabase project.
 
@@ -43,9 +43,9 @@ Run these only after credentials and deployment are provided by the project owne
 - Closing checkout and returning later allows server status reconciliation.
 - A payment arriving after cancellation or an extra capture surfaces the refund-review state.
 
-## Not completed here
+## Current rollout status
 
-No Cashfree credentials or merchant account were supplied. No migration was applied to a remote database, no Edge Function was deployed, and no sandbox or live transaction was performed. Easy Split/vendor settlement, refunds, payout/reconciliation screens, receipts, and production commercial approval remain separate owner/product work. This source adapter only collects and verifies a marketplace order payment.
+The two migrations and three functions are deployed to the connected Supabase project. Cashfree credentials and webhook delivery are not configured, and no sandbox or live transaction has been performed. The Vercel preview is built from the reviewed branch; it has not been promoted to production. Easy Split/vendor settlement, refunds, payout/reconciliation screens, receipts, and production commercial approval remain separate owner/product work. This source adapter only collects and verifies a marketplace order payment.
 
 ## Provider references
 

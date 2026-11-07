@@ -1,27 +1,26 @@
 # WE4ALL deployment drift audit
 
-Audit performed against the connected WE4ALL Supabase and Vercel projects on 2026-11-07. This is a read-only comparison; no remote changes were made.
+Audit and rollout performed against the connected WE4ALL Supabase and Vercel projects on 2026-11-07.
 
-## Source and hosting mismatch
+## Source and hosting
 
-- The prepared source bundle is version 3.3.0 and contains the Cashfree checkout adapter.
-- The connected GitHub default branch currently reports version 3.2.7. The Vercel deployment is linked to that GitHub source, not to this extracted source bundle.
-- The current GitHub source contains hard-coded founder login defaults. Do not publish that branch unchanged. Remove the defaults, verify the current owner authentication path, and rotate any credentials that may have been used.
-- The current GitHub order-history screen does not contain the server-backed marketplace checkout UI from the prepared source.
+- The prepared source is version 3.3.0 and is the selected deployment source.
+- The GitHub default branch before this review reported version 3.2.7 and contained hard-coded founder login defaults plus a tracked pre-launch state backup. The reviewed branch replaces the older source, removes those defaults, and omits the tracked backup.
+- The Vercel preview is built from the reviewed GitHub branch and returned HTTP 200. It has not been promoted to production.
 
 ## Supabase state
 
-- The connected project has marketplace order/payment tables, but its migration history stops before the local merchant-confirmation, cancellation, payment-event, and Cashfree-order migrations.
-- The project has active `we4all-payment` and `we4all-razorpay-webhook` functions. Their presence is separate from this Cashfree implementation; no Razorpay function was modified or removed.
-- The live payment ledger has a unique `(provider, provider_order_id)` index. Cashfree capture events therefore leave that ID on the order-link row and store the captured payment row by payment ID.
-- The Cashfree functions and migrations in this package have not been deployed or applied. No Cashfree secrets or sandbox transaction were configured by this work.
+- The project has active marketplace order/payment tables and an additional unique `(provider, provider_order_id)` index. Cashfree keeps its provider-order link on the order-link row and records each captured payment by payment ID.
+- The payment-event migration is recorded as `20261107061614_we4all_payment_event_verification`; the Cashfree order-link migration is `20261107061619_we4all_cashfree_payment_flow`.
+- The three Cashfree functions are active: `we4all-create-cashfree-order`, `we4all-verify-cashfree-payment`, and `we4all-cashfree-webhook`.
+- Existing `we4all-payment` and `we4all-razorpay-webhook` functions remain active and were not modified. No Cashfree secrets or webhook destination are configured, and no sandbox or live transaction was performed.
 
-## Release sequence
+## Remaining release sequence
 
-1. Choose the canonical app source: merge the prepared 3.3.0 project into the connected repository or explicitly keep the existing 3.2.7 source.
-2. Remove the hard-coded founder login defaults and rotate potentially exposed credentials through the owner's secure account controls.
-3. Install project dependencies and complete a build plus integration checks against a Supabase staging project and Cashfree sandbox account.
-4. Apply the pending migrations and deploy the Cashfree functions to staging; configure Cashfree webhook delivery and verify payment, failure, duplicate, amount mismatch, and cancellation cases.
-5. Only after those checks, make the single reviewed GitHub/Vercel release and then configure live payment credentials under owner control.
+1. Remove the hard-coded founder login defaults from the GitHub default branch by reviewing and merging the prepared source. Rotate any credentials that may have been used through the owner's secure account controls.
+2. Configure Cashfree sandbox credentials and webhook delivery in Supabase's secret store; never put them in browser code or source control.
+3. Verify sandbox success, failure, pending, duplicate delivery, amount mismatch, webhook retry, and cancelled-order behavior.
+4. Review the Vercel preview and complete any remaining Supabase function/migration rollout required by other app modules.
+5. After verification, merge the reviewed source and configure approved production Cashfree credentials under owner control.
 
-No production code, database schema, secrets, or payment configuration was changed during this audit.
+No live payment was processed and the Vercel preview was not promoted to production.
