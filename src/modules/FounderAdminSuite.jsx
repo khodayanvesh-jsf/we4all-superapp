@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import {
-  getFounderCredentials,
-  saveFounderCredentials,
   saveCloudAndLocalState,
   pullRemoteSupabaseState,
   supabase,
@@ -182,10 +180,6 @@ export default function FounderAdminSuite({
     image: "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=300&auto=format&fit=crop&q=80"
   });
 
-  // Dynamic Admin Credentials State
-  const [adminCredsForm, setAdminCredsForm] = useState(() => getFounderCredentials());
-  const [showCredsPass, setShowCredsPass] = useState(false);
-
   // Supabase status is verified against the active Auth session; config presence alone is not authentication.
   const [syncStatusMsg, setSyncStatusMsg] = useState(
     isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
@@ -195,6 +189,8 @@ export default function FounderAdminSuite({
   const [serverPartnerApplicationsLoading, setServerPartnerApplicationsLoading] = useState(false);
   const [serverPartnerApplicationsError, setServerPartnerApplicationsError] = useState("");
   const [serverReviewBusyId, setServerReviewBusyId] = useState("");
+  const [serverKycChecklist, setServerKycChecklist] = useState({});
+  const [serverReviewReasons, setServerReviewReasons] = useState({});
 
   const refreshServerPartnerApplications = async () => {
     if (!supabase) {
@@ -220,13 +216,31 @@ export default function FounderAdminSuite({
     }
   };
 
-  const reviewServerPartnerApplication = async (applicationId, decision) => {
+  const reviewServerPartnerApplication = async (application, decision) => {
+    const applicationId = application?.id;
     if (!supabase || !applicationId) return;
+    const checklist = serverKycChecklist[applicationId] || {};
+    const allChecksComplete = ["identity", "role_proof", "payout_proof", "terms", "signature"].every((key) => checklist[key] === true);
+    const reason = String(serverReviewReasons[applicationId] || "").trim();
+    if (decision === "approved") {
+      if (!allChecksComplete) {
+        setServerPartnerApplicationsError("Complete all five evidence checks before approving this application.");
+        return;
+      }
+      if (!String(application.application_payload?.kyc?.terms?.version || "").startsWith("final-")) {
+        setServerPartnerApplicationsError("Approval is paused until the Founder publishes the final partner terms. This applicant accepted the trial declaration only.");
+        return;
+      }
+    }
+    if (decision !== "approved" && reason.length < 4) {
+      setServerPartnerApplicationsError("Enter a short reason before rejecting or suspending this application.");
+      return;
+    }
     setServerReviewBusyId(applicationId);
     setServerPartnerApplicationsError("");
     try {
       const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "review", application_id: applicationId, decision }
+        body: { action: "review", application_id: applicationId, decision, reason, checklist }
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error || "Partner application review failed.");
@@ -714,6 +728,17 @@ export default function FounderAdminSuite({
               serverPartnerApplications.map((application) => {
                 const profile = application.profile || {};
                 const payload = application.application_payload || {};
+                const kyc = payload.kyc || {};
+                const documentKeys = Object.keys(kyc.files || {});
+                const checklist = serverKycChecklist[application.id] || {};
+                const allChecksComplete = ["identity", "role_proof", "payout_proof", "terms", "signature"].every((key) => checklist[key] === true);
+                const reviewItems = [
+                  ["identity", "Identity document matches applicant"],
+                  ["role_proof", "Role, trade, skill, or vehicle proof checked"],
+                  ["payout_proof", "Payout identity proof checked"],
+                  ["terms", "Terms version and acceptance checked"],
+                  ["signature", "Signature/name checked"]
+                ];
                 const name = profile.full_name || payload.full_name || "Partner applicant";
                 const phone = profile.phone || payload.phone || "Phone not recorded";
                 const area = profile.area || payload.area || "Area not recorded";
@@ -724,32 +749,63 @@ export default function FounderAdminSuite({
                       <div>
                         <strong className="text-white">{name}</strong>
                         <p className="text-[10px] text-slate-300">
-                          {application.requested_role.replaceAll("_", " ")} · {business || phone} · {area}
+                          {(application.requested_role || "partner").replaceAll("_", " ")} · {business || phone} · {area}
                         </p>
                         <p className="text-[9px] text-slate-500">
                           Application {application.id} · {new Date(application.created_at).toLocaleString()}
                         </p>
                       </div>
-                      <span className="text-amber-300 text-[9px] font-black">PENDING SERVER REVIEW</span>
+                      <span className="text-amber-300 text-[9px] font-black">{kyc.status === "submitted" ? "DOCUMENTS READY TO REVIEW" : "WAITING FOR APPLICANT DOCUMENTS"}</span>
                     </div>
-                    <div className="flex gap-2">
+                    {kyc.status === "submitted" ? (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {documentKeys.map((key) => (
+                            <a key={key} href={application.kyc_document_urls?.[key] || undefined} target="_blank" rel="noreferrer" className={`rounded-lg border p-2 text-[10px] font-bold ${application.kyc_document_urls?.[key] ? "border-sky-700 bg-sky-950/40 text-sky-200 hover:bg-sky-900/50" : "border-slate-700 bg-slate-950 text-slate-500 pointer-events-none"}`}>
+                              {application.kyc_document_urls?.[key] ? `Open ${key.replaceAll("_", " ")} ↗` : `${key.replaceAll("_", " ")} · unavailable`}
+                            </a>
+                          ))}
+                          {application.kyc_document_urls?.signature && <a href={application.kyc_document_urls.signature} target="_blank" rel="noreferrer" className="rounded-lg border border-sky-700 bg-sky-950/40 p-2 text-[10px] font-bold text-sky-200">Open uploaded signature ↗</a>}
+                          {!application.kyc_document_urls?.signature && kyc.signature?.signer_name && <p className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-300">Typed signer: {kyc.signature.signer_name} · method: {kyc.signature.method || "typed name"}</p>}
+                        </div>
+                        <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2">
+                          <p className="text-[10px] text-slate-300">Documents are private. Review each file before checking its box. Links expire after a few minutes; refresh the queue if one expires.</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {reviewItems.map(([key, label]) => (
+                              <label key={key} className="flex items-start gap-2 rounded-lg bg-slate-900 p-2 text-[10px] text-slate-200">
+                                <input type="checkbox" checked={Boolean(checklist[key])} onChange={() => setServerKycChecklist((current) => ({ ...current, [application.id]: { ...(current[application.id] || {}), [key]: !current[application.id]?.[key] } }))} className="mt-0.5 accent-emerald-400" />
+                                <span>{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-amber-200">Accepted terms: {kyc.terms?.version || "not recorded"}. Final terms required to activate this partner.</p>
+                        </div>
+                      </>
+                    ) : <p className="rounded-lg bg-slate-950 p-3 text-[10px] text-slate-400">The applicant still needs to upload the documents listed for this role and complete the trial declaration before review can begin.</p>}
+                    {kyc.status === "submitted" && (
+                    <div className="space-y-2">
+                      <input value={serverReviewReasons[application.id] || ""} onChange={(event) => setServerReviewReasons((current) => ({ ...current, [application.id]: event.target.value }))} placeholder="Reason required for rejection or suspension" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] text-white" />
+                      <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id}
-                        onClick={() => reviewServerPartnerApplication(application.id, "approved")}
+                        disabled={serverReviewBusyId === application.id || kyc.status !== "submitted" || !allChecksComplete || !String(kyc.terms?.version || "").startsWith("final-")}
+                        onClick={() => reviewServerPartnerApplication(application, "approved")}
+                        title={!String(kyc.terms?.version || "").startsWith("final-") ? "Publish final partner terms before activation" : "Complete all five checks first"}
                         className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
-                        Approve {application.requested_role.replaceAll("_", " ")}
+                        Approve {(application.requested_role || "partner").replaceAll("_", " ")}
                       </button>
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id}
-                        onClick={() => reviewServerPartnerApplication(application.id, "rejected")}
+                        disabled={serverReviewBusyId === application.id || reason.length < 4}
+                        onClick={() => reviewServerPartnerApplication(application, "rejected")}
                         className="bg-rose-700 disabled:bg-slate-700 text-white disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
-                        Reject
+                        Reject with reason
                       </button>
+                      </div>
                     </div>
+                    )}
                   </div>
                 );
               })
@@ -1638,86 +1694,14 @@ export default function FounderAdminSuite({
       ===================================================================== */}
       {founderTab === "security_server" && (
         <div className="space-y-4">
-          {/* 1. DYNAMIC ADMIN CREDENTIALS CHANGER */}
+          {/* 1. SERVER-MANAGED FOUNDER IDENTITY */}
           <div className="bg-slate-900 border-2 border-amber-400 rounded-2xl p-4 space-y-3">
-            <div className="flex justify-between items-center">
-              <div>
-                <h3 className="font-black text-amber-400 text-sm">
-                  \uD83D\uDD10 Founder Admin Login Credentials Changer (Modify Anytime)
-                </h3>
-                <p className="text-[11px] text-slate-300">
-                  Change your Admin Username, Password, and 4-Digit Security PIN whenever you want. Changes sync immediately to the login gate and Cloud Server.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCredsPass(!showCredsPass)}
-                className="bg-slate-800 text-amber-300 px-3 py-1 rounded-xl text-[10px] font-black cursor-pointer"
-              >
-                {showCredsPass ? "Hide Secrets" : "Show Secrets"}
-              </button>
+            <h3 className="font-black text-amber-400 text-sm">\uD83D\uDD10 Founder and City Manager security</h3>
+            <div className="bg-amber-950/50 border border-amber-500/50 rounded-xl p-3 text-[11px] text-amber-100 space-y-1">
+              <p>Admin identity is verified by Supabase Auth and the server. A verified authenticator code (AAL2) is required for admin access.</p>
+              <p>The Founder role must be assigned to the founder's Auth account in trusted <code>app_metadata.we4all_role</code>. City Managers use trusted <code>app_metadata.we4all_role=city_manager</code> plus a single <code>app_metadata.we4all_zone_id</code>.</p>
+              <p>Do not use user metadata, browser PINs, shared passwords, or local storage to grant roles. City Manager actions remain zone-filtered on the server.</p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Admin Username</label>
-                <input
-                  type="text"
-                  value={adminCredsForm.username}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, username: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-bold"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Admin Password</label>
-                <input
-                  type={showCredsPass ? "text" : "password"}
-                  value={adminCredsForm.password}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, password: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">
-                  4-Digit Founder PIN
-                </label>
-                <input
-                  type={showCredsPass ? "text" : "password"}
-                  maxLength={6}
-                  value={adminCredsForm.pin}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, pin: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-emerald-300 font-mono text-center"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Recovery Mobile</label>
-                <input
-                  type="tel"
-                  value={adminCredsForm.recoveryPhone}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, recoveryPhone: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-                />
-              </div>
-            </div>
-
-            <div className="bg-amber-950/50 border border-amber-500/50 rounded-xl p-3 text-[11px] text-amber-100">
-              Founder credentials are not editable in the browser. Configure the founder identity through the secured server-side authentication process; local PIN/password storage and cross-device credential syncing are disabled.
-            </div>
-            <button
-              type="button"
-              disabled
-              className="w-full bg-slate-700 text-slate-400 font-black py-2.5 rounded-xl cursor-not-allowed shadow"
-            >
-              Server-side founder authentication required
-            </button>
           </div>
 
           {/* 2. LIVE CLOUD DATA SERVER & MULTI-DEVICE SYNC MANAGER */}

@@ -8,6 +8,9 @@ import {
   clearActiveSupabaseAccount,
   probeSupabaseConnection
 } from "../supabaseClient";
+import { GEO_ZONES } from "../data";
+import SignaturePad from "./SignaturePad";
+import { PARTNER_ROLE_FIELDS, getPartnerKycDocuments, validatePartnerRegistration } from "./workflows/partnerRegistration";
 
 const ROLE_OPTIONS = [
   { id: "customer", label: "🛒 Consumer / Customer Portal", isConsumer: true },
@@ -17,7 +20,8 @@ const ROLE_OPTIONS = [
   { id: "rider", label: "🛵 Delivery Captain & Bike/Auto Taxi Partner", isConsumer: false },
   { id: "labour", label: "🧱 Labour & Mistri Worker Partner", isConsumer: false }
 ];
-
+const KYC_BUCKET = "we4all-partner-kyc";
+const PARTNER_TERMS_VERSION = "trial-draft-1";
 export default function OwnerAccountProfile(rawProps = {}) {
   const {
     currentUser,
@@ -61,11 +65,23 @@ export default function OwnerAccountProfile(rawProps = {}) {
     businessName: "",
     phone: "",
     upiId: "",
-    area: "Subhash Nagar, Adilabad"
+    zoneId: "adilabad_master",
+    area: "Subhash Nagar, Adilabad",
+    partnerDetails: {}
   });
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
   const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
+  const [partnerApplication, setPartnerApplication] = useState(null);
+  const [partnerApplicationLoading, setPartnerApplicationLoading] = useState(false);
+  const [kycFiles, setKycFiles] = useState({});
+  const [uploadedKycPaths, setUploadedKycPaths] = useState({});
+  const [signatureMode, setSignatureMode] = useState("typed_name");
+  const [signatureFile, setSignatureFile] = useState(null);
+  const [signatureName, setSignatureName] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [kycSubmitting, setKycSubmitting] = useState(false);
+  const [kycFeedback, setKycFeedback] = useState({ type: "", message: "" });
   const [connectionHealth, setConnectionHealth] = useState({
     checking: true,
     configured: false,
@@ -168,6 +184,133 @@ export default function OwnerAccountProfile(rawProps = {}) {
     };
   }, [localUser?.authUserId]);
 
+  useEffect(() => {
+    let active = true;
+    const loadLatestPartnerApplication = async () => {
+      if (!supabase || !localUser?.authUserId || localUser.isGuest) {
+        setPartnerApplication(null);
+        return;
+      }
+      setPartnerApplicationLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("we4all_partner_applications")
+          .select("id,requested_role,application_payload,status,created_at,reviewed_at")
+          .eq("user_id", localUser.authUserId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        if (active) {
+          setPartnerApplication(data || null);
+          setUploadedKycPaths(data?.application_payload?.kyc?.files || {});
+          if (!signatureName) setSignatureName(data?.application_payload?.full_name || localUser.fullName || "");
+        }
+      } catch (error) {
+        if (active) setKycFeedback({ type: "error", message: error?.message || "Could not load your partner application." });
+      } finally {
+        if (active) setPartnerApplicationLoading(false);
+      }
+    };
+    loadLatestPartnerApplication();
+    return () => { active = false; };
+  }, [localUser?.authUserId, localUser?.isGuest]);
+
+  const handleKycFileChange = (key, file) => {
+    if (!file) return;
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      setKycFeedback({ type: "error", message: "Choose a PDF, JPG, PNG, or WebP file." });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setKycFeedback({ type: "error", message: "Each document must be 10 MB or smaller." });
+      return;
+    }
+    setKycFiles((current) => ({ ...current, [key]: file }));
+    setKycFeedback({ type: "", message: "" });
+  };
+
+  const uploadKycObject = async (file, key, applicationId) => {
+    const extension = String(file.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const path = `${localUser.authUserId}/${applicationId}/${key}-${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage.from(KYC_BUCKET).upload(path, file, {
+      contentType: file.type,
+      cacheControl: "60",
+      upsert: false
+    });
+    if (error) throw error;
+    return path;
+  };
+
+  const submitPartnerKyc = async () => {
+    if (!supabase || !partnerApplication?.id || partnerApplication.status !== "pending") return;
+    if (!termsAccepted) {
+      setKycFeedback({ type: "error", message: "Read the trial declaration and confirm before sending your documents." });
+      return;
+    }
+    const signerName = String(signatureName || "").trim();
+    if (signerName.length < 2 || (signatureMode !== "typed_name" && !signatureFile && !kycFiles.signature)) {
+      setKycFeedback({ type: "error", message: "Add your full name and complete the selected signature method." });
+      return;
+    }
+    const kycDocuments = getPartnerKycDocuments(partnerApplication.requested_role);
+    if (!kycDocuments.length || kycDocuments.some(({ key }) => !kycFiles[key] && !uploadedKycPaths[key])) {
+      setKycFeedback({ type: "error", message: "Add each document listed for your partner role before submitting." });
+      return;
+    }
+
+    setKycSubmitting(true);
+    setKycFeedback({ type: "info", message: "Uploading securely. Keep this screen open until submission finishes." });
+    try {
+      const nextPaths = { ...uploadedKycPaths };
+      for (const { key } of kycDocuments) {
+        if (kycFiles[key]) nextPaths[key] = await uploadKycObject(kycFiles[key], key, partnerApplication.id);
+      }
+      let signaturePath = "";
+      const signatureToUpload = signatureFile || kycFiles.signature;
+      if (signatureMode !== "typed_name" && signatureToUpload) {
+        signaturePath = await uploadKycObject(signatureToUpload, "signature", partnerApplication.id);
+      }
+      setUploadedKycPaths(nextPaths);
+      const signatureMethod = signatureMode === "drawn" ? "drawn_image" : signatureMode === "uploaded" ? "uploaded_image" : "typed_name";
+      const { data, error } = await supabase.functions.invoke("we4all-submit-partner-kyc", {
+        body: {
+          application_id: partnerApplication.id,
+          files: nextPaths,
+          signature: {
+            method: signatureMethod,
+            signer_name: signerName,
+            path: signaturePath || null
+          },
+          terms_accepted: true,
+          terms_version: PARTNER_TERMS_VERSION
+        }
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Your documents could not be submitted.");
+      setPartnerApplication((current) => ({
+        ...current,
+        application_payload: {
+          ...current.application_payload,
+          kyc: {
+            files: nextPaths,
+            signature: { method: signatureMethod, signer_name: signerName, path: signaturePath || null },
+            terms: { accepted: true, version: data.terms_version, accepted_at: data.submitted_at },
+            submitted_at: data.submitted_at,
+            status: "submitted"
+          }
+        }
+      }));
+      setKycFiles({});
+      setKycFeedback({ type: "success", message: "Documents received. Your role stays private until an authorized reviewer finishes the checks." });
+    } catch (error) {
+      setKycFeedback({ type: "error", message: error?.message || "Secure document submission failed. Your account is still available; retry when connected." });
+    } finally {
+      setKycSubmitting(false);
+    }
+  };
+
   const cleanPhoneDigits = (raw) => {
     const digits = String(raw || "").replace(/\D/g, "");
     return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits.slice(0, 10);
@@ -196,6 +339,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (isRegistration) {
         if (!regForm.fullName.trim()) throw new Error("Enter your full name before requesting OTP.");
         if (!isConsumerSelected && !regForm.businessName.trim()) throw new Error("Enter your business or partner name.");
+        if (!isConsumerSelected) {
+          const detailsError = validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
+          if (detailsError) throw new Error(detailsError);
+        }
         const { error } = await supabase.auth.signInWithOtp({
           phone,
           options: {
@@ -203,7 +350,9 @@ export default function OwnerAccountProfile(rawProps = {}) {
             data: {
               full_name: regForm.fullName.trim(),
               business_name: regForm.businessName.trim(),
-              area: regForm.area || ""
+            area: regForm.area || "",
+            requested_role: selectedRoleKey,
+            zone_id: regForm.zoneId
             }
           }
         });
@@ -318,6 +467,13 @@ export default function OwnerAccountProfile(rawProps = {}) {
   };
 
   const handleRegistrationSubmit = async () => {
+    if (selectedRoleKey !== "customer") {
+      const detailsError = validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
+      if (detailsError) {
+        setFormFeedback({ type: "error", message: detailsError });
+        return;
+      }
+    }
     if (!otpState.sent || otpState.token.trim().length < 6) {
       setFormFeedback({ type: "error", message: "Request an SMS OTP and enter the six-digit code." });
       return;
@@ -360,7 +516,9 @@ export default function OwnerAccountProfile(rawProps = {}) {
             full_name: regForm.fullName.trim(),
             business_name: regForm.businessName.trim(),
             phone: profilePayload.phone,
-            area: profilePayload.area
+            area: profilePayload.area,
+            zone_id: regForm.zoneId,
+            partner_details: regForm.partnerDetails || {}
           }
         });
         if (applicationError) throw applicationError;
@@ -462,11 +620,12 @@ export default function OwnerAccountProfile(rawProps = {}) {
       </div>
 
       {/* Account Navigation Tabs */}
-      <div className="grid grid-cols-3 gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
+      <div className={`grid ${partnerApplication ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"} gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800`}>
         {[
           { id: isLoggedIn ? "account_details" : "kyc_gate", label: isLoggedIn ? "📋 Account Details" : "🔐 Login / Register" },
           { id: "profile_upi", label: "✏️ Profile & UPI" },
-          { id: "addresses", label: "📍 Addresses" }
+          { id: "addresses", label: "📍 Addresses" },
+          ...(partnerApplication ? [{ id: "partner_kyc", label: "🛡️ Partner application" }] : [])
         ].map((t) => (
           <button
             key={t.id}
@@ -530,11 +689,19 @@ export default function OwnerAccountProfile(rawProps = {}) {
           {/* LOGIN VIEW */}
           {authMode === "login" ? (
             <div className="space-y-3">
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-950/20 p-3">
+                <p className="text-xs font-black text-emerald-200">Step 1 of 3 · Your profile and role</p>
+                <p className="mt-1 text-[10px] text-slate-300">Choose the role you need. We’ll ask only for details relevant to that role; documents and signature come after phone verification.</p>
+              </div>
               <div>
                 <label className="text-[10px] text-slate-400 font-bold block mb-1">Select Portal to Log Into:</label>
                 <select
                   value={selectedRoleKey}
-                  onChange={(e) => setSelectedRoleKey(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedRoleKey(e.target.value);
+                    setRegForm((current) => ({ ...current, partnerDetails: {} }));
+                    setOtpState({ sent: false, phone: "", token: "", busy: false });
+                  }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
                 >
                   {ROLE_OPTIONS.map((opt) => (
@@ -683,6 +850,32 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 />
               )}
 
+              {!isConsumerSelected && (PARTNER_ROLE_FIELDS[selectedRoleKey] || []).length > 0 && (
+                <fieldset className="space-y-2 rounded-2xl border border-slate-700 bg-slate-950/70 p-3">
+                  <legend className="px-1 text-xs font-black text-amber-200">Details for your {ROLE_OPTIONS.find((role) => role.id === selectedRoleKey)?.label.replace(/^\S+\s*/, "") || "partner"} role</legend>
+                  {(PARTNER_ROLE_FIELDS[selectedRoleKey] || []).map((field) => {
+                    const value = regForm.partnerDetails?.[field.key] || "";
+                    const inputClass = "mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2.5 text-sm text-white placeholder:text-slate-500";
+                    return (
+                      <label key={field.key} className="block text-[11px] font-bold text-slate-200">
+                        {field.label}{field.required ? " *" : ""}
+                        {field.kind === "select" ? (
+                          <select required={field.required} value={value} onChange={(event) => setRegForm((current) => ({ ...current, partnerDetails: { ...current.partnerDetails, [field.key]: event.target.value } }))} className={inputClass}>
+                            <option value="">Choose one</option>
+                            {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        ) : field.kind === "textarea" ? (
+                          <textarea rows={3} value={value} onChange={(event) => setRegForm((current) => ({ ...current, partnerDetails: { ...current.partnerDetails, [field.key]: event.target.value } }))} placeholder={field.placeholder || ""} className={inputClass} />
+                        ) : (
+                          <input type={field.kind || "text"} min={field.kind === "number" ? "0" : undefined} step={field.kind === "number" ? "1" : undefined} required={field.required} value={value} onChange={(event) => setRegForm((current) => ({ ...current, partnerDetails: { ...current.partnerDetails, [field.key]: event.target.value } }))} placeholder={field.placeholder || ""} className={inputClass} />
+                        )}
+                      </label>
+                    );
+                  })}
+                  <p className="text-[10px] text-slate-400">Do not enter bank passwords, card details, OTPs, or payment gateway credentials here. Payment account setup is a separate later step.</p>
+                </fieldset>
+              )}
+
               <input
                 type="tel"
                 maxLength={10}
@@ -692,14 +885,30 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
               />
 
-              <input
+                <input
                 type="text"
-                maxLength={4}
+                maxLength={100}
                 value={regForm.area}
                 onChange={(e) => setRegForm({ ...regForm, area: e.target.value })}
                 placeholder="Area / address"
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
               />
+
+              {!isConsumerSelected && (
+                <label className="block text-[10px] text-slate-300 font-bold">
+                  Operational city / service zone
+                  <select
+                    value={regForm.zoneId}
+                    onChange={(e) => setRegForm({ ...regForm, zoneId: e.target.value })}
+                    className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
+                  >
+                    {GEO_ZONES.filter((zone) => zone.active).map((zone) => (
+                      <option key={zone.id} value={zone.id === "adilabad" ? "adilabad_master" : zone.id}>{zone.name}</option>
+                    ))}
+                  </select>
+                  <span className="mt-1 block font-normal text-slate-400">Partner operations are tied to this city. Personal shopping remains available from the Customer portal.</span>
+                </label>
+              )}
 
               <div className="space-y-2">
                 <button
@@ -768,6 +977,78 @@ export default function OwnerAccountProfile(rawProps = {}) {
             </div>
           </div>
         </div>
+      )}
+
+      {isLoggedIn && subTab === "partner_kyc" && partnerApplication && (
+        <section className="bg-slate-900 border border-emerald-500/30 rounded-3xl p-4 md:p-6 space-y-5 shadow-xl" aria-labelledby="partner-kyc-title">
+          <div className="flex flex-wrap justify-between gap-3 items-start">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-black text-emerald-300">Partner setup · step 2 of 3</p>
+              <h3 id="partner-kyc-title" className="text-lg font-black text-white mt-1">Finish your partner application</h3>
+              <p className="text-xs text-slate-300 mt-1">Your customer account remains usable while we review your partner request.</p>
+            </div>
+            <span className="rounded-full bg-amber-400/10 border border-amber-300/40 text-amber-200 px-3 py-1 text-[10px] font-black">
+              {partnerApplicationLoading ? "Loading status…" : partnerApplication.application_payload?.kyc?.status === "submitted" ? "Documents submitted · under review" : partnerApplication.status === "pending" ? "Action needed" : String(partnerApplication.status || "Application").replaceAll("_", " ")}
+            </span>
+          </div>
+
+          {partnerApplicationLoading ? <p className="text-sm text-slate-300">Loading your saved application…</p> : (
+            <>
+              <div className="grid grid-cols-3 gap-2" aria-label="Application steps">
+                {["Phone verified", "Documents & signature", "Founder review"].map((step, index) => (
+                  <div key={step} className={`rounded-xl p-2 text-center border text-[10px] font-bold ${index === 0 || (index === 1 && partnerApplication.application_payload?.kyc?.status === "submitted") ? "bg-emerald-950 border-emerald-500/40 text-emerald-200" : "bg-slate-950 border-slate-700 text-slate-400"}`}>
+                    <span className="block text-base">{index === 0 || (index === 1 && partnerApplication.application_payload?.kyc?.status === "submitted") ? "✓" : index + 1}</span>{step}
+                  </div>
+                ))}
+              </div>
+
+              {partnerApplication.status !== "pending" ? (
+                <div className="rounded-2xl bg-slate-950 p-4 text-sm text-slate-200">This application is {String(partnerApplication.status).replaceAll("_", " ")}. Contact WE4ALL support if you need help with the next step.</div>
+              ) : partnerApplication.application_payload?.kyc?.status === "submitted" ? (
+                <div className="rounded-2xl bg-emerald-950/50 border border-emerald-500/30 p-4 space-y-1">
+                  <p className="text-emerald-200 font-black">We received your documents.</p>
+                  <p className="text-xs text-slate-300">An authorized reviewer will check the application. You can keep using your Customer portal in the meantime.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-2xl bg-slate-950 border border-slate-800 p-3 text-xs text-slate-300">
+                    <strong className="text-white">Before you upload:</strong> use clear, readable files (PDF, JPG, PNG, or WebP; up to 10 MB each). Documents are stored in a private area and shown only to authorized reviewers. Do not upload card numbers, passwords, or OTPs.
+                  </div>
+                  <div className="space-y-3">
+                    {getPartnerKycDocuments(partnerApplication.requested_role).map(({ key, title, help }, index) => (
+                      <label key={key} className="block rounded-2xl border border-slate-700 bg-slate-950 p-3 space-y-1.5">
+                        <span className="block text-xs font-black text-white">{index + 1}. {title} <span className="text-rose-300">*</span></span>
+                        <span className="block text-[10px] text-slate-400">{help}</span>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <input type="file" aria-label={`Choose ${title}`} accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => handleKycFileChange(key, event.target.files?.[0])} className="block w-full text-[10px] text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-400 file:px-3 file:py-2 file:font-black file:text-slate-950" />
+                          <input type="file" aria-label={`Take a photo of ${title}`} accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => handleKycFileChange(key, event.target.files?.[0])} className="block w-full text-[10px] text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-700 file:px-3 file:py-2 file:font-black file:text-white" />
+                        </div>
+                        <span className="block text-[10px] text-emerald-200">{kycFiles[key]?.name || (uploadedKycPaths[key] ? "Previously uploaded · ready to submit" : "No file selected")}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3 space-y-3">
+                    <div><h4 className="text-sm font-black text-white">3. Sign the trial declaration</h4><p className="text-[10px] text-slate-400 mt-1">This prototype declaration is for testing. Final partner terms must be published before applications can be activated.</p></div>
+                    <label className="block text-[10px] font-bold text-slate-300">Full name of person signing
+                      <input value={signatureName} onChange={(event) => setSignatureName(event.target.value)} autoComplete="name" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2.5 text-white" placeholder="Type your full legal name" />
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ id: "typed_name", label: "Type my name" }, { id: "drawn", label: "Draw signature" }, { id: "uploaded", label: "Upload signature" }].map((item) => <button key={item.id} type="button" onClick={() => { setSignatureMode(item.id); setSignatureFile(null); }} className={`rounded-lg px-3 py-2 text-[10px] font-black ${signatureMode === item.id ? "bg-emerald-400 text-slate-950" : "bg-slate-800 text-slate-200"}`}>{item.label}</button>)}
+                    </div>
+                    {signatureMode === "drawn" && <SignaturePad onSignatureChange={setSignatureFile} />}
+                    {signatureMode === "uploaded" && <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleKycFileChange("signature", event.target.files?.[0])} className="block w-full text-[10px] text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:font-bold file:text-white" />}
+                    {signatureMode === "uploaded" && <p className="text-[10px] text-emerald-200">{kycFiles.signature?.name || "No signature image selected"}</p>}
+                    <label className="flex items-start gap-2 text-[10px] text-slate-300"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} className="mt-0.5 accent-emerald-400" /><span>I confirm the details and documents are mine and accurate, and understand this is a trial declaration pending final partner terms.</span></label>
+                  </div>
+                  {kycFeedback.message && <p role="status" className={`rounded-xl border p-3 text-xs ${kycFeedback.type === "error" ? "border-rose-500/40 bg-rose-950/40 text-rose-200" : kycFeedback.type === "success" ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-200" : "border-sky-500/40 bg-sky-950/40 text-sky-200"}`}>{kycFeedback.message}</p>}
+                  <button type="button" disabled={kycSubmitting || !termsAccepted || !partnerApplication.id} onClick={submitPartnerKyc} className="w-full rounded-2xl bg-emerald-400 px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-50">{kycSubmitting ? "Uploading securely…" : "Save and send for review"}</button>
+                  <p className="text-center text-[10px] text-slate-500">You can continue shopping as a customer. Payment gateway setup is not part of partner KYC.</p>
+                </>
+              )}
+            </>
+          )}
+        </section>
       )}
     </div>
   );

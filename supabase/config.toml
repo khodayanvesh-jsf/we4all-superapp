@@ -1,5 +1,11 @@
 project_id = "bdmbziwazpuzbukazmug"
 
+[functions.we4all-admin-review]
+verify_jwt = true
+
+[functions.we4all-submit-partner-kyc]
+verify_jwt = true
+
 [functions.we4all-create-order]
 verify_jwt = true
 
