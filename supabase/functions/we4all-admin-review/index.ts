@@ -93,19 +93,33 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
 
   if (body.action === "users_list") {
     if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage portal accounts" }, 403);
-    const [{ data: roles, error: rolesError }, { data: profiles, error: profilesError }] = await Promise.all([
+    const [{ data: roles, error: rolesError }, { data: profiles, error: profilesError }, { data: applications, error: applicationsError }] = await Promise.all([
       admin.from("we4all_user_roles").select("user_id,role,status,updated_at").order("updated_at", { ascending: false }),
-      admin.from("we4all_profiles").select("user_id,full_name,business_name,phone,area")
+      admin.from("we4all_profiles").select("user_id,full_name,business_name,phone,area"),
+      admin.from("we4all_partner_applications").select("user_id,requested_role,status,created_at").order("created_at", { ascending: false })
     ]);
-    if (rolesError || profilesError) return json({ ok: false, error: "Could not load portal accounts" }, 500);
+    if (rolesError || profilesError || applicationsError) return json({ ok: false, error: "Could not load portal accounts" }, 500);
     const byUser = new Map<string, Record<string, unknown>>();
     for (const profile of profiles || []) byUser.set(profile.user_id, { user_id: profile.user_id, profile, roles: [] });
     for (const role of roles || []) {
       const account = byUser.get(role.user_id) || { user_id: role.user_id, profile: null, roles: [] };
-      (account.roles as unknown[]).push({ role: role.role, status: role.status });
+      (account.roles as Array<{role:string;status:string}>).push({ role: role.role, status: role.status });
       byUser.set(role.user_id, account);
     }
-    return json({ ok: true, users: [...byUser.values()] });
+    for (const application of applications || []) {
+      const account = byUser.get(application.user_id) || { user_id: application.user_id, profile: null, roles: [] };
+      if (!account.partner_application) account.partner_application = { status: application.status, requested_role: application.requested_role };
+      const accountRoles = account.roles as Array<{role:string;status:string}>;
+      if (application.status === "pending" && !accountRoles.some((role) => role.role === application.requested_role)) accountRoles.push({ role: application.requested_role, status: "pending" });
+      byUser.set(application.user_id, account);
+    }
+    const users = [...byUser.values()].map((account) => {
+      const accountRoles = account.roles as Array<{role:string;status:string}>;
+      const active = accountRoles.some((role) => role.status === "approved");
+      const pending = accountRoles.some((role) => role.status === "pending") || (account.partner_application as Record<string,string> | undefined)?.status === "pending";
+      return { ...account, portal_status: active ? "active" : pending ? "pending" : "suspended" };
+    });
+    return json({ ok: true, users });
   }
 
   if (body.action === "user_update") {
@@ -145,6 +159,49 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
       if (error) return json({ ok: false, error: "Portal roles saved, but an old role could not be suspended" }, 500);
     }
     return json({ ok: true, access_removed: false });
+  }
+
+  if (body.action === "account_remove") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to remove portal accounts" }, 403);
+    const userId = String(body.user_id || "");
+    if (!/^[0-9a-f-]{36}$/i.test(userId) || userId === reviewerId) return json({ ok: false, error: "Choose another valid portal account" }, 400);
+    const { data: target, error: targetError } = await admin.auth.admin.getUserById(userId);
+    if (targetError || !target?.user) return json({ ok: false, error: "Portal account was not found" }, 404);
+    if (target.user.app_metadata?.we4all_role === "founder") return json({ ok: false, error: "Founder accounts cannot be removed from Portal Accounts" }, 403);
+    const { data: partners, error: partnerListError } = await admin.from("we4all_partners").select("id").eq("owner_user_id", userId);
+    if (partnerListError) return json({ ok: false, error: "Could not load account listings" }, 500);
+    const now = new Date().toISOString();
+    const [{ error: roleError }, { error: partnerError }] = await Promise.all([
+      admin.from("we4all_user_roles").update({ status: "suspended", updated_at: now }).eq("user_id", userId),
+      admin.from("we4all_partners").update({ approval_status: "suspended", updated_at: now }).eq("owner_user_id", userId)
+    ]);
+    if (roleError || partnerError) return json({ ok: false, error: "Could not remove all account access" }, 500);
+    for (const partner of partners || []) {
+      const { error } = await admin.from("we4all_catalog_items").update({ is_active: false, updated_at: now }).eq("partner_id", partner.id);
+      if (error) return json({ ok: false, error: "Account access was suspended, but a listing could not be deactivated" }, 500);
+    }
+    const { error: banError } = await admin.auth.admin.updateUserById(userId, {
+      ban_duration: "876000h",
+      app_metadata: { ...(target.user.app_metadata || {}), we4all_account_removed: true, we4all_account_removed_at: now, we4all_account_removed_by: reviewerId }
+    });
+    if (banError) return json({ ok: false, error: "Portal data was suspended, but sign-in could not be blocked" }, 500);
+    return json({ ok: true, removed: true, retained_history: true });
+  }
+
+  if (body.action === "listings_list") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage listings" }, 403);
+    const { data, error } = await admin.from("we4all_catalog_items").select("id,partner_id,title,item_type,approval_status,is_active,updated_at").order("updated_at", { ascending: false }).limit(250);
+    if (error) return json({ ok: false, error: "Could not load product and service listings" }, 500);
+    return json({ ok: true, listings: data || [] });
+  }
+
+  if (body.action === "listing_remove") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to remove listings" }, 403);
+    const id = String(body.listing_id || "");
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ ok: false, error: "Choose a valid listing" }, 400);
+    const { data, error } = await admin.from("we4all_catalog_items").update({ is_active: false, updated_at: new Date().toISOString() }).eq("id", id).select("id").maybeSingle();
+    if (error || !data) return json({ ok: false, error: "Could not remove this listing" }, error ? 500 : 404);
+    return json({ ok: true, removed: true, retained_history: true });
   }
 
   if (body.action === "managers_list") {
@@ -300,23 +357,27 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
       const kyc = application.application_payload?.kyc || {};
       const files = kyc.files && typeof kyc.files === "object" ? kyc.files : {};
       const documentUrls: Record<string, string> = {};
+      const documentErrors: Record<string, string> = {};
       for (const [key, pathValue] of Object.entries(files)) {
         const path = String(pathValue || "");
         if (!path.startsWith(`${application.user_id}/${application.id}/`)) continue;
-        const { data, error: signedUrlError } = await admin.storage.from("we4all-partner-kyc").createSignedUrl(path, 300);
+        const { data, error: signedUrlError } = await admin.storage.from("we4all-partner-kyc").createSignedUrl(path, 3600);
         if (!signedUrlError && data?.signedUrl) documentUrls[key] = data.signedUrl;
+        else documentErrors[key] = signedUrlError?.message || "File is missing from private storage";
       }
       const signaturePath = String(kyc.signature?.path || "");
       if (signaturePath.startsWith(`${application.user_id}/${application.id}/`)) {
-        const { data, error: signedUrlError } = await admin.storage.from("we4all-partner-kyc").createSignedUrl(signaturePath, 300);
+        const { data, error: signedUrlError } = await admin.storage.from("we4all-partner-kyc").createSignedUrl(signaturePath, 3600);
         if (!signedUrlError && data?.signedUrl) documentUrls.signature = data.signedUrl;
+        else documentErrors.signature = signedUrlError?.message || "Signature file is missing from private storage";
       }
       return {
         ...application,
         profile: profileByUserId.get(application.user_id) || null,
         trial_phone_verification: trialPhoneByUserId.get(application.user_id) === true,
         trial_approval_override_allowed: trialApprovalOverrideAllowed,
-        kyc_document_urls: documentUrls
+        kyc_document_urls: documentUrls,
+        kyc_document_errors: documentErrors
       };
     }));
 
