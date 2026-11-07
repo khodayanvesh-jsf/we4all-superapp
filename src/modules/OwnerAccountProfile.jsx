@@ -503,8 +503,24 @@ export default function OwnerAccountProfile(rawProps = {}) {
         if (pinUpdate.error) throw pinUpdate.error;
       } else {
         const signedIn = await supabase.auth.signInWithPassword({ phone, password: loginForm.pin });
-        if (signedIn.error) throw signedIn.error;
-        data = signedIn.data;
+        if (signedIn.error && (signedIn.error.code === "phone_provider_disabled" || /phone logins are disabled/i.test(signedIn.error.message || ""))) {
+          const { data: trialData, error: trialError } = await supabase.functions.invoke("we4all-trial-otp-auth", {
+            body: { action: "trial_pin_login", phone, pin: loginForm.pin }
+          });
+          if (trialError) throw new Error(await getFunctionResponseError(trialError, signedIn.error.message));
+          if (trialData?.ok !== true || !trialData.session?.access_token || !trialData.session?.refresh_token) {
+            throw new Error(trialData?.error || signedIn.error.message || "Mobile + PIN sign-in failed.");
+          }
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: trialData.session.access_token,
+            refresh_token: trialData.session.refresh_token
+          });
+          if (sessionError) throw sessionError;
+          data = trialData;
+        } else {
+          if (signedIn.error) throw signedIn.error;
+          data = signedIn.data;
+        }
         if (biometricEnabled && Capacitor.isNativePlatform()) {
           try {
             await BiometricAuth.authenticate({ reason: "Confirm your WE4ALL sign-in", cancelTitle: "Use PIN" });
@@ -614,10 +630,21 @@ export default function OwnerAccountProfile(rawProps = {}) {
             action: "verify", phone: otpState.phone, challenge_id: trialChallengeId,
             code: otpState.token.trim(), pin: regForm.pin, requested_role: selectedRoleKey,
             full_name: regForm.fullName.trim(), business_name: regForm.businessName.trim(),
-            area: regForm.area || "", zone_id: regForm.zoneId
+            area: regForm.area || "", zone_id: regForm.zoneId,
+            latitude: businessLocation.latitude, longitude: businessLocation.longitude,
+            partner_details: regForm.partnerDetails || {}
           }
         });
         if (error) throw new Error(trialData?.error || await getFunctionResponseError(error, "Could not verify trial code."));
+        if (trialData?.ok === true && trialData.pending_review === true && !trialData.session?.access_token) {
+          setTrialChallengeId("");
+          setOtpState({ sent: false, phone: otpState.phone, token: "", busy: false });
+          setFormFeedback({
+            type: "success",
+            message: `Partner application ${trialData.partner_application_id || ""} is now pending Founder/Admin review. Partner portal access remains locked until approval. You can sign in with your mobile number and PIN to finish the document and signature steps.`
+          });
+          return;
+        }
         if (trialData?.ok !== true || !trialData.session?.access_token || !trialData.session?.refresh_token) {
           throw new Error(trialData?.error || "Trial registration did not return a server-authenticated session.");
         }
@@ -656,7 +683,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         role: "customer", status: "Approved", isGuest: false
       };
 
-      if (selectedRoleKey !== "customer") {
+      if (selectedRoleKey !== "customer" && !(isTrialRegistration && data?.partner_application_id)) {
         const location = businessLocation;
         if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
           throw new Error("Add your business GPS location before submitting partner registration.");
