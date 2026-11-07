@@ -915,7 +915,7 @@ export async function getMarketplaceFeeQuote({ items, zoneId }) {
   if (itemIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) throw new Error("The cart contains an item that is not linked to the live catalogue.");
 
   const [{ data: catalogue, error: catalogueError }, { data: policies, error: policyError }] = await Promise.all([
-    supabase.from("we4all_catalog_items").select("id,title,category_key,price_inr").in("id", itemIds),
+    supabase.from("we4all_catalog_items").select("id,title,category_key,price_inr,metadata").in("id", itemIds),
     supabase.from("we4all_fee_policies")
       .select("id,fee_type,scope_type,scope_key,rate_percent,fixed_inr,fee_basis,display_name,disclosure_text,active,effective_at,ends_at,version")
       .eq("fee_type", "customer_platform_fee")

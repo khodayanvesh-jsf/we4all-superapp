@@ -52,8 +52,7 @@ export default function AdminSecurityGate({ onAuthorized, onBackToApp }) {
       return;
     }
     if (data.role === "city_manager") {
-      setStatus("city-manager");
-      setMessage(`Administrator identity verified. City Manager access is limited to ${data.zone_id}; the scoped manager workspace is being completed.`);
+      onAuthorized?.({ role: data.role, zoneId: data.zone_id, userId: data.user_id });
       return;
     }
     if (data.role !== "founder") throw new Error("The server returned an unsupported administrator role.");
@@ -186,8 +185,8 @@ export default function AdminSecurityGate({ onAuthorized, onBackToApp }) {
       <p className="text-xs text-slate-300" role="status">{message}</p>
       {status === "sign-in" && (
         <form onSubmit={signInFounder} className="space-y-2">
-          <input autoComplete="username" value={signInForm.username} onChange={(event) => setSignInForm({ ...signInForm, username: event.target.value })} placeholder="Founder username" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-white" />
-          <input type="password" autoComplete="current-password" value={signInForm.password} onChange={(event) => setSignInForm({ ...signInForm, password: event.target.value })} placeholder="Founder password" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-white" />
+          <input autoComplete="username" value={signInForm.username} onChange={(event) => setSignInForm({ ...signInForm, username: event.target.value })} placeholder="Founder username or Geo Manager email" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-white" />
+          <input type="password" autoComplete="current-password" value={signInForm.password} onChange={(event) => setSignInForm({ ...signInForm, password: event.target.value })} placeholder="Founder password or one-time recovery code" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-white" />
           <button type="submit" disabled={busy || !signInForm.username.trim() || !signInForm.password} className="w-full rounded-xl bg-amber-400 py-2.5 font-black text-slate-950 disabled:opacity-50">{busy ? "Signing in…" : "Sign in to Founder Console"}</button>
         </form>
       )}
@@ -212,7 +211,6 @@ export default function AdminSecurityGate({ onAuthorized, onBackToApp }) {
           <button type="button" disabled={busy || verificationCode.length !== 6} onClick={verifyFactor} className="w-full bg-emerald-500 disabled:opacity-50 text-slate-950 font-black py-2.5 rounded-xl">{busy ? "Verifying…" : "Verify & Continue"}</button>
         </div>
       )}
-      {status === "city-manager" && <div className="rounded-xl border border-blue-400/40 bg-blue-950/30 p-3 text-xs text-blue-100">This staff identity cannot open Founder controls. The city-scoped approvals workspace will be available when its data scope is complete.</div>}
       {status === "error" && <button type="button" onClick={() => { setStatus("checking"); authorize().catch((error) => { setStatus("error"); setMessage(error?.message || "Could not verify administrator access."); }); }} className="w-full bg-slate-700 text-white font-black py-2.5 rounded-xl">Check Access Again</button>}
     </section>
   );

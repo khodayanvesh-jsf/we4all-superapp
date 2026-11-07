@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
 import { cancelMarketplaceOrder, confirmMarketplaceOrder, listMarketplaceOrders, supabase } from "../supabaseClient";
+import { listSubcategories } from "./workflows/subcategoryKeys";
 
 export default function MerchantPortal({
   footerTab,
@@ -42,6 +43,7 @@ export default function MerchantPortal({
   const [productSubmitting, setProductSubmitting] = useState(false);
   const [newProdForm, setNewProdForm] = useState({
     categoryId: "daily_needs",
+    subcategoryKey: "",
     subCategoryBrand: "",
     shopName: currentUser?.fullName || "Sri Laxmi Supermart",
     price: 65,
@@ -425,7 +427,7 @@ export default function MerchantPortal({
           </h4>
           <select
             value={newProdForm.categoryId}
-            onChange={(e) => setNewProdForm({ ...newProdForm, categoryId: e.target.value })}
+            onChange={(e) => setNewProdForm({ ...newProdForm, categoryId: e.target.value, subcategoryKey: "" })}
             className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
           >
             {categories.map((c) => (
@@ -433,6 +435,10 @@ export default function MerchantPortal({
                 {c.icon} {c.name}
               </option>
             ))}
+          </select>
+          <select value={newProdForm.subcategoryKey} onChange={(e) => setNewProdForm({ ...newProdForm, subcategoryKey: e.target.value })} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white">
+            <option value="">No sub-catalog selected</option>
+            {listSubcategories(categories).filter((item) => item.categoryId === newProdForm.categoryId).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
           </select>
           <input
             type="text"
@@ -494,7 +500,7 @@ export default function MerchantPortal({
                     mrp_inr: mrp,
                     stock_quantity: 0,
                     unit_label: newProdForm.unitLabel || "unit",
-                    metadata: { image_url: newProdForm.image || "" }
+                    metadata: { image_url: newProdForm.image || "", subcategory_key: newProdForm.subcategoryKey || null }
                   })
                   .select("id,partner_id,title,sku,category_key,price_inr,mrp_inr,stock_quantity,unit_label,approval_status,is_active,created_at")
                   .single();
@@ -506,6 +512,7 @@ export default function MerchantPortal({
                   merchantId,
                   partnerId: created.partner_id,
                   categoryId: created.category_key,
+                  subcategoryKey: newProdForm.subcategoryKey || "",
                   subCategoryBrand: created.title,
                   shopName: merchantName,
                   sku: created.sku,

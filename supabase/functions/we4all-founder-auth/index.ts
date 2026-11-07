@@ -34,8 +34,8 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const username = String(body?.username || "").trim();
     const password = String(body?.password || "");
-    if (!/^[A-Za-z0-9._-]{3,64}$/.test(username) || password.length < 8 || password.length > 256) {
-      return json({ ok: false, error: "Check the Founder username and password." }, 401);
+    if (!/^(?:[A-Za-z0-9._-]{3,64}|[^\s@]+@[^\s@]+\.[^\s@]+)$/.test(username) || password.length < 8 || password.length > 256) {
+      return json({ ok: false, error: "Check the Founder username or Geo Manager email and password." }, 401);
     }
     const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: list, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
@@ -45,8 +45,11 @@ Deno.serve(async (req) => {
       user.app_metadata?.we4all_role === "founder" &&
       String(user.app_metadata?.we4all_username || "").toLowerCase() === requested
     ) || null;
-    let accountEmail = founder?.email || "";
-    if (!founder) {
+    const geoManager = !founder && username.includes("@") ? (list?.users || []).find((user) =>
+      user.app_metadata?.we4all_role === "city_manager" && String(user.email || "").toLowerCase() === requested
+    ) || null : null;
+    let accountEmail = founder?.email || geoManager?.email || "";
+    if (!founder && !geoManager) {
       const matchesBootstrap = requested === BOOTSTRAP_USERNAME.toLowerCase() &&
         secureEqual(await sha256(password), BOOTSTRAP_PASSWORD_SHA256);
       if (!matchesBootstrap) return json({ ok: false, error: "Founder username or password is incorrect. After first-use reset, use your new password; the temporary bootstrap password no longer works." }, 401);
@@ -67,7 +70,7 @@ Deno.serve(async (req) => {
       accountEmail = created.user.email || BOOTSTRAP_EMAIL;
     }
     const publicClient = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: signedIn, error: signInError } = await publicClient.auth.signInWithPassword({ email: accountEmail, password });
+    let { data: signedIn, error: signInError } = await publicClient.auth.signInWithPassword({ email: accountEmail, password });
     if (signInError || !signedIn?.session) {
       console.error("Founder sign-in rejected", signInError?.message || "missing session");
       return json({ ok: false, error: "Founder username or password is incorrect. After first-use reset, use your new password; the temporary bootstrap password no longer works." }, 401);

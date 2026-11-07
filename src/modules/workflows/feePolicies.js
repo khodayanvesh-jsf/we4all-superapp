@@ -8,7 +8,7 @@ export function validateFeePolicy(policy = {}) {
   const feeType = String(policy.fee_type || "");
   if (!(feeType in FEE_POLICY_LIMITS)) return "Choose a supported fee type.";
   const scopeType = String(policy.scope_type || "global");
-  if (!["global", "category", "catalog_item", "service", "zone"].includes(scopeType)) return "Choose a supported fee scope.";
+  if (!["global", "category", "catalog_item", "service", "zone", "subcategory"].includes(scopeType)) return "Choose a supported fee scope.";
   if (scopeType !== "global" && !String(policy.scope_key || "").trim()) return "Enter the category, item, service, or zone key for this fee.";
 
   const rate = Number(policy.rate_percent || 0);
@@ -22,15 +22,16 @@ export function validateFeePolicy(policy = {}) {
 }
 
 function specificity(policy) {
-  return { catalog_item: 4, category: 3, service: 3, zone: 2, global: 1 }[policy.scope_type] || 0;
+  return { subcategory: 5, catalog_item: 4, category: 3, service: 3, zone: 2, global: 1 }[policy.scope_type] || 0;
 }
 
-export function selectFeePolicy(policies = [], { feeType, catalogItemId, categoryKey, serviceKey, zoneId } = {}) {
+export function selectFeePolicy(policies = [], { feeType, catalogItemId, categoryKey, subcategoryKey, serviceKey, zoneId } = {}) {
   return policies
     .filter((policy) => policy.fee_type === feeType && policy.active !== false)
     .filter((policy) => {
       if (policy.scope_type === "global") return true;
       if (policy.scope_type === "catalog_item") return policy.scope_key === catalogItemId;
+      if (policy.scope_type === "subcategory") return policy.scope_key === subcategoryKey;
       if (policy.scope_type === "category") return policy.scope_key === categoryKey;
       if (policy.scope_type === "service") return policy.scope_key === serviceKey;
       if (policy.scope_type === "zone") return policy.scope_key === zoneId;
@@ -67,6 +68,7 @@ export function quoteMarketplaceFees(items = [], policies = [], zoneId = "") {
       feeType: "customer_platform_fee",
       catalogItemId: item.catalog_item_id || item.catalogItemId,
       categoryKey: item.category_key || item.categoryKey,
+      subcategoryKey: item.subcategory_key || item.subcategoryKey || item.metadata?.subcategory_key,
       zoneId
     });
     const fee = calculatePolicyFee(lineTotal, quantity, policy, breakdown.length === 0);

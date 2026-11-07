@@ -14,12 +14,7 @@ export const INITIAL_APP_UPDATE_INFO = {
   releaseNotes: "WE4ALL v3.2.9 staging build: preserved ten customer entry points, Android hardening, fail-closed payment/authentication gates and expanded regression coverage."
 };
 
-export const GEO_ZONES = [
-  { id: "adilabad", name: "Adilabad Town HQ", state: "Telangana", radiusKm: 15, active: true },
-  { id: "nirmal", name: "Nirmal Zone", state: "Telangana", radiusKm: 12, active: true },
-  { id: "mancherial", name: "Mancherial Zone", state: "Telangana", radiusKm: 15, active: true },
-  { id: "nizamabad", name: "Nizamabad / Armoor", state: "Telangana", radiusKm: 20, active: true }
-];
+export const GEO_ZONES = [];
 
 export const INITIAL_CATEGORIES = [
   { id: "daily_needs", nameKey: "cat_daily_needs", name: "Groceries & Kirana", icon: "\uD83D\uDED2", badge: "10-20m Express", partnerType: "merchant", flow: "instant_goods", minOrderValue: 99, baseDeliveryFee: 25 },
@@ -82,7 +77,7 @@ export const DECORATION_SERVICE_MODULES = [
 
 export const CURATED_COLLECTIONS = [
   { id: "col_morning", title: "Morning Fresh Essentials", subtitle: "Milk, Atta & Farm Vegetables under 15 mins", tag: "morning_fresh" },
-  { id: "col_mandi", title: "Wholesale Mandi Savers", subtitle: "Direct Adilabad Mandi rates with 0% commission markup", tag: "mandi_saver" },
+  { id: "col_mandi", title: "Wholesale Mandi Savers", subtitle: "Local mandi rates with 0% commission markup", tag: "mandi_saver" },
   { id: "col_site", title: "Site-Ready Cement, Bricks & TMT Steel", subtitle: "3W Auto & 4W Mini-Truck direct to your construction site", tag: "site_ready" }
 ];
 

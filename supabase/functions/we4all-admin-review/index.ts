@@ -91,6 +91,120 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
     return json({ ok: true, username });
   }
 
+  if (body.action === "users_list") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage portal accounts" }, 403);
+    const [{ data: roles, error: rolesError }, { data: profiles, error: profilesError }] = await Promise.all([
+      admin.from("we4all_user_roles").select("user_id,role,status,updated_at").order("updated_at", { ascending: false }),
+      admin.from("we4all_profiles").select("user_id,full_name,business_name,phone,area")
+    ]);
+    if (rolesError || profilesError) return json({ ok: false, error: "Could not load portal accounts" }, 500);
+    const byUser = new Map<string, Record<string, unknown>>();
+    for (const profile of profiles || []) byUser.set(profile.user_id, { user_id: profile.user_id, profile, roles: [] });
+    for (const role of roles || []) {
+      const account = byUser.get(role.user_id) || { user_id: role.user_id, profile: null, roles: [] };
+      (account.roles as unknown[]).push({ role: role.role, status: role.status });
+      byUser.set(role.user_id, account);
+    }
+    return json({ ok: true, users: [...byUser.values()] });
+  }
+
+  if (body.action === "user_update") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage portal accounts" }, 403);
+    const userId = String(body.user_id || "");
+    if (!/^[0-9a-f-]{36}$/i.test(userId) || userId === reviewerId) return json({ ok: false, error: "Choose a valid portal user; Founder access cannot be changed here" }, 400);
+    const profile = body.profile && typeof body.profile === "object" ? body.profile as Record<string, unknown> : {};
+    const { error: profileError } = await admin.from("we4all_profiles").update({
+      full_name: String(profile.full_name || "").trim().slice(0, 120),
+      business_name: String(profile.business_name || "").trim().slice(0, 160),
+      area: String(profile.area || "").trim().slice(0, 160),
+      updated_at: new Date().toISOString()
+    }).eq("user_id", userId);
+    if (profileError) return json({ ok: false, error: "Could not update portal profile" }, 500);
+    if (body.remove_access === true) {
+      const [{ error: roleError }, { error: partnerError }] = await Promise.all([
+        admin.from("we4all_user_roles").update({ status: "suspended", updated_at: new Date().toISOString() }).eq("user_id", userId),
+        admin.from("we4all_partners").update({ approval_status: "suspended", updated_at: new Date().toISOString() }).eq("owner_user_id", userId)
+      ]);
+      if (roleError || partnerError) return json({ ok: false, error: "Profile saved, but portal access could not be suspended completely" }, 500);
+      return json({ ok: true, access_removed: true });
+    }
+    if (!Array.isArray(body.roles) || body.roles.some((item) => !item || !["customer","merchant","service_provider","decorator","rider","labour"].includes(item.role) || !["approved","pending","suspended"].includes(item.status))) {
+      return json({ ok: false, error: "Choose supported portal roles and access states" }, 400);
+    }
+    const roles = body.roles as Array<{ role: string; status: string }>;
+    const roleMap = new Map(roles.map((item) => [item.role, item.status]));
+    if (!roleMap.has("customer")) roleMap.set("customer", "approved");
+    const { data: existing, error: existingError } = await admin.from("we4all_user_roles").select("role").eq("user_id", userId);
+    if (existingError) return json({ ok: false, error: "Could not verify current portal access" }, 500);
+    const rows = [...roleMap.entries()].map(([role, status]) => ({ user_id: userId, role, status, updated_at: new Date().toISOString() }));
+    const { error: roleSaveError } = await admin.from("we4all_user_roles").upsert(rows, { onConflict: "user_id,role" });
+    if (roleSaveError) return json({ ok: false, error: "Could not save portal access changes" }, 500);
+    const removedRoles = (existing || []).map((row) => row.role).filter((role) => !roleMap.has(role));
+    if (removedRoles.length) {
+      const { error } = await admin.from("we4all_user_roles").update({ status: "suspended", updated_at: new Date().toISOString() }).eq("user_id", userId).in("role", removedRoles);
+      if (error) return json({ ok: false, error: "Portal roles saved, but an old role could not be suspended" }, 500);
+    }
+    return json({ ok: true, access_removed: false });
+  }
+
+  if (body.action === "managers_list") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage Geo Managers" }, 403);
+    const [{ data: page, error: listError }, { data: markets, error: marketError }] = await Promise.all([
+      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+      admin.from("we4all_markets").select("id,display_name,state_name,active").eq("active", true).order("display_name")
+    ]);
+    if (listError || marketError) return json({ ok: false, error: "Could not load Geo Managers and markets" }, 500);
+    const managers = (page?.users || []).filter((user) => user.app_metadata?.we4all_role === "city_manager").map((user) => ({
+      user_id: user.id, email: user.email || "", zone_id: String(user.app_metadata?.we4all_zone_id || ""),
+      display_name: String(user.user_metadata?.full_name || "Geo Manager")
+    }));
+    return json({ ok: true, managers, markets: markets || [] });
+  }
+
+  if (body.action === "manager_invite") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to add Geo Managers" }, 403);
+    const email = String(body.email || "").trim().toLowerCase();
+    const marketId = String(body.market_id || "");
+    const displayName = String(body.full_name || "").trim().slice(0, 120);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !displayName || !marketId) return json({ ok: false, error: "Enter manager name, valid email, and assigned local market" }, 400);
+    const { data: market, error: marketError } = await admin.from("we4all_markets").select("id").eq("id", marketId).eq("active", true).maybeSingle();
+    if (marketError || !market) return json({ ok: false, error: "Select an active Geo market" }, 400);
+    const { data: invite, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: displayName } });
+    if (inviteError || !invite?.user?.id) return json({ ok: false, error: inviteError?.message || "Could not send the manager invitation" }, 400);
+    const manager = invite.user;
+    const { error: updateError } = await admin.auth.admin.updateUserById(manager.id, { app_metadata: {
+      ...(manager.app_metadata || {}), we4all_role: "city_manager", we4all_zone_id: marketId,
+      we4all_manager_created_by: reviewerId
+    } });
+    if (updateError) return json({ ok: false, error: "Invitation sent but the Geo Manager role could not be assigned" }, 500);
+    return json({ ok: true, manager: { user_id: manager.id, email, zone_id: marketId, display_name: displayName } });
+  }
+
+  if (body.action === "manager_assign") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to assign Geo Managers" }, 403);
+    const userId = String(body.user_id || "");
+    const marketId = String(body.market_id || "");
+    if (!/^[0-9a-f-]{36}$/i.test(userId)) return json({ ok: false, error: "Choose a valid manager" }, 400);
+    const { data: market } = await admin.from("we4all_markets").select("id").eq("id", marketId).eq("active", true).maybeSingle();
+    if (!market) return json({ ok: false, error: "Select an active Geo market" }, 400);
+    const { data: userData, error: getError } = await admin.auth.admin.getUserById(userId);
+    if (getError || !userData?.user || userData.user.app_metadata?.we4all_role !== "city_manager") return json({ ok: false, error: "Geo Manager account not found" }, 404);
+    const { error } = await admin.auth.admin.updateUserById(userId, { app_metadata: { ...(userData.user.app_metadata || {}), we4all_zone_id: marketId } });
+    if (error) return json({ ok: false, error: "Could not update the assigned market" }, 500);
+    return json({ ok: true });
+  }
+
+  if (body.action === "manager_remove") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to remove Geo Managers" }, 403);
+    const userId = String(body.user_id || "");
+    if (!/^[0-9a-f-]{36}$/i.test(userId)) return json({ ok: false, error: "Choose a valid manager" }, 400);
+    const { data: userData, error: getError } = await admin.auth.admin.getUserById(userId);
+    if (getError || !userData?.user || userData.user.app_metadata?.we4all_role !== "city_manager") return json({ ok: false, error: "Geo Manager account not found" }, 404);
+    const { error } = await admin.auth.admin.updateUserById(userId, { app_metadata: { ...(userData.user.app_metadata || {}), we4all_role: null, we4all_zone_id: null } });
+    if (error) return json({ ok: false, error: "Could not remove Geo Manager access" }, 500);
+    return json({ ok: true });
+  }
+
   if (body.action === "registration_roles_list") {
     if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage registration roles" }, 403);
     const { data: roles, error } = await admin.from("we4all_registration_roles").select("role_key,label,enabled,sort_order,updated_at").order("sort_order");

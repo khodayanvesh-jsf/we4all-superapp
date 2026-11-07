@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
+import { marketCellId } from "./modules/workflows/marketLocation.js";
 import {
   INITIAL_APP_UPDATE_INFO,
-  GEO_ZONES,
   INITIAL_GEO_ADS,
   INITIAL_CATEGORIES,
   CUSTOMER_QUICK_LINKS,
@@ -52,14 +52,6 @@ import {
   clearActiveSupabaseAccount
 } from "./supabaseClient";
 
-function checkoutFingerprintFor(cart = []) {
-  return JSON.stringify(cart.map((item) => ({
-    catalogItemId: String(item.catalogItemId || item.productId),
-    partnerId: String(item.partnerId),
-    quantity: Number(item.qty)
-  })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
-}
-
 function FounderLogoBadge({ logoUrl }) {
   return (
     <div
@@ -77,6 +69,14 @@ function FounderLogoBadge({ logoUrl }) {
       )}
     </div>
   );
+}
+
+function checkoutFingerprintFor(cart = []) {
+  return JSON.stringify(cart.map((item) => ({
+    catalogItemId: String(item.catalogItemId || item.productId),
+    partnerId: String(item.partnerId),
+    quantity: Number(item.qty)
+  })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
 }
 
 function calculateOrderLogistics(items = [], consumerDistanceKm = 1.8, heavyFee = 0, laborFee = 0) {
@@ -276,14 +276,23 @@ function AppContent() {
 
   const [viewMode, setViewMode] = useState(isDirectAdminUrl ? "founder_web" : "mobile_app");
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-  const [adminAuthStep, setAdminAuthStep] = useState(1);
-  const [adminLoginForm, setAdminLoginForm] = useState({ username: "", password: "" });
-  const [adminPinInput, setAdminPinInput] = useState("");
-  const [adminLoginError, setAdminLoginError] = useState("");
+  const [adminAccess, setAdminAccess] = useState(null);
 
   const [lang, setLang] = useState(savedCloud?.lang || "EN");
   const t = getLangText(lang);
   const [brightTheme, setBrightTheme] = useState(true);
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+        setIsAdminAuthenticated(false);
+        setAdminAccess(null);
+        setViewMode("mobile_app");
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   const [founderLogoUrl, setFounderLogoUrl] = useState(
     () => localStorage.getItem("we4all_founder_original_photo") || ""
@@ -476,6 +485,14 @@ function AppContent() {
       const preferredRole = currentSnapshot?.authUserId === user.id ? currentSnapshot.role : "customer";
       const roleRecord = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
       const resolvedRole = roleRecord?.role || "customer";
+      let activePartner = null;
+      if (resolvedRole !== "customer") {
+        const { data: partner, error: partnerError } = await supabase.from("we4all_partners")
+          .select("id,market_id,zone_id,approval_status")
+          .eq("owner_user_id", user.id).eq("partner_type", resolvedRole).eq("approval_status", "approved").maybeSingle();
+        if (partnerError) throw partnerError;
+        activePartner = partner;
+      }
       const signedInUser = {
         id: user.id,
         authUserId: user.id,
@@ -483,6 +500,8 @@ function AppContent() {
         fullName: profile?.full_name || user.user_metadata?.full_name || "",
         businessName: profile?.business_name || "",
         area: profile?.area || "",
+        partnerId: activePartner?.id || null,
+        marketId: activePartner?.market_id || activePartner?.zone_id || "",
         role: resolvedRole,
         status: "Approved",
         isGuest: false
@@ -527,7 +546,11 @@ function AppContent() {
   }, []);
 
 
-  const [selectedZoneFilter, setSelectedZoneFilter] = useState("ALL_INDIA");
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState(savedCloud?.selectedZoneFilter && savedCloud.selectedZoneFilter !== "ALL_INDIA" ? savedCloud.selectedZoneFilter : "");
+  const [geoMarkets, setGeoMarkets] = useState([]);
+  const [marketCatalogProducts, setMarketCatalogProducts] = useState([]);
+  const [geoLocationBusy, setGeoLocationBusy] = useState(false);
+  const [geoLocationMessage, setGeoLocationMessage] = useState("");
   const [killedCategoriesByZone] = useState({});
   const [geoAds, setGeoAds] = useState(savedCloud?.geoAds || INITIAL_GEO_ADS);
   const [categories, setCategories] = useState(() =>
@@ -567,18 +590,83 @@ function AppContent() {
     { id: 6, role: "labour" }
   ]);
 
-  const [addressBook, setAddressBook] = useState(
-    savedCloud?.addressBook || [
-      { id: "addr_default", label: "Primary", fullAddress: "Adilabad Town", distanceKm: 1.8, verified: true }
-    ]
-  );
-  const [selectedAddressId] = useState("addr_default");
+  const [addressBook, setAddressBook] = useState(savedCloud?.addressBook || []);
+  const [selectedAddressId, setSelectedAddressId] = useState(savedCloud?.selectedAddressId || "");
   const activeAddressObj =
     addressBook.find((a) => a.id === selectedAddressId) || addressBook[0] || {
-      label: "Primary",
-      fullAddress: "Adilabad Town",
-      distanceKm: 1.8
+      label: "Your location",
+      fullAddress: "Set your delivery location",
+      zoneId: ""
     };
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let active = true;
+    const refreshMarkets = async () => {
+      const { data, error } = await supabase.from("we4all_markets").select("id,display_name,state_name,center_lat,center_lng").eq("active", true).order("display_name");
+      if (!active) return;
+      if (!error) setGeoMarkets(Array.isArray(data) ? data : []);
+    };
+    refreshMarkets();
+    const timer = window.setInterval(refreshMarkets, 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !selectedZoneFilter) {
+      setMarketCatalogProducts([]);
+      return undefined;
+    }
+    let active = true;
+    const refreshMarketCatalog = async () => {
+      const { data, error } = await supabase.from("we4all_catalog_items")
+        .select("id,partner_id,title,category_key,price_inr,mrp_inr,stock_quantity,unit_label,metadata,partner:we4all_partners!inner(id,display_name,market_id,zone_id,approval_status)")
+        .eq("approval_status", "approved").eq("is_active", true)
+        .eq("partner.approval_status", "approved").eq("partner.market_id", selectedZoneFilter);
+      if (!active) return;
+      if (error) return;
+      setMarketCatalogProducts((data || []).map((item) => ({
+        id: item.id, catalogItemId: item.id, partnerId: item.partner_id,
+        ownerUserId: item.partner?.id, marketId: item.partner?.market_id || item.partner?.zone_id,
+        zoneId: item.partner?.market_id || item.partner?.zone_id,
+        categoryId: item.category_key, subCategoryBrand: item.title,
+        shopName: item.partner?.display_name || "Local shop", metadata: item.metadata || {},
+        subcategoryKey: item.metadata?.subcategory_key || "",
+        variants: [{ id: item.id, label: item.unit_label || "unit", price: Number(item.price_inr), mrp: Number(item.mrp_inr || item.price_inr), weightGrams: 1000 }],
+        stockQuantity: item.stock_quantity, inStock: Number(item.stock_quantity ?? 1) > 0,
+        status: "APPROVED", merchantOffers: [{ merchantId: item.partner_id, partnerId: item.partner_id, catalogItemId: item.id, merchantName: item.partner?.display_name || "Local shop", price: Number(item.price_inr), area: item.partner?.market_id || "Local market" }]
+      })));
+    };
+    refreshMarketCatalog();
+    const timer = window.setInterval(refreshMarketCatalog, 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [selectedZoneFilter]);
+
+  const locateLocalMarket = () => {
+    if (!navigator.geolocation) { setGeoLocationMessage("Location access is unavailable on this device."); return; }
+    setGeoLocationBusy(true);
+    setGeoLocationMessage("");
+    navigator.geolocation.getCurrentPosition((position) => {
+      const latitude = Number(position.coords.latitude);
+      const longitude = Number(position.coords.longitude);
+      const marketId = marketCellId(latitude, longitude);
+      const market = geoMarkets.find((item) => item.id === marketId);
+      if (!market) {
+        setGeoLocationMessage("No local market is open at this location yet. A market opens automatically when a business registers here.");
+        setGeoLocationBusy(false);
+        return;
+      }
+      const address = { id: `geo_${marketId}`, label: "My location", fullAddress: market.display_name, zoneId: marketId, marketId, latitude, longitude, verified: true };
+      setAddressBook((current) => [address, ...(current || []).filter((item) => item.id !== address.id)]);
+      setSelectedAddressId(address.id);
+      setSelectedZoneFilter(marketId);
+      setGeoLocationMessage(`Showing the ${market.display_name} local market.`);
+      setGeoLocationBusy(false);
+    }, (error) => {
+      setGeoLocationMessage(error?.code === 1 ? "Allow location access to find the market around you." : "Could not read your location. Try again with device location enabled.");
+      setGeoLocationBusy(false);
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  };
 
   const [globalCustomerSubTab, setGlobalCustomerSubTab] = useState("stores");
   const customerHomeSubTab = globalCustomerSubTab;
@@ -603,8 +691,8 @@ function AppContent() {
   const visibleCheckoutQuote = checkoutQuote?.fingerprint === checkoutFingerprintFor(merchantCart) ? checkoutQuote : null;
 
   const [taxiBookingForm, setTaxiBookingForm] = useState({
-    pickupPin: "Adilabad Bus Stand",
-    dropPin: "Collectorate Chowk, Adilabad",
+    pickupPin: "",
+    dropPin: "",
     distanceKm: 2.5
   });
 
@@ -668,6 +756,8 @@ function AppContent() {
       rejectedItems,
       monetizationConfig,
       addressBook,
+      selectedAddressId,
+      selectedZoneFilter,
       merchantCart,
       serviceCart,
       decorCart,
@@ -702,6 +792,8 @@ function AppContent() {
     rejectedItems,
     monetizationConfig,
     addressBook,
+    selectedAddressId,
+    selectedZoneFilter,
     merchantCart,
     serviceCart,
     decorCart,
@@ -748,7 +840,7 @@ function AppContent() {
 
   const openFounderAdminGate = () => {
     setIsAdminAuthenticated(false);
-    setAdminAuthStep(1);
+    setAdminAccess(null);
     setViewMode("founder_web");
   };
 
@@ -761,7 +853,7 @@ function AppContent() {
               merchantId: 1,
               merchantName: product.shopName,
               price: product.variants?.[0]?.price || 100,
-              area: "Adilabad"
+              area: product.marketId || product.zoneId || "Local market"
             }
           ];
     const chosenId = selectedMerchantByProduct[product.id];
@@ -794,6 +886,7 @@ function AppContent() {
             catalogItemId: activeOffer.catalogItemId || product.catalogItemId || product.id,
             partnerId: activeOffer.partnerId || product.partnerId || "",
             categoryId: product.categoryId,
+            subcategoryKey: product.subcategoryKey || product.metadata?.subcategory_key || "",
             variantId: variant.id,
             name: product.subCategoryBrand + " (" + variant.label + ")",
             merchantId: activeOffer.merchantId,
@@ -812,6 +905,11 @@ function AppContent() {
     if (!currentUser?.authUserId || currentUser?.isGuest) {
       setFooterTab("account");
       triggerToast("Sign in to a WE4ALL customer account before placing a server order.");
+      return;
+    }
+    const checkoutMarketId = activeAddressObj.marketId || activeAddressObj.zoneId || selectedZoneFilter;
+    if (!checkoutMarketId || checkoutMarketId === "ALL_INDIA") {
+      triggerToast("Choose your local market or use your device location before placing an order.");
       return;
     }
 
@@ -835,7 +933,7 @@ function AppContent() {
             catalogItemId: String(item.catalogItemId || item.productId),
             quantity: Number(item.qty)
           })),
-          zoneId: activeAddressObj.zoneId || "adilabad_master"
+          zoneId: checkoutMarketId
         });
         setCheckoutQuote({ ...quote, fingerprint: checkoutFingerprint });
       } catch (error) {
@@ -884,7 +982,7 @@ function AppContent() {
           catalogItemId: String(item.catalogItemId || item.productId),
           quantity: Number(item.qty)
         })),
-        zoneId: activeAddressObj.zoneId || "adilabad_master",
+        zoneId: checkoutMarketId,
         deliveryAddress: {
           label: activeAddressObj.label || "Primary",
           fullAddress: activeAddressObj.fullAddress || "",
@@ -962,8 +1060,11 @@ function AppContent() {
       const visibleCategories = categories.filter(
         (c) => !(killedCategoriesByZone[selectedZoneFilter] || []).includes(c.id)
       );
-      const filteredProducts = products.filter((p) => {
+      const catalogIds = new Set(marketCatalogProducts.map((item) => String(item.id)));
+      const candidateProducts = [...marketCatalogProducts, ...products.filter((item) => !catalogIds.has(String(item.id)))];
+      const filteredProducts = candidateProducts.filter((p) => {
         if (!isCustomerVisibleListing(p)) return false;
+        if (!selectedZoneFilter || String(p.marketId || p.zoneId || "") !== selectedZoneFilter) return false;
         const matchCat = selectedCategory === "all" || p.categoryId === selectedCategory;
         const matchSearch =
           !searchQuery.trim() ||
@@ -1005,17 +1106,24 @@ function AppContent() {
               </div>
             </div>
 
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" onClick={locateLocalMarket} disabled={geoLocationBusy} className="rounded-xl border border-emerald-700 bg-slate-900 px-2 py-1 text-[9px] font-black text-emerald-200 disabled:opacity-50">{geoLocationBusy ? "Finding market…" : "Use my location"}</button>
               <select
                 value={selectedZoneFilter}
-                onChange={(e) => setSelectedZoneFilter(e.target.value)}
+                onChange={(e) => {
+                  const marketId = e.target.value;
+                  setSelectedZoneFilter(marketId);
+                  const market = geoMarkets.find((item) => item.id === marketId);
+                  if (market) {
+                    const address = { id: `geo_${market.id}`, label: "Local market", fullAddress: market.display_name, zoneId: market.id, marketId: market.id };
+                    setAddressBook((current) => [address, ...(current || []).filter((item) => item.id !== address.id)]);
+                    setSelectedAddressId(address.id);
+                  }
+                }}
                 className="bg-slate-900 text-emerald-300 border border-emerald-700 rounded-xl px-2 py-1 text-[10px] font-bold"
               >
-                {GEO_ZONES.map((z) => (
-                  <option key={z.id} value={z.id}>
-                    {z.label}
-                  </option>
-                ))}
+                <option value="">Choose a local market</option>
+                {geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name}</option>)}
               </select>
               <input
                 type="text"
@@ -1024,6 +1132,7 @@ function AppContent() {
                 placeholder={t.searchPlaceholder || "Search stores, items, services..."}
                 className="flex-1 bg-slate-900 text-white border border-slate-700 rounded-xl px-2.5 py-1 text-[11px]"
               />
+              {geoLocationMessage && <p role="status" className="w-full text-[9px] text-amber-200">{geoLocationMessage}</p>}
             </div>
           </div>
 
@@ -1116,22 +1225,16 @@ function AppContent() {
 
                   {(filteredProducts || []).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
-                      <p className="font-black text-xs">
-                        Clean Production Server Catalog (0 Pre-Installed Items)
-                      </p>
-                      <p className="text-[10px] opacity-80">
-                        Verified Merchants can log in via Account &rarr; Partner KYC to publish live products.
-                      </p>
-                      <button
+                      <p className="font-black text-xs">{selectedZoneFilter ? "No products are published in this local market yet" : "Choose your local market to start browsing"}</p>
+                      <p className="text-[10px] opacity-80">{selectedZoneFilter ? "Approved local businesses appear here after publishing their products." : "Allow location access and WE4ALL will find the market around you."}</p>
+                      {!selectedZoneFilter ? <button type="button" onClick={locateLocalMarket} disabled={geoLocationBusy} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[10px] font-black text-white disabled:opacity-50">{geoLocationBusy ? "Finding market…" : "Find my local market"}</button> : <button
                         type="button"
                         onClick={() => {
                           setFooterTab("account");
                           triggerToast("Log in or complete Merchant KYC to publish products.");
                         }}
                         className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
-                      >
-                        Merchant Partner Login / KYC
-                      </button>
+                      >Merchant Partner Login / KYC</button>}
                     </div>
                   ) : (
                     filteredProducts.map((prod) => {
@@ -1796,6 +1899,7 @@ function AppContent() {
               onRunOtaUpdate={handleRunOtaUpdate}
               otaProgress={otaProgress}
               founderLogoUrl={founderLogoUrl}
+              adminAccess={adminAccess}
               onUploadFounderPhoto={handleUploadFounderPhoto}
               apkIconUrl={apkIconUrl}
               onUploadApkIcon={handleUploadApkIcon}
@@ -1961,15 +2065,18 @@ function AppContent() {
         !isAdminAuthenticated ? (
           <AdminSecurityGate
             onBackToApp={() => setViewMode("mobile_app")}
-            onAuthorized={() => setIsAdminAuthenticated(true)}
+            onAuthorized={(access) => {
+              setAdminAccess(access);
+              setIsAdminAuthenticated(true);
+            }}
           />
         ) : (
           <div className="p-4 space-y-4">
             <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-900 p-3 rounded-2xl border border-amber-400/40">
               <span className="font-black text-amber-400 text-xs">
-                FOUNDER MASTER CONTROL | ZERO PRE-INSTALLED DATA MODE
+                {adminAccess?.role === "city_manager" ? `GEO MANAGER · ${adminAccess.zoneId || "Assigned local market"}` : "FOUNDER MASTER CONTROL | ZERO PRE-INSTALLED DATA MODE"}
               </span>
-              <div className="flex items-center gap-2">
+              {adminAccess?.role === "founder" && <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setViewMode("multi_role_lab")}
@@ -1991,13 +2098,33 @@ function AppContent() {
                 >
                   Wipe Server Data Clean
                 </button>
-              </div>
+              </div>}
             </div>
             <FounderAdminSuite
+              adminAccess={adminAccess}
+              onExitAdminToApp={async () => {
+                if (typeof window !== "undefined") {
+                  const nextUrl = new URL(window.location.href);
+                  if (nextUrl.pathname.toLowerCase().endsWith("/admin")) nextUrl.pathname = nextUrl.pathname.slice(0, -6) || "/";
+                  nextUrl.searchParams.delete("admin");
+                  window.history.replaceState({}, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+                }
+                try { await supabase?.auth.signOut({ scope: "local" }); }
+                catch (error) { console.warn("WE4ALL Founder sign-out failed:", error?.message || error); }
+                clearActiveSupabaseAccount();
+                setCurrentUser({ id: "guest_visitor", fullName: "Guest Visitor", phone: "", role: "customer", portal: "customer", isGuest: true });
+                setIsAdminAuthenticated(false);
+                setAdminAccess(null);
+                setViewMode("mobile_app");
+                setActivePortal("customer");
+                setFooterTab("home");
+                triggerToast("Returned to the Consumer portal.");
+              }}
               appUpdateInfo={appUpdateInfo}
               setAppUpdateInfo={setAppUpdateInfo}
               monetizationConfig={monetizationConfig}
               setMonetizationConfig={setMonetizationConfig}
+              geoZones={geoMarkets.map((market) => ({ id: market.id, name: market.display_name, label: market.display_name, radiusKm: 5, active: true }))}
               geoAds={geoAds}
               setGeoAds={setGeoAds}
               categories={categories}
@@ -2042,7 +2169,7 @@ function AppContent() {
             />
           </div>
         )
-      ) : viewMode === "multi_role_lab" && isAdminAuthenticated ? (
+      ) : viewMode === "multi_role_lab" && isAdminAuthenticated && adminAccess?.role === "founder" ? (
         <div className="space-y-3 p-4">
           <div className="flex justify-between items-center bg-slate-900 p-3 rounded-2xl border border-amber-400">
             <span className="font-black text-amber-400 text-xs">

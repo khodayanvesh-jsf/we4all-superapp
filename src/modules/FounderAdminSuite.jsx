@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import { validateFeePolicy } from "./workflows/feePolicies";
+import { listSubcategories } from "./workflows/subcategoryKeys";
 import {
   saveCloudAndLocalState,
   pullRemoteSupabaseState,
@@ -24,7 +25,7 @@ export default function FounderAdminSuite({
   founderLogoUrl,
   onUploadFounderPhoto,
   geoZones = GEO_ZONES,
-  selectedZoneFilter = "ALL_INDIA",
+  selectedZoneFilter = "",
   setSelectedZoneFilter = () => {},
   killedCategoriesByZone = {},
   setKilledCategoriesByZone = () => {},
@@ -89,6 +90,7 @@ export default function FounderAdminSuite({
   onLaunchMultiPhoneView,
   onTeleportToScreen,
   onExitAdminToApp,
+  adminAccess = null,
   onTriggerToast = () => {}
 }) {
   const safeGeoZones = Array.isArray(geoZones) ? geoZones : GEO_ZONES;
@@ -122,6 +124,17 @@ export default function FounderAdminSuite({
   const [adminCredentialForm, setAdminCredentialForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
   const [adminCredentialMessage, setAdminCredentialMessage] = useState("");
   const [adminCredentialBusy, setAdminCredentialBusy] = useState(false);
+  const [founderProfile, setFounderProfile] = useState({ full_name: "", business_name: "", area: "", phone: "", email: "" });
+  const [founderProfileMessage, setFounderProfileMessage] = useState("");
+  const [founderProfileBusy, setFounderProfileBusy] = useState(false);
+  const [managedUsers, setManagedUsers] = useState([]);
+  const [usersMessage, setUsersMessage] = useState("");
+  const [usersBusy, setUsersBusy] = useState(false);
+  const [geoManagers, setGeoManagers] = useState([]);
+  const [geoMarkets, setGeoMarkets] = useState([]);
+  const [managerInvite, setManagerInvite] = useState({ full_name: "", email: "", market_id: "" });
+  const [managerMessage, setManagerMessage] = useState("");
+  const [managerBusy, setManagerBusy] = useState(false);
   const [registrationRoleSettings, setRegistrationRoleSettings] = useState([]);
   const [registrationRoleBusy, setRegistrationRoleBusy] = useState(false);
   const [registrationRoleMessage, setRegistrationRoleMessage] = useState("");
@@ -147,7 +160,7 @@ export default function FounderAdminSuite({
     phone: "",
     upiId: "",
     category: "daily_needs",
-    area: "Subhash Nagar, Adilabad",
+    area: "",
     priceOrFee: 99,
     image: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=300&auto=format&fit=crop&q=80"
   });
@@ -178,7 +191,7 @@ export default function FounderAdminSuite({
 
   const [newAdForm, setNewAdForm] = useState({
     tier: "GEO_LOCAL",
-    regionLabel: "ADILABAD TOWN GPS",
+    regionLabel: "Local market GPS",
     title: "",
     subtitle: "",
     image: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=300&auto=format&fit=crop&q=80"
@@ -212,6 +225,7 @@ export default function FounderAdminSuite({
     fee_type: "customer_platform_fee",
     scope_type: "global",
     scope_key: "*",
+    subcategory_key: "",
     rate_percent: 0,
     fixed_inr: 0,
     fee_basis: "order",
@@ -243,7 +257,10 @@ export default function FounderAdminSuite({
   };
 
   const saveFeePolicy = async () => {
-    const localError = validateFeePolicy(feePolicyDraft);
+    const savedPolicy = feePolicyDraft.subcategory_key
+      ? { ...feePolicyDraft, scope_type: "subcategory", scope_key: feePolicyDraft.subcategory_key }
+      : feePolicyDraft;
+    const localError = validateFeePolicy(savedPolicy);
     if (localError) {
       setFeePolicyMessage(localError);
       return;
@@ -253,7 +270,7 @@ export default function FounderAdminSuite({
         setFeePolicyMessage("This fee can be saved as a draft. It cannot be activated until the related merchant settlement or rider selection flow is connected and verified.");
         return;
       }
-      if (!["global", "category", "catalog_item"].includes(feePolicyDraft.scope_type)) {
+      if (!["global", "category", "catalog_item", "subcategory"].includes(savedPolicy.scope_type)) {
         setFeePolicyMessage("This fee can be saved as a draft. Service and zone transactions must be connected to server checkout before activation.");
         return;
       }
@@ -262,7 +279,7 @@ export default function FounderAdminSuite({
     setFeePolicyMessage("");
     try {
       const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "fee_save", policy: feePolicyDraft }
+        body: { action: "fee_save", policy: savedPolicy }
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error || "Could not save the fee policy.");
@@ -273,6 +290,105 @@ export default function FounderAdminSuite({
     } finally {
       setFeePolicyLoading(false);
     }
+  };
+
+  const loadFounderProfile = async () => {
+    if (!supabase) return;
+    setFounderProfileBusy(true);
+    setFounderProfileMessage("");
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData?.user?.id) throw new Error(authError?.message || "Founder session is unavailable.");
+      const { data, error } = await supabase.from("we4all_profiles").select("full_name,business_name,area,phone").eq("user_id", authData.user.id).maybeSingle();
+      if (error) throw error;
+      setFounderProfile({ full_name: data?.full_name || authData.user.user_metadata?.full_name || "", business_name: data?.business_name || "", area: data?.area || "", phone: data?.phone || authData.user.phone || "", email: authData.user.email || "" });
+      setFounderProfileMessage("Your Founder profile is loaded from your signed-in account.");
+    } catch (error) {
+      setFounderProfileMessage(error?.message || "Could not load your Founder profile.");
+    } finally { setFounderProfileBusy(false); }
+  };
+
+  const saveFounderProfile = async (event) => {
+    event?.preventDefault?.();
+    if (!supabase) return;
+    setFounderProfileBusy(true);
+    setFounderProfileMessage("");
+    try {
+      const { data, error: authError } = await supabase.auth.getUser();
+      if (authError || !data?.user?.id) throw new Error(authError?.message || "Founder session is unavailable.");
+      const { error } = await supabase.from("we4all_profiles").upsert({
+        user_id: data.user.id, full_name: founderProfile.full_name.trim(), business_name: founderProfile.business_name.trim(),
+        area: founderProfile.area.trim(), phone: founderProfile.phone || data.user.phone || "", updated_at: new Date().toISOString()
+      }, { onConflict: "user_id" });
+      if (error) throw error;
+      await supabase.auth.updateUser({ data: { ...data.user.user_metadata, full_name: founderProfile.full_name.trim(), business_name: founderProfile.business_name.trim() } });
+      setFounderProfileMessage("Founder details saved to your account.");
+    } catch (error) { setFounderProfileMessage(error?.message || "Could not save Founder details."); }
+    finally { setFounderProfileBusy(false); }
+  };
+
+  const refreshManagedUsers = async () => {
+    if (!supabase) return;
+    setUsersBusy(true);
+    setUsersMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "users_list" } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not load portal accounts.");
+      setManagedUsers(Array.isArray(data.users) ? data.users : []);
+      setUsersMessage(`${(data.users || []).length} registered accounts loaded from Supabase.`);
+    } catch (error) { setUsersMessage(error?.message || "Could not load portal accounts."); }
+    finally { setUsersBusy(false); }
+  };
+
+  const changeManagedRole = async (account, roleKey, status) => {
+    setUsersBusy(true);
+    setUsersMessage("");
+    const profile = account.profile || {};
+    const roles = (account.roles || []).filter((item) => item.role !== roleKey).map((item) => ({ role: item.role, status: item.status }));
+    roles.push({ role: roleKey, status });
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile, roles } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not update portal access.");
+      await refreshManagedUsers();
+      setUsersMessage(`${roleKey.replaceAll("_", " ")} access updated.`);
+    } catch (error) { setUsersMessage(error?.message || "Could not update portal access."); setUsersBusy(false); }
+  };
+
+  const removeManagedUserAccess = async (account) => {
+    if (!window.confirm("Suspend all portal access for this account? Orders and audit history will be retained.")) return;
+    setUsersBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile: account.profile || {}, remove_access: true } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not suspend account access.");
+      await refreshManagedUsers();
+      setUsersMessage("All portal access suspended. Account and transaction history were retained.");
+    } catch (error) { setUsersMessage(error?.message || "Could not suspend account access."); setUsersBusy(false); }
+  };
+
+  const refreshGeoManagers = async () => {
+    if (!supabase) return;
+    setManagerBusy(true);
+    setManagerMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "managers_list" } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not load Geo Managers.");
+      setGeoManagers(Array.isArray(data.managers) ? data.managers : []);
+      setGeoMarkets(Array.isArray(data.markets) ? data.markets : []);
+      setManagerMessage(`${(data.managers || []).length} Geo Managers · ${(data.markets || []).length} active local markets.`);
+    } catch (error) { setManagerMessage(error?.message || "Could not load Geo Managers."); }
+    finally { setManagerBusy(false); }
+  };
+
+  const inviteGeoManager = async (event) => {
+    event?.preventDefault?.();
+    setManagerBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_invite", ...managerInvite } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not invite Geo Manager.");
+      setManagerInvite({ full_name: "", email: "", market_id: "" });
+      setManagerMessage(`Invitation sent to ${data.manager.email}. Geo Manager access is limited to the selected market.`);
+      await refreshGeoManagers();
+    } catch (error) { setManagerMessage(error?.message || "Could not invite Geo Manager."); setManagerBusy(false); }
   };
   const [serverKycChecklist, setServerKycChecklist] = useState({});
   const [serverReviewReasons, setServerReviewReasons] = useState({});
@@ -350,6 +466,9 @@ export default function FounderAdminSuite({
     if (founderTab === "approvals") refreshServerPartnerApplications();
     if (founderTab === "monetization") refreshFeePolicies();
     if (founderTab === "security_server") refreshRegistrationRoles();
+    if (founderTab === "founder_profile") loadFounderProfile();
+    if (founderTab === "portal_users") refreshManagedUsers();
+    if (founderTab === "geo_managers") refreshGeoManagers();
   }, [founderTab]);
 
   const [otaForm, setOtaForm] = useState({
@@ -423,7 +542,7 @@ export default function FounderAdminSuite({
       role: ping?.portal || ping?.role || "customer",
       phone: ping?.phone || "Live Session",
       upiId: ping?.upiId || "-",
-      address: ping?.address || "Adilabad Town",
+      address: ping?.address || "Location not provided",
       lat: ping?.lat || 19.6641,
       lng: ping?.lng || 78.532,
       batteryPct: ping?.batteryPct ?? 100,
@@ -436,7 +555,7 @@ export default function FounderAdminSuite({
       role: u?.role || "customer",
       phone: u?.phone || "-",
       upiId: u?.upiId || "-",
-      address: u?.area || u?.address || "Adilabad Town",
+      address: u?.area || u?.address || "Location not provided",
       lat: u?.lat || 19.6655,
       lng: u?.lng || 78.5335,
       batteryPct: 95,
@@ -449,7 +568,7 @@ export default function FounderAdminSuite({
       role: "merchant",
       phone: m?.phone || "9848011101",
       upiId: m?.upiId || "merchant@ybl",
-      address: m?.area || "Adilabad",
+      address: m?.area || "Location not provided",
       lat: m?.lat || 19.6672,
       lng: m?.lng || 78.5318,
       batteryPct: 100,
@@ -462,7 +581,7 @@ export default function FounderAdminSuite({
       role: "service_provider",
       phone: sp?.phone || "9848022201",
       upiId: sp?.upiId || "servicepro@ybl",
-      address: sp?.area || "Adilabad",
+      address: sp?.area || "Location not provided",
       lat: sp?.lat || 19.6631,
       lng: sp?.lng || 78.5342,
       batteryPct: 88,
@@ -475,7 +594,7 @@ export default function FounderAdminSuite({
       role: "decorator",
       phone: d?.phone || "9848044556",
       upiId: d?.upiId || "decorator@ybl",
-      address: d?.area || "Adilabad",
+      address: d?.area || "Location not provided",
       lat: d?.lat || 19.6701,
       lng: d?.lng || 78.529,
       batteryPct: 92,
@@ -488,7 +607,7 @@ export default function FounderAdminSuite({
       role: "rider",
       phone: r?.phone || "9848055112",
       upiId: r?.upiId || "captain@ybl",
-      address: "Live Patrol Route, Adilabad",
+      address: "Live patrol route",
       lat: r?.lat || 19.6648,
       lng: r?.lng || 78.5328,
       batteryPct: 84,
@@ -588,13 +707,20 @@ export default function FounderAdminSuite({
     { id: "approvals", label: "1. All-Sector Approvals & KYC", badge: `${totalPendingCount} Pending` },
     { id: "database", label: "2. 8-Table Master Database CRUD", badge: "Edit All Data" },
     { id: "categories", label: "3. Categories, Sub-Pills & Stock", badge: `${safeCategories.length} Cats` },
-    { id: "security_server", label: "4. Admin Credentials & Data Server", badge: "PIN + Cloud" },
-    { id: "live_locator", label: "5. Live GPS Locator & Inspector", badge: `${unifiedDirectory.length}` },
-    { id: "telemetry", label: "6. Telemetry, Kill-Switches & Push", badge: "God-Mode" },
-    { id: "geo_ads", label: "7. 3-Tier Geo / State / Brand Ads", badge: `${safeGeoAds.length} Ads` },
-    { id: "monetization", label: "8. Commissions & Monetization", badge: `${merchantCommissionPct}%` },
-    { id: "testing", label: "9. Multi-Phone Sandbox & Flow QA", badge: `${safeSplitScreens.length} Phones` }
+    { id: "founder_profile", label: "4. Founder Profile", badge: "My Details" },
+    { id: "portal_users", label: "5. Portal Accounts", badge: `${managedUsers.length} Users` },
+    { id: "geo_managers", label: "6. Geo Managers & Markets", badge: `${geoManagers.length} Managers` },
+    { id: "security_server", label: "7. Admin Credentials & Data Server", badge: "PIN + Cloud" },
+    { id: "live_locator", label: "8. Live GPS Locator & Inspector", badge: `${unifiedDirectory.length}` },
+    { id: "telemetry", label: "9. Telemetry, Kill-Switches & Push", badge: "God-Mode" },
+    { id: "geo_ads", label: "10. 3-Tier Geo / State / Brand Ads", badge: `${safeGeoAds.length} Ads` },
+    { id: "monetization", label: "11. Commissions & Monetization", badge: `${merchantCommissionPct}%` },
+    { id: "testing", label: "12. Multi-Phone Sandbox & Flow QA", badge: `${safeSplitScreens.length} Phones` }
   ];
+  const visibleAdminTabs = adminAccess?.role === "city_manager" ? ADMIN_TABS.filter((tab) => tab.id === "approvals") : ADMIN_TABS;
+  useEffect(() => {
+    if (adminAccess?.role === "city_manager" && founderTab !== "approvals") setFounderTab("approvals");
+  }, [adminAccess?.role, founderTab]);
 
   const renderPartnerApprovalCard = (partner, partnerType) => {
     if (!partner) return null;
@@ -627,7 +753,7 @@ export default function FounderAdminSuite({
             <p className="text-[10px] text-slate-300">
               Mobile: <strong>+91 {partner.phone || "N/A"}</strong> | UPI:{" "}
               <strong className="text-emerald-300">{partner.upiId || "Not Set"}</strong> | Area:{" "}
-              <strong>{partner.area || partner.address || "Adilabad"}</strong>
+              <strong>{partner.area || partner.address || "Location pending"}</strong>
             </p>
             {(partner.bankName || partner.accountNumber) && (
               <p className="text-[10px] text-amber-300">
@@ -1534,7 +1660,7 @@ export default function FounderAdminSuite({
                           rec?.grandTotal || rec?.amount || 0
                         } | Status: ${rec?.status}`
                       : `Phone: ${rec?.phone || "-"} | Area: ${
-                          rec?.area || rec?.capacity || "Adilabad"
+                          rec?.area || rec?.capacity || "Location pending"
                         } | Status: ${rec?.status || "Active"}`;
 
                   return (
@@ -1805,7 +1931,7 @@ export default function FounderAdminSuite({
                 if (!quickStockForm.subCategoryBrand.trim()) return;
                 const newProd = {
                   id: `prod_${Date.now()}`,
-                  zoneId: "adilabad",
+                  zoneId: item.marketId || item.zoneId || "local_market",
                   categoryId: quickStockForm.categoryId,
                   subCategoryBrand: quickStockForm.subCategoryBrand.trim(),
                   shopName: quickStockForm.shopName.trim() || "Sri Laxmi Supermart",
@@ -1832,7 +1958,7 @@ export default function FounderAdminSuite({
                       merchantId: `m_${Date.now()}`,
                       merchantName: quickStockForm.shopName.trim() || "Sri Laxmi Supermart",
                       price: quickStockForm.price,
-                      area: "Adilabad Town",
+                      area: "Location required",
                       rating: 4.9
                     }
                   ]
@@ -2419,13 +2545,17 @@ export default function FounderAdminSuite({
                 </select>
               </label>
               <label className="text-[10px] text-slate-300">Apply to
-                <select value={feePolicyDraft.scope_type} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_type: e.target.value, scope_key: e.target.value === "global" ? "*" : "" }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white">
-                  <option value="global">All supported orders</option><option value="category">Product category</option><option value="catalog_item">Specific catalogue item</option><option value="service">Service selection</option><option value="zone">Zone</option>
+                <select value={feePolicyDraft.scope_type} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_type: e.target.value, scope_key: e.target.value === "global" ? "*" : "", subcategory_key: "" }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white">
+                  <option value="global">All supported orders</option><option value="category">Product category</option><option value="subcategory">Product sub-catalog</option><option value="catalog_item">Specific catalogue item</option><option value="service">Service selection</option><option value="zone">Zone</option>
                 </select>
               </label>
-              {feePolicyDraft.scope_type !== "global" && <label className="text-[10px] text-slate-300">Category, item, service, or zone key
-                <input value={feePolicyDraft.scope_key} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_key: e.target.value }))} placeholder="e.g. daily_needs or catalogue UUID" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              {feePolicyDraft.scope_type === "category" && <label className="text-[10px] text-slate-300">Product category
+                <select value={feePolicyDraft.scope_key} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_key: e.target.value, subcategory_key: "" }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="">Select category</option>{safeCategories.map((category) => <option key={category.id} value={category.id}>{category.name || category.id}</option>)}</select>
               </label>}
+              {(feePolicyDraft.scope_type === "category" || feePolicyDraft.scope_type === "subcategory") && <label className="text-[10px] text-slate-300">Sub-catalog (optional)
+                <select value={feePolicyDraft.subcategory_key || (feePolicyDraft.scope_type === "subcategory" ? feePolicyDraft.scope_key : "")} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, subcategory_key: e.target.value, ...(p.scope_type === "subcategory" ? { scope_key: e.target.value } : {}) }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="">{feePolicyDraft.scope_type === "category" ? "All sub-categories in selected category" : "Select sub-catalog"}</option>{listSubcategories(safeCategories).filter((item) => feePolicyDraft.scope_type !== "category" || !feePolicyDraft.scope_key || item.categoryId === feePolicyDraft.scope_key).map((item) => <option key={item.key} value={item.key}>{item.categoryName} · {item.label}</option>)}</select>
+              </label>}
+              {!["global", "category", "subcategory"].includes(feePolicyDraft.scope_type) && <label className="text-[10px] text-slate-300">Item, service, or zone key<input value={feePolicyDraft.scope_key} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_key: e.target.value }))} placeholder="Enter the selected catalogue item or key" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" /></label>}
               <label className="text-[10px] text-slate-300">Percentage (max merchant 10%, customer 5%)
                 <input type="number" min="0" max={feePolicyDraft.fee_type === "customer_platform_fee" ? "5" : "10"} step="0.5" value={feePolicyDraft.rate_percent} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, rate_percent: Number(e.target.value) || 0, fixed_inr: 0 }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
               </label>
@@ -2460,7 +2590,7 @@ export default function FounderAdminSuite({
             {feePolicies.length === 0 ? <p className="text-[10px] text-slate-400">No server policies loaded yet. Refresh after the fee-policy migration is installed in staging.</p> : feePolicies.map((policy) => (
               <div key={policy.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3 text-[10px]">
                 <div><strong className="text-white">{policy.display_name}</strong><p className="text-slate-400">{policy.fee_type.replaceAll("_", " ")} · {policy.scope_type}:{policy.scope_key} · v{policy.version}</p><p className="text-amber-200">{policy.rate_percent}% {Number(policy.fixed_inr) ? `+ Rs.${policy.fixed_inr}` : ""} · {policy.active ? "Active" : "Draft"}</p></div>
-                <button type="button" onClick={() => setFeePolicyDraft({ ...policy, active: Boolean(policy.active), rate_percent: Number(policy.rate_percent || 0), fixed_inr: Number(policy.fixed_inr || 0) })} className="rounded-lg bg-slate-700 px-3 py-1.5 font-bold text-white">Edit policy</button>
+                <button type="button" onClick={() => setFeePolicyDraft({ ...policy, subcategory_key: policy.scope_type === "subcategory" ? policy.scope_key : "", active: Boolean(policy.active), rate_percent: Number(policy.rate_percent || 0), fixed_inr: Number(policy.fixed_inr || 0) })} className="rounded-lg bg-slate-700 px-3 py-1.5 font-bold text-white">Edit policy</button>
               </div>
             ))}
           </div>
@@ -2470,6 +2600,52 @@ export default function FounderAdminSuite({
       {/* =====================================================================
           TAB 9: MULTI-PHONE LIVE TESTING SANDBOX & 1-CLICK FLOW TESTER
       ===================================================================== */}
+      {founderTab === "founder_profile" && (
+        <div className="space-y-4">
+          <form onSubmit={saveFounderProfile} className="rounded-2xl border border-amber-400/40 bg-slate-900 p-4 space-y-3">
+            <div><h3 className="text-sm font-black text-amber-300">Founder details</h3><p className="mt-1 text-[11px] text-slate-300">This section edits your own account profile. Password, email and username controls remain in the security section.</p></div>
+            <label className="block text-[10px] text-slate-300">Full name<input value={founderProfile.full_name} onChange={(event) => setFounderProfile({ ...founderProfile, full_name: event.target.value })} maxLength={120} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white" /></label>
+            <label className="block text-[10px] text-slate-300">Business / founder organization<input value={founderProfile.business_name} onChange={(event) => setFounderProfile({ ...founderProfile, business_name: event.target.value })} maxLength={160} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white" /></label>
+            <label className="block text-[10px] text-slate-300">Area / address<input value={founderProfile.area} onChange={(event) => setFounderProfile({ ...founderProfile, area: event.target.value })} maxLength={160} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white" /></label>
+            <div className="grid gap-2 md:grid-cols-2 text-[10px]"><p className="rounded-xl bg-slate-950 p-2 text-slate-300">Verified phone: {founderProfile.phone || "Not available"}</p><p className="rounded-xl bg-slate-950 p-2 text-slate-300">Sign-in email: {founderProfile.email || "Not available"}</p></div>
+            <div className="flex gap-2"><button type="button" disabled={founderProfileBusy} onClick={loadFounderProfile} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-bold text-white">Reload details</button><button type="submit" disabled={founderProfileBusy} className="rounded-xl bg-amber-400 px-4 py-2 text-[10px] font-black text-slate-950">{founderProfileBusy ? "Saving…" : "Save my details"}</button></div>
+            {founderProfileMessage && <p role="status" className="text-[10px] text-emerald-200">{founderProfileMessage}</p>}
+          </form>
+        </div>
+      )}
+
+      {founderTab === "portal_users" && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/30 bg-slate-900 p-4"><div><h3 className="text-sm font-black text-indigo-200">Portal account access</h3><p className="mt-1 text-[10px] text-slate-300">Edit registered profile details, adjust each role, or suspend access. Suspending retains order, KYC and audit records.</p></div><button type="button" disabled={usersBusy} onClick={refreshManagedUsers} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">{usersBusy ? "Loading…" : "Refresh users"}</button></div>
+          {usersMessage && <p role="status" className="rounded-xl bg-slate-950 p-2 text-[10px] text-amber-200">{usersMessage}</p>}
+          {managedUsers.map((account) => {
+            const profile = account.profile || {};
+            return <article key={account.user_id} className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black text-white">{profile.full_name || "Unnamed account"}</p><p className="font-mono text-[9px] text-slate-500">{account.user_id}</p></div><button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => removeManagedUserAccess(account)} className="rounded-lg border border-rose-700 bg-rose-950 px-3 py-1.5 text-[9px] font-black text-rose-200 disabled:opacity-40">Suspend all access</button></div>
+              <div className="grid gap-2 md:grid-cols-3"><input aria-label="User full name" defaultValue={profile.full_name || ""} data-field="full_name" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Full name"/><input aria-label="Business name" defaultValue={profile.business_name || ""} data-field="business_name" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Business name"/><input aria-label="Area" defaultValue={profile.area || ""} data-field="area" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Area / address"/></div>
+              <button type="button" disabled={usersBusy} onClick={(event) => { const inputs = event.currentTarget.parentElement.querySelectorAll("input[data-field]"); const edited = Object.fromEntries([...inputs].map((input) => [input.dataset.field, input.value])); supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile: { ...profile, ...edited }, roles: account.roles || [] } }).then(({ data, error }) => { if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Save failed"); setUsersMessage("Portal account details saved."); }).catch((error) => setUsersMessage(error.message)); }} className="rounded-lg bg-slate-700 px-3 py-1.5 text-[9px] font-bold text-white">Save profile details</button>
+              <div className="space-y-1">{(account.roles || []).map((role) => <div key={role.role} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950 p-2"><span className="text-[10px] font-bold text-slate-200">{role.role.replaceAll("_", " ")} · {role.status}</span><select aria-label={`${role.role} access state`} value={role.status} disabled={usersBusy} onChange={(event) => changeManagedRole(account, role.role, event.target.value)} className="rounded border border-slate-700 bg-slate-900 p-1.5 text-[9px] text-white"><option value="approved">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option></select></div>)}</div>
+              <div className="flex flex-wrap gap-2"><select aria-label="Add portal role" id={`new-role-${account.user_id}`} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[9px] text-white"><option value="merchant">Product Merchant</option><option value="service_provider">Service Provider</option><option value="decorator">Decorator / Hall</option><option value="rider">Delivery Captain</option><option value="labour">Labour / Mistri</option></select><button type="button" disabled={usersBusy} onClick={(event) => { const select = event.currentTarget.parentElement.querySelector("select"); changeManagedRole(account, select.value, "pending"); }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[9px] font-black text-white">Add pending portal</button></div>
+            </article>;
+          })}
+        </div>
+      )}
+
+      {founderTab === "geo_managers" && (
+        <div className="space-y-3">
+          <form onSubmit={inviteGeoManager} className="space-y-2 rounded-2xl border border-emerald-500/30 bg-slate-900 p-4">
+            <h3 className="text-sm font-black text-emerald-200">Add a Geo Manager</h3><p className="text-[10px] text-slate-300">Choose an existing auto-created local market. The manager receives an email invitation and can review partner applications only in that market.</p>
+            <input required type="text" value={managerInvite.full_name} onChange={(event) => setManagerInvite({ ...managerInvite, full_name: event.target.value })} placeholder="Manager full name" className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white"/>
+            <input required type="email" value={managerInvite.email} onChange={(event) => setManagerInvite({ ...managerInvite, email: event.target.value })} placeholder="Manager email for invitation" className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white"/>
+            <select required value={managerInvite.market_id} onChange={(event) => setManagerInvite({ ...managerInvite, market_id: event.target.value })} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white"><option value="">Select local market</option>{geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name} · {market.id}</option>)}</select>
+            <button type="submit" disabled={managerBusy || geoMarkets.length === 0} className="rounded-xl bg-emerald-400 px-4 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">Send invitation</button>
+            <button type="button" disabled={managerBusy} onClick={refreshGeoManagers} className="ml-2 rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-bold text-white">Refresh markets / managers</button>
+            {managerMessage && <p role="status" className="text-[10px] text-amber-200">{managerMessage}</p>}
+          </form>
+          {geoManagers.map((manager) => <div key={manager.user_id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 p-3"><div><p className="text-xs font-black text-white">{manager.display_name}</p><p className="text-[10px] text-slate-400">{manager.email} · {manager.zone_id}</p></div><div className="flex gap-2"><select aria-label="Reassign manager market" defaultValue={manager.zone_id} onChange={async (event) => { const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_assign", user_id: manager.user_id, market_id: event.target.value } }); if (error || data?.ok !== true) setManagerMessage(data?.error || error?.message || "Could not assign market."); else { setManagerMessage("Manager market updated. Ask them to sign in again to refresh server permissions."); refreshGeoManagers(); } }} className="rounded border border-slate-700 bg-slate-950 p-1 text-[9px] text-white">{geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name}</option>)}</select><button type="button" onClick={async () => { const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_remove", user_id: manager.user_id } }); if (error || data?.ok !== true) setManagerMessage(data?.error || error?.message || "Could not remove manager."); else refreshGeoManagers(); }} className="rounded-lg bg-rose-900 px-2.5 py-1 text-[9px] font-black text-white">Remove access</button></div></div>)}
+        </div>
+      )}
+
       {founderTab === "testing" && (
         <div className="space-y-4">
           <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-5 space-y-4">
@@ -2597,7 +2773,7 @@ export default function FounderAdminSuite({
       {adminDisplayMode === "web" ? (
         <div className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-4 gap-5">
           <aside className="space-y-1.5">
-            {ADMIN_TABS.map((tab) => (
+            {visibleAdminTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -2627,7 +2803,7 @@ export default function FounderAdminSuite({
               <span className="text-[10px] text-purple-200 font-bold">On-the-Go Governance</span>
             </div>
             <div className="flex gap-1 overflow-x-auto p-2 bg-slate-950 border-b border-slate-800 shrink-0">
-              {ADMIN_TABS.map((tab) => (
+              {visibleAdminTabs.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"

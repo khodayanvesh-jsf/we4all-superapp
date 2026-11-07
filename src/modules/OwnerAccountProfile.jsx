@@ -9,9 +9,9 @@ import {
   activateSupabaseAccount,
   clearActiveSupabaseAccount
 } from "../supabaseClient";
-import { GEO_ZONES } from "../data";
 import SignaturePad from "./SignaturePad";
 import { PARTNER_ROLE_FIELDS, getPartnerKycDocuments, validatePartnerRegistration } from "./workflows/partnerRegistration";
+import { marketCellId } from "./workflows/marketLocation";
 
 const ROLE_OPTIONS = [
   { id: "customer", label: "🛒 Consumer / Customer Portal", isConsumer: true },
@@ -65,14 +65,16 @@ export default function OwnerAccountProfile(rawProps = {}) {
     businessName: "",
     phone: "",
     upiId: "",
-    zoneId: "adilabad_master",
-    area: "Subhash Nagar, Adilabad",
+    zoneId: "",
+    area: "",
     pin: "",
     pinConfirm: "",
     partnerDetails: {}
   });
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
+  const [businessLocation, setBusinessLocation] = useState({ latitude: null, longitude: null });
+  const [locationBusy, setLocationBusy] = useState(false);
   const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
   const [trialChallengeId, setTrialChallengeId] = useState("");
   const [partnerApplication, setPartnerApplication] = useState(null);
@@ -131,7 +133,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (resolvedRole !== "customer") {
         const { data, error: partnerError } = await supabase
           .from("we4all_partners")
-          .select("id,partner_type,approval_status")
+          .select("id,partner_type,approval_status,market_id,zone_id")
           .eq("owner_user_id", user.id)
           .eq("partner_type", resolvedRole)
           .eq("approval_status", "approved")
@@ -149,6 +151,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         area: profile?.area || "",
         role: resolvedRole,
         partnerId: partnerRecord?.id || null,
+        marketId: partnerRecord?.market_id || partnerRecord?.zone_id || "",
         status: "Approved",
         isGuest: false
       };
@@ -336,6 +339,24 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   const cleanPinDigits = (value) => String(value || "").replace(/\D/g, "");
 
+  const captureBusinessLocation = () => new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("This device does not provide location access. Enter your area and try another device."));
+    setLocationBusy(true);
+    navigator.geolocation.getCurrentPosition((position) => {
+      const latitude = Number(position.coords.latitude.toFixed(6));
+      const longitude = Number(position.coords.longitude.toFixed(6));
+      const marketId = marketCellId(latitude, longitude);
+      setBusinessLocation({ latitude, longitude });
+      setRegForm((current) => ({ ...current, zoneId: marketId, area: current.area || "Pinned business location" }));
+      setFormFeedback({ type: "success", message: "Business location saved. WE4ALL will create or join its local market automatically." });
+      setLocationBusy(false);
+      resolve({ latitude, longitude, marketId });
+    }, (error) => {
+      setLocationBusy(false);
+      reject(new Error(error?.code === 1 ? "Allow location permission to continue partner registration." : "Could not read your business location. Try again or enable device location."));
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  });
+
   const sendPhoneOtp = async () => {
     if (authMode !== "register" && loginMethod !== "otp") {
       setFormFeedback({ type: "error", message: "Phone verification is used only for registration or PIN recovery." });
@@ -359,6 +380,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         if (!/^\d{6}$/.test(regForm.pin)) throw new Error("Create a 6-digit sign-in PIN.");
         if (regForm.pin !== regForm.pinConfirm) throw new Error("The two PIN entries do not match.");
         if (!isConsumerSelected && !regForm.businessName.trim()) throw new Error("Enter your business or partner name.");
+        if (!isConsumerSelected && (!Number.isFinite(businessLocation.latitude) || !Number.isFinite(businessLocation.longitude))) throw new Error("Add your business GPS location before requesting registration OTP.");
         if (!isConsumerSelected) {
           const detailsError = validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
           if (detailsError) throw new Error(detailsError);
@@ -368,7 +390,9 @@ export default function OwnerAccountProfile(rawProps = {}) {
             body: {
               action: "request", phone, requested_role: selectedRoleKey,
               full_name: regForm.fullName.trim(), business_name: regForm.businessName.trim(),
-              area: regForm.area || "", zone_id: regForm.zoneId
+              area: regForm.area || "", zone_id: regForm.zoneId,
+              latitude: businessLocation.latitude, longitude: businessLocation.longitude,
+              market_id: regForm.zoneId
             }
           });
           if (error) throw new Error(data?.error || error.message || "Trial OTP service is unavailable.");
@@ -494,14 +518,14 @@ export default function OwnerAccountProfile(rawProps = {}) {
         }
         const { data: partnerRecord, error: partnerError } = await supabase
           .from("we4all_partners")
-          .select("id,partner_type,approval_status")
+          .select("id,partner_type,approval_status,market_id,zone_id")
           .eq("owner_user_id", user.id)
           .eq("partner_type", requestedRole)
           .eq("approval_status", "approved")
           .maybeSingle();
         if (partnerError) throw partnerError;
         if (!partnerRecord) throw new Error("Founder-approved role has no active WE4ALL partner profile yet.");
-        const partnerUser = { ...baseUser, role: requestedRole, partnerId: partnerRecord.id, status: "Approved" };
+        const partnerUser = { ...baseUser, role: requestedRole, partnerId: partnerRecord.id, marketId: partnerRecord.market_id || partnerRecord.zone_id || "", status: "Approved" };
         setLocalUser(partnerUser);
         setCurrentUser?.(partnerUser);
         onPartnerAuthenticated?.(requestedRole, partnerUser);
@@ -526,6 +550,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   const handleRegistrationSubmit = async () => {
     if (selectedRoleKey !== "customer") {
+        if (!Number.isFinite(businessLocation.latitude) || !Number.isFinite(businessLocation.longitude)) {
+          setFormFeedback({ type: "error", message: "Add your business GPS location before submitting partner registration." });
+          return;
+        }
       const detailsError = validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
       if (detailsError) {
         setFormFeedback({ type: "error", message: detailsError });
@@ -589,6 +617,17 @@ export default function OwnerAccountProfile(rawProps = {}) {
       };
 
       if (selectedRoleKey !== "customer") {
+        const location = businessLocation;
+        if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
+          throw new Error("Add your business GPS location before submitting partner registration.");
+        }
+        const { data: marketId, error: marketError } = await supabase.rpc("we4all_register_market", {
+          p_latitude: location.latitude,
+          p_longitude: location.longitude,
+          p_display_name: regForm.area || `Local market ${regForm.zoneId}`,
+          p_state_name: ""
+        });
+        if (marketError || typeof marketId !== "string") throw new Error(marketError?.message || "Could not create the local market for this business location.");
         const { error: applicationError } = await supabase.from("we4all_partner_applications").insert({
           user_id: user.id,
           requested_role: selectedRoleKey,
@@ -597,7 +636,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
             business_name: regForm.businessName.trim(),
             phone: profilePayload.phone,
             area: profilePayload.area,
-            zone_id: regForm.zoneId,
+            zone_id: marketId,
+            market_id: marketId,
+            latitude: location.latitude,
+            longitude: location.longitude,
             partner_details: regForm.partnerDetails || {}
           }
         });
@@ -925,19 +967,16 @@ export default function OwnerAccountProfile(rawProps = {}) {
               />
 
               {!isConsumerSelected && (
-                <label className="block text-[10px] text-slate-300 font-bold">
-                  Operational city / service zone
-                  <select
-                    value={regForm.zoneId}
-                    onChange={(e) => setRegForm({ ...regForm, zoneId: e.target.value })}
-                    className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
-                  >
-                    {GEO_ZONES.filter((zone) => zone.active).map((zone) => (
-                      <option key={zone.id} value={zone.id === "adilabad" ? "adilabad_master" : zone.id}>{zone.name}</option>
-                    ))}
-                  </select>
-                  <span className="mt-1 block font-normal text-slate-400">Partner operations are tied to this city. Personal shopping remains available from the Customer portal.</span>
-                </label>
+                <section className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 space-y-2" aria-label="Business location">
+                  <div>
+                    <p className="text-[10px] font-black text-emerald-200">Business GPS location required</p>
+                    <p className="mt-1 text-[10px] font-normal text-slate-400">Your shop or service appears in the market around this pin. A new local market is created automatically when needed.</p>
+                  </div>
+                  <button type="button" disabled={locationBusy} onClick={() => captureBusinessLocation().catch((error) => setFormFeedback({ type: "error", message: error.message }))} className="w-full rounded-xl bg-emerald-400 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">
+                    {locationBusy ? "Finding location…" : businessLocation.latitude != null ? "Update business GPS pin" : "Use device location"}
+                  </button>
+                  {businessLocation.latitude != null && <p className="text-[10px] text-emerald-200">GPS {businessLocation.latitude}, {businessLocation.longitude} · Market {regForm.zoneId}</p>}
+                </section>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
