@@ -114,7 +114,7 @@ export default function AdminKycAndLabManager({
                 <div className="flex justify-between items-start">
                   <div>
                     <span className="bg-amber-400 text-slate-950 px-2 py-0.5 rounded text-[9px] font-black uppercase">
-                      {StringString((prt?.role ?? "customer") ?? "").replace("_", " ")}
+                      {String(prt?.role ?? "customer").replace("_", " ")}
                     </span>
                     <h4 className="font-black text-white text-xs mt-1">
                       {prt.fullName} ({prt.businessName})

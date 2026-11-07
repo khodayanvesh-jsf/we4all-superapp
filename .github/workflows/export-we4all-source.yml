@@ -1,0 +1,44 @@
+name: Export WE4ALL offline source package
+
+on:
+  push:
+    branches:
+      - fix/payment-safety-guest-default
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout exact development branch source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: fix/payment-safety-guest-default
+          persist-credentials: false
+
+      - name: Create offline source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/we4all-export"
+          printf 'Repository: %s\nBranch: %s\nCommit: %s\nExported: %s\n' \
+            "$GITHUB_REPOSITORY" "fix/payment-safety-guest-default" "$GITHUB_SHA" "$(date -u +%FT%TZ)" \
+            > "$RUNNER_TEMP/we4all-export/SOURCE-COMMIT.txt"
+          zip -qr "$RUNNER_TEMP/WE4ALL-offline-source.zip" . \
+            -x ".git/*" "node_modules/*" "dist/*" "android/.gradle/*" \
+               "android/app/build/*" "coverage/*" ".vercel/*" \
+               ".env" ".env.*" "!.env.example" "**/.env" "**/.env.*" \
+               "**/node_modules/*" "**/dist/*" "**/build/*" "**/.DS_Store"
+
+      - name: Upload full source archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: WE4ALL-offline-source-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/WE4ALL-offline-source.zip
+            ${{ runner.temp }}/we4all-export/SOURCE-COMMIT.txt
+          if-no-files-found: error
+          retention-days: 30

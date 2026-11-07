@@ -1,12 +1,15 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import {
   getFounderCredentials,
   saveFounderCredentials,
-  getServerConfig,
-  saveServerConfig,
   saveCloudAndLocalState,
-  pullRemoteSupabaseState
+  pullRemoteSupabaseState,
+  supabase,
+  isLiveSupabaseConfigured,
+  getActiveSupabaseUserId,
+  probeSupabaseConnection,
+  syncCurrentUserStateNow
 } from "../supabaseClient";
 
 export default function FounderAdminSuite({
@@ -31,6 +34,8 @@ export default function FounderAdminSuite({
   setDecorators = () => {},
   riders = [],
   setRiders = () => {},
+  labourWorkers = [],
+  setLabourWorkers = () => {},
   registeredUsers = [],
   setRegisteredUsers = () => {},
   products = [],
@@ -41,7 +46,11 @@ export default function FounderAdminSuite({
   setOrders = () => {},
   serviceBookings = [],
   setServiceBookings = () => {},
+  labourBookings = [],
+  setLabourBookings = () => {},
   captainRadarJobs = [],
+  decorBids = [],
+  setDecorBids = () => {},
   decorPortfolio = [],
   setDecorPortfolio = () => {},
   pendingMerchants = [],
@@ -81,10 +90,16 @@ export default function FounderAdminSuite({
   const safeServiceProviders = Array.isArray(serviceProviders) ? serviceProviders : [];
   const safeDecorators = Array.isArray(decorators) ? decorators : [];
   const safeRiders = Array.isArray(riders) ? riders : [];
+  const safeLabourWorkers = Array.isArray(labourWorkers) ? labourWorkers : [];
+  const safePendingProductApprovals = safeProducts.filter((product) => product.status === "PENDING_ADMIN_APPROVAL");
+  const safePendingHallApprovals = safeHalls.filter((hall) => hall.status === "PENDING_ADMIN_APPROVAL");
+  const safePendingLabourApprovals = safeLabourWorkers.filter((worker) => worker.status === "PENDING_ADMIN_APPROVAL");
   const safeUsers = Array.isArray(registeredUsers) ? registeredUsers : [];
   const safeProducts = Array.isArray(products) ? products : [];
   const safeHalls = Array.isArray(functionHalls) ? functionHalls : [];
   const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeDecorBids = Array.isArray(decorBids) ? decorBids : [];
+  const safeDecorRequests = safeDecorBids.filter((record) => record.recordType === "DECOR_REQUEST" && record.status === "PENDING_FOUNDER_AVAILABILITY_REVIEW");
   const safeServiceBookings = Array.isArray(serviceBookings) ? serviceBookings : [];
   const safePendingMerchants = Array.isArray(pendingMerchants) ? pendingMerchants : [];
   const safePendingServices = Array.isArray(pendingServiceProviders) ? pendingServiceProviders : [];
@@ -171,9 +186,70 @@ export default function FounderAdminSuite({
   const [adminCredsForm, setAdminCredsForm] = useState(() => getFounderCredentials());
   const [showCredsPass, setShowCredsPass] = useState(false);
 
-  // Cloud Data Server Config State
-  const [serverCfgForm, setServerCfgForm] = useState(() => getServerConfig());
-  const [syncStatusMsg, setSyncStatusMsg] = useState("Live Cloud Relay & Local Vault Ready");
+  // Supabase status is verified against the active Auth session; config presence alone is not authentication.
+  const [syncStatusMsg, setSyncStatusMsg] = useState(
+    isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
+  );
+
+  const [serverPartnerApplications, setServerPartnerApplications] = useState([]);
+  const [serverPartnerApplicationsLoading, setServerPartnerApplicationsLoading] = useState(false);
+  const [serverPartnerApplicationsError, setServerPartnerApplicationsError] = useState("");
+  const [serverReviewBusyId, setServerReviewBusyId] = useState("");
+
+  const refreshServerPartnerApplications = async () => {
+    if (!supabase) {
+      setServerPartnerApplicationsError("Supabase client is not configured.");
+      return;
+    }
+    setServerPartnerApplicationsLoading(true);
+    setServerPartnerApplicationsError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "list" }
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Founder server authorization was denied.");
+      setServerPartnerApplications(Array.isArray(data.applications) ? data.applications : []);
+      setSyncStatusMsg("Founder-authorized Supabase review connected.");
+    } catch (error) {
+      setServerPartnerApplicationsError(
+        error?.message || "Could not load server-side partner applications."
+      );
+    } finally {
+      setServerPartnerApplicationsLoading(false);
+    }
+  };
+
+  const reviewServerPartnerApplication = async (applicationId, decision) => {
+    if (!supabase || !applicationId) return;
+    setServerReviewBusyId(applicationId);
+    setServerPartnerApplicationsError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "review", application_id: applicationId, decision }
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Partner application review failed.");
+      setServerPartnerApplications((current) =>
+        current.filter((application) => application.id !== applicationId)
+      );
+      onTriggerToast(
+        decision === "approved"
+          ? "Partner application approved in Supabase. The approved role is now available to this account."
+          : `Partner application ${decision} in Supabase; portal access remains blocked.`
+      );
+    } catch (error) {
+      setServerPartnerApplicationsError(
+        error?.message || "Could not save the server-side partner review."
+      );
+    } finally {
+      setServerReviewBusyId("");
+    }
+  };
+
+  useEffect(() => {
+    if (founderTab === "approvals") refreshServerPartnerApplications();
+  }, [founderTab]);
 
   const [otaForm, setOtaForm] = useState({
     version: appUpdateInfo?.latestAvailableVersion || "3.2.2",
@@ -560,6 +636,7 @@ export default function FounderAdminSuite({
     if (adminDbTab === "decorators") return safeDecorators;
     if (adminDbTab === "halls") return safeHalls;
     if (adminDbTab === "captains") return safeRiders;
+    if (adminDbTab === "labour_workers") return safeLabourWorkers;
     if (adminDbTab === "orders") return safeOrders;
     return [];
   };
@@ -586,6 +663,9 @@ export default function FounderAdminSuite({
     } else if (adminDbTab === "captains") {
       setRiders(nextList);
       saveCloudAndLocalState({ riders: nextList });
+    } else if (adminDbTab === "labour_workers") {
+      setLabourWorkers(nextList);
+      saveCloudAndLocalState({ labourWorkers: nextList });
     } else if (adminDbTab === "orders") {
       setOrders(nextList);
       saveCloudAndLocalState({ orders: nextList });
@@ -599,15 +679,95 @@ export default function FounderAdminSuite({
       ===================================================================== */}
       {founderTab === "approvals" && (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 md:grid-cols-7 gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
+          <section className="bg-slate-950 border border-emerald-500/40 rounded-2xl p-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-emerald-300 text-xs">Verified Supabase Partner Applications</h3>
+                <p className="text-[10px] text-slate-400">
+                  These applications were created after the applicant verified their phone through Supabase Auth.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={serverPartnerApplicationsLoading}
+                onClick={refreshServerPartnerApplications}
+                className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black px-3 py-2 rounded-lg text-[10px]"
+              >
+                {serverPartnerApplicationsLoading ? "Refreshing…" : "Refresh server queue"}
+              </button>
+            </div>
+            {serverPartnerApplicationsError && (
+              <p className="bg-rose-950/50 border border-rose-500/40 text-rose-200 rounded-xl p-2 text-[10px]">
+                {serverPartnerApplicationsError}
+                {serverPartnerApplicationsError.includes("Founder server authorization") || serverPartnerApplicationsError.includes("403")
+                  ? " Provision app_metadata.we4all_role=founder for the dedicated Founder Auth user, then sign out and back in to refresh the signed token."
+                  : ""}
+              </p>
+            )}
+            {serverPartnerApplicationsLoading ? (
+              <p className="text-slate-400 text-[10px]">Loading private applications from Supabase…</p>
+            ) : serverPartnerApplications.length === 0 ? (
+              <p className="text-slate-400 text-[10px]">
+                No pending server-side partner applications are visible to this Founder session. If this is the first load, verify Founder app_metadata authorization and refresh.
+              </p>
+            ) : (
+              serverPartnerApplications.map((application) => {
+                const profile = application.profile || {};
+                const payload = application.application_payload || {};
+                const name = profile.full_name || payload.full_name || "Partner applicant";
+                const phone = profile.phone || payload.phone || "Phone not recorded";
+                const area = profile.area || payload.area || "Area not recorded";
+                const business = profile.business_name || payload.business_name || "";
+                return (
+                  <div key={application.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <strong className="text-white">{name}</strong>
+                        <p className="text-[10px] text-slate-300">
+                          {application.requested_role.replaceAll("_", " ")} · {business || phone} · {area}
+                        </p>
+                        <p className="text-[9px] text-slate-500">
+                          Application {application.id} · {new Date(application.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                      <span className="text-amber-300 text-[9px] font-black">PENDING SERVER REVIEW</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={serverReviewBusyId === application.id}
+                        onClick={() => reviewServerPartnerApplication(application.id, "approved")}
+                        className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
+                      >
+                        Approve {application.requested_role.replaceAll("_", " ")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={serverReviewBusyId === application.id}
+                        onClick={() => reviewServerPartnerApplication(application.id, "rejected")}
+                        className="bg-rose-700 disabled:bg-slate-700 text-white disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </section>
+          <div className="flex flex-wrap gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
             {[
               { id: "captains", label: `1. Captains (${safePendingRiders.length})` },
-              { id: "decorators_halls", label: `2. Decor (${safePendingDecorators.length})` },
+              { id: "decorators_halls", label: `2. Decor Partners (${safePendingDecorators.length})` },
+              { id: "decor_requests", label: `3. Event Requests (${safeDecorRequests.length})` },
               { id: "service_providers", label: `3. Services (${safePendingServices.length})` },
               { id: "merchants", label: `4. Merchants (${safePendingMerchants.length})` },
-              { id: "brands", label: `5. Brands (${safePendingBrands.length})` },
-              { id: "rejected", label: `6. Rejected (${safeRejectedItems.length})` },
-              { id: "direct_add", label: "7. + Direct Add" }
+              { id: "brands", label: `5. Brand Requests (${safePendingBrands.length})` },
+              { id: "product_approvals", label: `6. Products (${safePendingProductApprovals.length})` },
+              { id: "function_halls", label: `7. Function Halls (${safePendingHallApprovals.length})` },
+              { id: "labour_workers", label: `8. Labour Workers (${safePendingLabourApprovals.length})` },
+              { id: "rejected", label: `9. Rejected (${safeRejectedItems.length})` },
+              { id: "direct_add", label: "10. + Direct Add" }
             ].map((sub) => (
               <button
                 key={sub.id}
@@ -643,6 +803,76 @@ export default function FounderAdminSuite({
                 safePendingDecorators.map((d) => renderPartnerApprovalCard(d, "decorator"))
               ))}
 
+            {approvalQueueSubTab === "decor_requests" && (
+              safeDecorRequests.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No customer event requests are waiting for availability review.</p>
+              ) : (
+                safeDecorRequests.map((request) => {
+                  const events = Array.isArray(request.events) ? request.events : [];
+                  const availability = events.map((event) => {
+                    const hall = safeHalls.find((item) => item.id === event.id);
+                    const date = event.eventDate;
+                    const booked = (hall?.bookedDates || []).some((entry) =>
+                      (typeof entry === "string" ? entry : entry.date) === date
+                    );
+                    return { event, hall, date, available: Boolean(hall && hall.status === "Approved" && date && !booked) };
+                  });
+                  const allAvailable = availability.length > 0 && availability.every((entry) => entry.available);
+                  return (
+                    <div key={request.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 space-y-2">
+                      <div className="flex justify-between gap-2">
+                        <strong className="text-amber-200">{request.title || request.id}</strong>
+                        <span className="text-[10px] text-amber-300">PENDING AVAILABILITY REVIEW</span>
+                      </div>
+                      <p className="text-[10px] text-slate-300">
+                        Customer: {request.customerName} · Event total ₹{Number(request.amount || 0).toLocaleString("en-IN")} · Requested advance ₹{Number(request.requestedAdvanceAmount || 0).toLocaleString("en-IN")}
+                      </p>
+                      {availability.map(({ event, hall, date, available }) => (
+                        <p key={event.id} className={available ? "text-emerald-300 text-[10px]" : "text-rose-300 text-[10px]"}>
+                          {event.title || hall?.name || event.id} · {date} · {available ? "Approved hall and date available" : "Hall not approved, missing, or date already blocked"}
+                        </p>
+                      ))}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={!allAvailable}
+                          onClick={async () => {
+                            const next = safeDecorBids.map((entry) =>
+                              entry.id === request.id
+                                ? { ...entry, status: "OPEN_FOR_BIDS", availabilityReviewedAt: new Date().toISOString(), availabilityReviewedBy: "founder" }
+                                : entry
+                            );
+                            setDecorBids(next);
+                            saveCloudAndLocalState({ decorBids: next });
+                            onTriggerToast("Availability reviewed. Request opened for competitive decorator bids; no hall booking or payment is confirmed.");
+                          }}
+                          className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
+                        >
+                          Approve availability & open bids
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = safeDecorBids.map((entry) =>
+                              entry.id === request.id
+                                ? { ...entry, status: "REJECTED_FOUNDER_REVIEW", rejectedAt: new Date().toISOString() }
+                                : entry
+                            );
+                            setDecorBids(next);
+                            saveCloudAndLocalState({ decorBids: next });
+                            onTriggerToast("Event request declined with a recorded review status.");
+                          }}
+                          className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]"
+                        >
+                          Decline request
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )
+            )}
+
             {approvalQueueSubTab === "service_providers" &&
               (safePendingServices.length === 0 ? (
                 <p className="text-slate-400 text-center py-4">
@@ -662,6 +892,93 @@ export default function FounderAdminSuite({
               ) : (
                 safePendingMerchants.map((m) => renderPartnerApprovalCard(m, "merchant"))
               ))}
+
+            {approvalQueueSubTab === "product_approvals" && (
+              safePendingProductApprovals.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No new products are waiting for approval.</p>
+              ) : (
+                safePendingProductApprovals.map((product) => (
+                  <div key={product.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <strong className="text-white">{product.subCategoryBrand || product.name}</strong>
+                      <p className="text-[10px] text-slate-400">Merchant: {product.shopName || product.ownerUserId} · Category: {product.categoryId} · ₹{product.variants?.[0]?.price || product.price || 0}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => {
+                        const next = safeProducts.map((item) => item.id === product.id ? { ...item, status: "Approved", isPublished: true, inStock: true, approvedAt: new Date().toISOString() } : item);
+                        setProducts(next);
+                        saveCloudAndLocalState({ products: next });
+                        onTriggerToast("Product approved for customer discovery. Inventory and orders are still subject to server validation.");
+                      }} className="bg-emerald-500 text-slate-950 px-3 py-1.5 rounded-lg font-black text-[10px]">Approve product</button>
+                      <button type="button" onClick={() => {
+                        const next = safeProducts.map((item) => item.id === product.id ? { ...item, status: "REJECTED", inStock: false, rejectedAt: new Date().toISOString() } : item);
+                        setProducts(next);
+                        saveCloudAndLocalState({ products: next });
+                        onTriggerToast("Product marked rejected.");
+                      }} className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]">Reject</button>
+                    </div>
+                  </div>
+                ))
+              )
+            )}
+
+            {approvalQueueSubTab === "function_halls" && (
+              safePendingHallApprovals.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No function halls are waiting for approval.</p>
+              ) : (
+                safePendingHallApprovals.map((hall) => (
+                  <div key={hall.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <strong className="text-white">{hall.name}</strong>
+                      <p className="text-[10px] text-slate-400">Owner: {hall.ownerUserId || hall.ownerPhone || "Not linked"} · Capacity: {hall.capacity} · ₹{hall.dailyRent || hall.pricePerDay}/day · {hall.location}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => {
+                        const next = safeHalls.map((item) => item.id === hall.id ? { ...item, status: "Approved", isPublished: true, approvedAt: new Date().toISOString() } : item);
+                        setFunctionHalls(next);
+                        saveCloudAndLocalState({ functionHalls: next });
+                        onTriggerToast("Function hall approved for customer discovery. Date availability will still be checked at booking.");
+                      }} className="bg-emerald-500 text-slate-950 px-3 py-1.5 rounded-lg font-black text-[10px]">Approve hall</button>
+                      <button type="button" onClick={() => {
+                        const next = safeHalls.map((item) => item.id === hall.id ? { ...item, status: "REJECTED", isPublished: false, rejectedAt: new Date().toISOString() } : item);
+                        setFunctionHalls(next);
+                        saveCloudAndLocalState({ functionHalls: next });
+                        onTriggerToast("Function hall application rejected.");
+                      }} className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]">Reject</button>
+                    </div>
+                  </div>
+                ))
+              )
+            )}
+
+            {approvalQueueSubTab === "labour_workers" && (
+              safePendingLabourApprovals.length === 0 ? (
+                <p className="text-slate-400 text-center py-4">No Labour / Mistri registrations are waiting for approval.</p>
+              ) : (
+                safePendingLabourApprovals.map((worker) => (
+                  <div key={worker.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
+                    <div>
+                      <strong className="text-white">{worker.name}</strong>
+                      <p className="text-[10px] text-slate-400">{worker.tradeName} · {worker.mode} · {worker.phone || "No phone"} · ₹{worker.fullDayWage}/day</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => {
+                        const next = safeLabourWorkers.map((item) => item.id === worker.id ? { ...item, status: "Approved", approvedAt: new Date().toISOString() } : item);
+                        setLabourWorkers(next);
+                        saveCloudAndLocalState({ labourWorkers: next });
+                        onTriggerToast("Labour worker approved for customer discovery. Attendance and wage settlement remain server-verified workflows.");
+                      }} className="bg-emerald-500 text-slate-950 px-3 py-1.5 rounded-lg font-black text-[10px]">Approve worker</button>
+                      <button type="button" onClick={() => {
+                        const next = safeLabourWorkers.map((item) => item.id === worker.id ? { ...item, status: "REJECTED", rejectedAt: new Date().toISOString() } : item);
+                        setLabourWorkers(next);
+                        saveCloudAndLocalState({ labourWorkers: next });
+                        onTriggerToast("Labour worker application rejected.");
+                      }} className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]">Reject</button>
+                    </div>
+                  </div>
+                ))
+              )
+            )}
 
             {approvalQueueSubTab === "brands" &&
               (safePendingBrands.length === 0 ? (
@@ -767,7 +1084,7 @@ export default function FounderAdminSuite({
             {approvalQueueSubTab === "direct_add" && (
               <div className="bg-slate-950 p-4 rounded-2xl border border-emerald-500/40 space-y-3">
                 <h4 className="font-black text-emerald-400 text-sm">
-                  + Direct Founder Partner Onboarding (Instant Live Approval in Any Sector)
+                  + Founder Partner Intake (KYC Review Required)
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   <select
@@ -837,109 +1154,84 @@ export default function FounderAdminSuite({
                 <button
                   type="button"
                   onClick={() => {
-                    if (!directPartnerForm.name.trim()) return;
-                    const id = `${directPartnerForm.partnerType}_${Date.now()}`;
+                    const name = String(directPartnerForm.name || "").trim();
+                    const phone = String(directPartnerForm.phone || "").replace(/\D/g, "").slice(-10);
+                    const area = String(directPartnerForm.area || "").trim();
+                    const priceOrFee = Number(directPartnerForm.priceOrFee || 0);
+                    if (!name || phone.length !== 10 || !area) {
+                      onTriggerToast("Enter partner name, valid 10-digit mobile number and service area. No partner was created.");
+                      return;
+                    }
+                    const id = `application_${globalThis.crypto?.randomUUID?.() || Date.now()}`;
+                    const submittedAt = new Date().toISOString();
+                    const baseApplication = {
+                      id,
+                      name,
+                      businessName: name,
+                      phone,
+                      area,
+                      upiId: String(directPartnerForm.upiId || "").trim(),
+                      status: "PENDING_ADMIN_APPROVAL",
+                      kycStatus: "NOT_VERIFIED",
+                      source: "FOUNDER_MANUAL_INTAKE",
+                      submittedAt
+                    };
+
                     if (directPartnerForm.partnerType === "merchant") {
-                      const next = [
-                        {
-                          id,
-                          businessName: directPartnerForm.name.trim(),
-                          owner: directPartnerForm.owner || "Verified Owner",
-                          categoryId: directPartnerForm.category || "daily_needs",
-                          phone: directPartnerForm.phone || "9848011101",
-                          upiId: directPartnerForm.upiId || "merchant@ybl",
-                          area: directPartnerForm.area,
-                          status: "Approved"
-                        },
-                        ...safeMerchants
-                      ];
-                      setMerchants(next);
-                      saveCloudAndLocalState({ merchants: next });
+                      const next = [baseApplication, ...safePendingMerchants];
+                      setPendingMerchants(next);
+                      saveCloudAndLocalState({ pendingMerchants: next });
                     } else if (directPartnerForm.partnerType === "service_provider") {
-                      const next = [
-                        {
-                          id,
-                          serviceCategoryId: "srv_plumbing",
-                          providerName: directPartnerForm.name.trim(),
-                          maskedId: `Verified Pro #${safeServiceProviders.length + 1}`,
-                          serviceCategory: "Home Services",
-                          specialization: "Verified Town Specialist",
-                          visitingFee: directPartnerForm.priceOrFee || 99,
-                          hourlyRate: 150,
-                          area: directPartnerForm.area,
-                          phone: directPartnerForm.phone || "9848022201",
-                          upiId: directPartnerForm.upiId || "service@ybl",
-                          rating: 4.9,
-                          status: "Approved",
-                          isPublished: true,
-                          isPublishedToPublic: true,
-                          availableSlots: ["09:00 AM - 10:00 AM", "11:00 AM - 12:00 PM", "03:00 PM - 04:00 PM"],
-                          image: directPartnerForm.image
-                        },
-                        ...safeServiceProviders
-                      ];
-                      setServiceProviders(next);
-                      saveCloudAndLocalState({ serviceProviders: next });
+                      const next = [{
+                        ...baseApplication,
+                        serviceCategoryId: "srv_plumbing",
+                        providerName: name,
+                        specialization: "",
+                        visitingFee: Number.isFinite(priceOrFee) && priceOrFee > 0 ? priceOrFee : 0,
+                        hourlyRate: 0,
+                        availableSlots: [],
+                        isPublished: false
+                      }, ...safePendingServices];
+                      setPendingServiceProviders(next);
+                      saveCloudAndLocalState({ pendingServiceProviders: next });
                     } else if (directPartnerForm.partnerType === "decorator") {
-                      const next = [
-                        {
-                          id,
-                          name: directPartnerForm.name.trim(),
-                          businessName: directPartnerForm.name.trim(),
-                          decoratorSubRole: "flower_decorator",
-                          expert: "Wedding, Haldi & Stage Decor",
-                          phone: directPartnerForm.phone || "9848044556",
-                          upiId: directPartnerForm.upiId || "decor@ybl",
-                          area: directPartnerForm.area,
-                          status: "Approved",
-                          image: directPartnerForm.image
-                        },
-                        ...safeDecorators
-                      ];
-                      setDecorators(next);
-                      saveCloudAndLocalState({ decorators: next });
+                      const next = [{
+                        ...baseApplication,
+                        decoratorSubRole: "flower_decorator",
+                        portfolioImages: [],
+                        isPublished: false
+                      }, ...safePendingDecorators];
+                      setPendingDecorators(next);
+                      saveCloudAndLocalState({ pendingDecorators: next });
                     } else if (directPartnerForm.partnerType === "hall") {
-                      const next = [
-                        {
-                          id,
-                          name: directPartnerForm.name.trim(),
-                          capacity: "800 Guests",
-                          pricePerDay: directPartnerForm.priceOrFee || 45000,
-                          collateralVerified: true,
-                          bookedDates: [],
-                          image: directPartnerForm.image
-                        },
-                        ...safeHalls
-                      ];
+                      const next = [{
+                        ...baseApplication,
+                        capacity: Number(directPartnerForm.capacity || 0),
+                        dailyRent: Number.isFinite(priceOrFee) && priceOrFee > 0 ? priceOrFee : 0,
+                        bookedDates: [],
+                        isPublished: false
+                      }, ...safeHalls];
                       setFunctionHalls(next);
                       saveCloudAndLocalState({ functionHalls: next });
                     } else if (directPartnerForm.partnerType === "captain") {
-                      const next = [
-                        {
-                          id,
-                          name: directPartnerForm.name.trim(),
-                          phone: directPartnerForm.phone || "9848055112",
-                          upiId: directPartnerForm.upiId || "captain@ybl",
-                          vehicleType: "2W",
-                          vehicleName: "Hero Splendor Bike",
-                          baseRate: directPartnerForm.priceOrFee || 25,
-                          perKm: 6,
-                          rating: 4.9,
-                          trips: 10,
-                          badge: "Admin Verified Captain",
-                          isPrimeCaptain: true
-                        },
-                        ...safeRiders
-                      ];
-                      setRiders(next);
-                      saveCloudAndLocalState({ riders: next });
+                      const next = [{
+                        ...baseApplication,
+                        vehicleCode: "",
+                        vehicleName: "",
+                        rcNumber: "",
+                        dlNumber: "",
+                        isPublished: false
+                      }, ...safePendingRiders];
+                      setPendingRiders(next);
+                      saveCloudAndLocalState({ pendingRiders: next });
                     }
-                    setDirectPartnerForm({ ...directPartnerForm, name: "", phone: "" });
-                    onTriggerToast("Partner directly onboarded, approved & synced to cloud!");
+
+                    setDirectPartnerForm({ ...directPartnerForm, name: "", phone: "", upiId: "", area: "" });
+                    onTriggerToast("Partner application saved as pending KYC and approval. No portal access, listing, payout or payment identity was activated.");
                   }}
                   className="w-full bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
                 >
-                  &#x2713; Onboard &amp; Publish Partner Live Now
+                  Submit Pending Partner Application
                 </button>
               </div>
             )}
@@ -980,7 +1272,8 @@ export default function FounderAdminSuite({
                 { id: "decorators", label: `5. Decorators (${safeDecorators.length})` },
                 { id: "halls", label: `6. Function Halls (${safeHalls.length})` },
                 { id: "captains", label: `7. Captains (${safeRiders.length})` },
-                { id: "orders", label: `8. Orders (${safeOrders.length})` }
+                { id: "labour_workers", label: `8. Labour Workers (${safeLabourWorkers.length})` },
+                { id: "orders", label: `9. Orders (${safeOrders.length})` }
               ].map((t) => (
                 <button
                   key={t.id}
@@ -1415,22 +1708,15 @@ export default function FounderAdminSuite({
               </div>
             </div>
 
+            <div className="bg-amber-950/50 border border-amber-500/50 rounded-xl p-3 text-[11px] text-amber-100">
+              Founder credentials are not editable in the browser. Configure the founder identity through the secured server-side authentication process; local PIN/password storage and cross-device credential syncing are disabled.
+            </div>
             <button
               type="button"
-              onClick={() => {
-                if (!adminCredsForm.username.trim() || !adminCredsForm.password.trim()) {
-                  alert("Username and Password cannot be empty!");
-                  return;
-                }
-                const saved = saveFounderCredentials(adminCredsForm);
-                setAdminCredsForm(saved);
-                onTriggerToast(
-                  `Admin Credentials updated! New Username: ${saved.username} | PIN: ${saved.pin}`
-                );
-              }}
-              className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer shadow"
+              disabled
+              className="w-full bg-slate-700 text-slate-400 font-black py-2.5 rounded-xl cursor-not-allowed shadow"
             >
-              &#x2713; Save New Admin Credentials &amp; Sync Across Devices
+              Server-side founder authentication required
             </button>
           </div>
 
@@ -1439,10 +1725,10 @@ export default function FounderAdminSuite({
             <div className="flex flex-wrap justify-between items-center gap-2">
               <div>
                 <h3 className="font-black text-emerald-400 text-sm">
-                  \uD83C\uDF10 Live Cloud Data Server &amp; Cross-Device Sync Manager
+                  \uD83C\uDF10 Supabase Account Connection &amp; Private Sync
                 </h3>
                 <p className="text-[11px] text-slate-300">
-                  Ensures orders, partner approvals, stock changes, and categories reflect across all phones and web browsers.
+                  Checks the signed-in account connection and synchronizes that user's private saved state across devices.
                 </p>
               </div>
               <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 px-3 py-1 rounded-xl text-[10px] font-black">
@@ -1450,52 +1736,45 @@ export default function FounderAdminSuite({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">
-                  Supabase Database URL
-                </label>
-                <input
-                  type="text"
-                  value={serverCfgForm.supabaseUrl}
-                  onChange={(e) =>
-                    setServerCfgForm({ ...serverCfgForm, supabaseUrl: e.target.value })
-                  }
-                  placeholder="https://your-project.supabase.co"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-mono text-[11px]"
-                />
+            <div className="rounded-xl bg-slate-950 border border-slate-700 p-3 space-y-2">
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-400 text-[10px]">Project URL</span>
+                <span className="text-white font-mono text-[10px] break-all">https://bdmbziwazpuzbukazmug.supabase.co</span>
               </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">
-                  Supabase Public Anon Key (Optional — Relay Active by Default)
-                </label>
-                <input
-                  type="text"
-                  value={serverCfgForm.supabaseAnonKey}
-                  onChange={(e) =>
-                    setServerCfgForm({ ...serverCfgForm, supabaseAnonKey: e.target.value })
-                  }
-                  placeholder="Paste eyJhbGciOi... anon key here if using direct Supabase"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-emerald-300 font-mono text-[11px]"
-                />
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-400 text-[10px]">Frontend API key</span>
+                <span className="text-emerald-300 text-[10px] font-bold">Publishable key loaded</span>
               </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-400 text-[10px]">Private sync endpoint</span>
+                <span className="text-emerald-300 text-[10px] font-bold">JWT-protected Edge Function</span>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Secret keys are never entered in this panel or sent to the browser. Signed-in data is stored in the owner's private account row; this backup is not a shared marketplace database.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  saveServerConfig(serverCfgForm);
-                  setSyncStatusMsg("Server Links Saved & Active!");
-                  onTriggerToast("Cloud Data Server Configuration Saved!");
+                onClick={async () => {
+                  setSyncStatusMsg("Checking Supabase API, verified session and private sync…");
+                  const result = await probeSupabaseConnection();
+                  const statusText = result.syncReady
+                    ? "Connected · authenticated private sync verified"
+                    : result.backendReachable
+                      ? result.message
+                      : "Supabase API is not reachable: " + result.message;
+                  setSyncStatusMsg(statusText);
+                  onTriggerToast(statusText);
                 }}
                 className="bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
               >
-                Save Server Config
+                Check Supabase Session
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   saveCloudAndLocalState({
                     categories: safeCategories,
                     products: safeProducts,
@@ -1506,32 +1785,74 @@ export default function FounderAdminSuite({
                     riders: safeRiders,
                     orders: safeOrders,
                     serviceBookings: safeServiceBookings,
-                    geoAds: safeGeoAds,
-                    founderCredentials: adminCredsForm
+                    labourBookings: labourBookings || [],
+                    decorBids: safeDecorBids,
+                    pendingMerchants: safePendingMerchants,
+                    pendingServiceProviders: safePendingServices,
+                    pendingDecorators: safePendingDecorators,
+                    pendingRiders: safePendingRiders,
+                    pendingSubCategories: safePendingBrands,
+                    rejectedItems: safeRejectedItems,
+                    monetizationConfig,
+                    appUpdateInfo,
+                    geoAds: safeGeoAds
                   });
-                  setSyncStatusMsg(`Pushed at ${new Date().toLocaleTimeString()}`);
-                  onTriggerToast("Forced Full State Push to Live Cloud Server!");
+                  const syncResult = await syncCurrentUserStateNow();
+                  if (syncResult?.ok) {
+                    setSyncStatusMsg("Connected · private state saved to Supabase");
+                    onTriggerToast("Private account snapshot verified and saved to Supabase.");
+                  } else {
+                    setSyncStatusMsg("Cloud save failed · " + (syncResult?.reason || "unknown error"));
+                    onTriggerToast("Supabase save failed: " + (syncResult?.reason || "unknown error"));
+                  }
                 }}
                 className="bg-teal-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
               >
-                \u2B06 Force Push All Data to Cloud
+                Save My Account Backup
               </button>
               <button
                 type="button"
                 onClick={async () => {
-                  setSyncStatusMsg("Pulling from Cloud...");
-                  const remote = await pullRemoteSupabaseState();
-                  if (remote) {
-                    setSyncStatusMsg(`Pulled at ${new Date().toLocaleTimeString()}`);
-                    onTriggerToast("Pulled latest state from Cloud Server!");
-                  } else {
-                    setSyncStatusMsg("Cloud Server Up-to-Date");
-                    onTriggerToast("Cloud Server is already in sync!");
+                  setSyncStatusMsg("Restoring this account's private backup...");
+                  try {
+                    const remote = await pullRemoteSupabaseState((payload) => {
+                      if (payload.categories) setCategories(payload.categories);
+                      if (payload.products) setProducts(payload.products);
+                      if (payload.merchants) setMerchants(payload.merchants);
+                      if (payload.serviceProviders) setServiceProviders(payload.serviceProviders);
+                      if (payload.decorators) setDecorators(payload.decorators);
+                      if (payload.functionHalls) setFunctionHalls(payload.functionHalls);
+                      if (payload.riders) setRiders(payload.riders);
+                      if (payload.labourWorkers) setLabourWorkers(payload.labourWorkers);
+                      if (payload.orders) setOrders(payload.orders);
+                      if (payload.serviceBookings) setServiceBookings(payload.serviceBookings);
+                      if (payload.labourBookings) setLabourBookings(payload.labourBookings);
+                      if (payload.decorBids) setDecorBids(payload.decorBids);
+                      if (payload.pendingMerchants) setPendingMerchants(payload.pendingMerchants);
+                      if (payload.pendingServiceProviders) setPendingServiceProviders(payload.pendingServiceProviders);
+                      if (payload.pendingDecorators) setPendingDecorators(payload.pendingDecorators);
+                      if (payload.pendingRiders) setPendingRiders(payload.pendingRiders);
+                      if (payload.pendingSubCategories) setPendingSubCategories(payload.pendingSubCategories);
+                      if (payload.rejectedItems) setRejectedItems(payload.rejectedItems);
+                      if (payload.monetizationConfig) setMonetizationConfig(payload.monetizationConfig);
+                      if (payload.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+                      if (payload.geoAds) setGeoAds(payload.geoAds);
+                    });
+                    if (remote) {
+                      setSyncStatusMsg("Private account backup restored");
+                      onTriggerToast("Restored this signed-in account's snapshot. Other users' data is not included.");
+                    } else {
+                      setSyncStatusMsg("No private cloud snapshot yet");
+                      onTriggerToast("No saved cloud snapshot exists for this account yet, or sign-in is required.");
+                    }
+                  } catch (error) {
+                    setSyncStatusMsg("Cloud restore failed");
+                    onTriggerToast("Could not restore this account: " + (error?.message || "unknown error"));
                   }
                 }}
                 className="bg-indigo-500 text-white font-black py-2 rounded-xl cursor-pointer"
               >
-                \u2B07 Pull Latest Data from Cloud
+                Restore My Account Backup
               </button>
             </div>
           </div>

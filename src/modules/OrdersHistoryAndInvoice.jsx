@@ -1,4 +1,35 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  cancelMarketplaceOrder,
+  createCashfreeCheckoutOrder,
+  listMarketplaceOrders,
+  verifyCashfreeCheckoutPayment
+} from "../supabaseClient";
+
+let cashfreeSdkPromise;
+
+function loadCashfreeSdk() {
+  if (window.Cashfree) return Promise.resolve(window.Cashfree);
+  if (!cashfreeSdkPromise) {
+    cashfreeSdkPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-we4all-cashfree="true"]');
+      const script = existing || document.createElement("script");
+      const fail = () => {
+        cashfreeSdkPromise = null;
+        reject(new Error("Cashfree checkout could not be loaded. Check your connection and try again."));
+      };
+      script.addEventListener("load", () => window.Cashfree ? resolve(window.Cashfree) : fail(), { once: true });
+      script.addEventListener("error", fail, { once: true });
+      if (!existing) {
+        script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
+        script.async = true;
+        script.dataset.we4allCashfree = "true";
+        document.head.appendChild(script);
+      }
+    });
+  }
+  return cashfreeSdkPromise;
+}
 
 export default function OrdersHistoryAndInvoice({
   orders = [],
@@ -11,8 +42,103 @@ export default function OrdersHistoryAndInvoice({
 }) {
   const [timelineFilter, setTimelineFilter] = useState("ALL");
   const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [marketplaceOrders, setMarketplaceOrders] = useState([]);
+  const [cancellingOrderId, setCancellingOrderId] = useState("");
+  const [payingOrderId, setPayingOrderId] = useState("");
+  const toastRef = useRef(onTriggerToast);
+
+  useEffect(() => {
+    toastRef.current = onTriggerToast;
+  }, [onTriggerToast]);
+
+  useEffect(() => {
+    let active = true;
+    let hasReportedError = false;
+    const refreshOrders = async () => {
+      try {
+        const liveOrders = await listMarketplaceOrders();
+        if (active) {
+          setMarketplaceOrders(liveOrders);
+          hasReportedError = false;
+        }
+      } catch (error) {
+        if (active && !hasReportedError && toastRef.current) {
+          toastRef.current(error?.message || "Could not refresh server orders.");
+          hasReportedError = true;
+        }
+      }
+    };
+    refreshOrders();
+    const timer = window.setInterval(refreshOrders, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const displayOrders = useMemo(() => {
+    const byId = new Map((orders || []).map((order) => [String(order.id), order]));
+    marketplaceOrders.forEach((order) => byId.set(String(order.id), order));
+    return [...byId.values()];
+  }, [marketplaceOrders, orders]);
+
+  const handleCancelMarketplaceOrder = async (order) => {
+    if (!order?.serverOrderId || cancellingOrderId) return;
+    setCancellingOrderId(order.serverOrderId);
+    try {
+      const result = await cancelMarketplaceOrder(order.serverOrderId);
+      setMarketplaceOrders((current) => current.map((item) =>
+        item.serverOrderId === order.serverOrderId
+          ? { ...item, status: "cancelled", cancellationDuplicate: result.duplicate }
+          : item
+      ));
+      if (onTriggerToast) {
+        onTriggerToast(result.duplicate
+          ? "This order was already cancelled; its stock release was already processed."
+          : result.released_items > 0
+            ? `Order cancelled. The server released stock for ${result.released_items} catalogue item(s).`
+            : "Order cancelled. No stock reservation needed release.");
+      }
+    } catch (error) {
+      if (onTriggerToast) onTriggerToast(error?.message || "The server could not cancel this order.");
+    } finally {
+      setCancellingOrderId("");
+    }
+  };
+
+  const handlePayMarketplaceOrder = async (order) => {
+    if (!order?.serverOrderId || payingOrderId) return;
+    setPayingOrderId(order.serverOrderId);
+    try {
+      const checkout = await createCashfreeCheckoutOrder(order.serverOrderId);
+      const Cashfree = await loadCashfreeSdk();
+      const cashfree = Cashfree({ mode: checkout.mode });
+      try {
+        await cashfree.checkout({ paymentSessionId: checkout.paymentSessionId, redirectTarget: "_modal" });
+      } catch {
+        // A dismissed or interrupted checkout still gets an authoritative status check.
+      }
+      const verification = await verifyCashfreeCheckoutPayment(order.serverOrderId);
+      const liveOrders = await listMarketplaceOrders();
+      setMarketplaceOrders(liveOrders);
+      const paid = liveOrders.some((item) => item.serverOrderId === order.serverOrderId && item.paymentStatus === "PAID");
+      if (onTriggerToast) {
+        onTriggerToast(paid && verification.verified
+          ? "Cashfree confirmed payment with WE4ALL."
+          : "Cashfree has not confirmed payment yet. The order remains pending; check again shortly.");
+      }
+    } catch (error) {
+      if (onTriggerToast) onTriggerToast(error?.message || "Could not open Cashfree UPI checkout.");
+    } finally {
+      setPayingOrderId("");
+    }
+  };
 
   const handleDownloadPdfInvoice = (ord) => {
+    if (ord.isServerManaged && (ord.paymentStatus !== "PAID" || ["cancelled", "refunded", "disputed"].includes(String(ord.status).toLowerCase()))) {
+      if (onTriggerToast) onTriggerToast("A tax invoice is available only for an active order with server-verified payment.");
+      return;
+    }
     const printWin = window.open("", "_blank", "width=720,height=850");
     if (!printWin) {
       if (onTriggerToast) onTriggerToast("Allow pop-ups to save/print PDF Tax Invoice.");
@@ -52,7 +178,7 @@ export default function OrdersHistoryAndInvoice({
             <p style="margin:4px 0 0;font-size:12px;">Founder: Khoday Anvesh | Official Hyperlocal GST Tax Invoice</p>
           </div>
           <div style="text-align:right;">
-            <span class="badge">PAID VIA ${ord.paidViaApp || "UPI"}</span>
+            <span class="badge">${ord.isServerManaged ? "WE4ALL VERIFIED PAYMENT" : `PAID VIA ${ord.paidViaApp || "UPI"}`}</span>
             <p style="margin:6px 0 0;font-size:12px;"><strong>Invoice #:</strong> INV-${ord.id}</p>
             <p style="margin:2px 0 0;font-size:11px;"><strong>Date:</strong> ${ord.dateStr || new Date().toISOString().slice(0, 10)} ${ord.createdAt || ""}</p>
           </div>
@@ -88,10 +214,11 @@ export default function OrdersHistoryAndInvoice({
     printWin.document.close();
   };
 
-  const filteredOrders = orders.filter((o) => {
+  const filteredOrders = displayOrders.filter((o) => {
+    const status = String(o.status || "").toLowerCase();
     if (timelineFilter === "ALL") return true;
     if (timelineFilter === "CANCELLED_RETURNED") {
-      return o.status.includes("CANCELLED") || o.status.includes("RETURN");
+      return status.includes("cancelled") || status.includes("return");
     }
     return (o.periodTag || "TODAY") === timelineFilter;
   });
@@ -100,7 +227,7 @@ export default function OrdersHistoryAndInvoice({
     <div className="space-y-3 text-xs">
       <div className="flex justify-between items-center">
         <h3 className="font-black text-emerald-500 text-sm">
-          Orders History & PDF Tax Invoices ({(orders || []).length + (serviceBookings || []).length + (labourBookings || []).length})
+          Orders History & PDF Tax Invoices ({displayOrders.length + (serviceBookings || []).length + (labourBookings || []).length})
         </h3>
       </div>
 
@@ -129,7 +256,7 @@ export default function OrdersHistoryAndInvoice({
 
       {(filteredOrders || []).length === 0 && (serviceBookings || []).length === 0 && (labourBookings || []).length === 0 && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400">
-          No orders or bookings recorded yet. Place an order to generate live tracking and PDF invoices.
+          No orders or bookings recorded yet. Place an order to see its server status here.
         </div>
       )}
 
@@ -146,7 +273,7 @@ export default function OrdersHistoryAndInvoice({
                   #{ord.id} - {ord.shopName || ord.categoryName}
                 </p>
                 <p className="text-[10px] text-slate-400">
-                  {ord.dateStr || "Today"} {ord.createdAt} | Paid via {ord.paidViaApp || "UPI"}
+                  {ord.dateStr || "Today"} {ord.createdAt} | {ord.isServerManaged ? `Payment ${ord.paymentStatus}` : `Paid via ${ord.paidViaApp || "UPI"}`}
                 </p>
               </div>
               <span className="font-black text-amber-300 text-sm">Rs.{ord.grandTotal}</span>
@@ -154,7 +281,7 @@ export default function OrdersHistoryAndInvoice({
 
             <div className="flex justify-between items-center text-[10px]">
               <span className="bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-emerald-300 font-bold">
-                {StringString((ord?.status ?? "") ?? "").replace(/_/g, " ")}
+                {String(ord?.status ?? "").replace(/_/g, " ")}
               </span>
               <button
                 type="button"
@@ -190,7 +317,7 @@ export default function OrdersHistoryAndInvoice({
                     <span>Rs.{ord.gst}</span>
                   </div>
                   <div className="flex justify-between font-black text-white text-xs pt-1">
-                    <span>Total Paid:</span>
+                    <span>{ord.isServerManaged && ord.paymentStatus !== "PAID" ? "Order Total:" : "Total Paid:"}</span>
                     <span>Rs.{ord.grandTotal}</span>
                   </div>
                 </div>
@@ -198,14 +325,24 @@ export default function OrdersHistoryAndInvoice({
             )}
 
             <div className="grid grid-cols-2 gap-1.5 pt-1">
-              <button
-                type="button"
-                onClick={() => handleDownloadPdfInvoice(ord)}
-                className="bg-amber-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
-              >
-                Download PDF Invoice
-              </button>
-              {onOpenLiveMap && (
+              {ord.isServerManaged && (ord.paymentStatus !== "PAID" || ["cancelled", "refunded", "disputed"].includes(String(ord.status).toLowerCase())) ? (
+                <button type="button" disabled className="bg-slate-700 text-slate-300 font-black py-1.5 rounded-xl text-[10px]">
+                  {ord.paymentStatus === "PAID" ? "Invoice unavailable for cancelled order" : "Invoice after verified payment"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPdfInvoice(ord)}
+                  className="bg-amber-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
+                >
+                  Download PDF Invoice
+                </button>
+              )}
+              {ord.isServerManaged ? (
+                <button type="button" disabled className="bg-slate-700 text-slate-300 font-black py-1.5 rounded-xl text-[10px]">
+                  Tracking after dispatch assignment
+                </button>
+              ) : onOpenLiveMap && (
                 <button
                   type="button"
                   onClick={() => onOpenLiveMap(ord)}
@@ -225,6 +362,36 @@ export default function OrdersHistoryAndInvoice({
                     Cancel Order (Rs.10 Fee)
                   </button>
                 )}
+              {ord.isServerManaged && ["awaiting_payment", "merchant_confirmed"].includes(String(ord.status).toLowerCase()) && ["PENDING", "FAILED"].includes(ord.paymentStatus) && (
+                <button
+                  type="button"
+                  disabled={cancellingOrderId === ord.serverOrderId}
+                  onClick={() => handleCancelMarketplaceOrder(ord)}
+                  className="bg-rose-950 border border-rose-500 disabled:opacity-50 text-rose-200 font-bold py-1.5 rounded-xl text-[10px]"
+                >
+                  {cancellingOrderId === ord.serverOrderId ? "Cancelling…" : "Cancel Unpaid Order"}
+                </button>
+              )}
+              {ord.isServerManaged && ["awaiting_payment", "merchant_confirmed"].includes(String(ord.status).toLowerCase()) && ["PENDING", "FAILED"].includes(ord.paymentStatus) && (
+                <button
+                  type="button"
+                  disabled={payingOrderId === ord.serverOrderId || Boolean(payingOrderId)}
+                  onClick={() => handlePayMarketplaceOrder(ord)}
+                  className="bg-emerald-500 text-slate-950 disabled:opacity-50 font-black py-1.5 rounded-xl text-[10px]"
+                >
+                  {payingOrderId === ord.serverOrderId ? "Opening secure checkout…" : "Pay with UPI app"}
+                </button>
+              )}
+              {ord.isServerManaged && ord.paymentStatus === "PAID" && String(ord.status).toLowerCase() !== "refunded" && (
+                <button type="button" disabled className="bg-slate-700 text-slate-300 font-bold py-1.5 rounded-xl text-[10px]">
+                  Refund support required
+                </button>
+              )}
+              {ord.isServerManaged && ord.paymentStatus === "AUTHORIZED" && (
+                <button type="button" disabled className="bg-slate-700 text-slate-300 font-bold py-1.5 rounded-xl text-[10px]">
+                  Payment reversal support required
+                </button>
+              )}
               {onReturnOrder && (
                 <button
                   type="button"

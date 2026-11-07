@@ -6,12 +6,12 @@
 // ============================================================================
 
 export const INITIAL_APP_UPDATE_INFO = {
-  currentVersion: "3.1.0",
-  latestAvailableVersion: "3.1.0",
+  currentVersion: "3.2.9",
+  latestAvailableVersion: "3.2.9",
   updateAvailable: false,
   adminWebUrl: "https://we-4-all-super-app.vercel.app/admin",
   apkDownloadUrl: "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-  releaseNotes: "WE4ALL v3.1.0: Clean Zero-Preinstalled Server State, Full 12-Language UI Translation, 7 Separated Portals, Dedicated Admin Web & Mobile Console."
+  releaseNotes: "WE4ALL v3.2.9 staging build: preserved ten customer entry points, Android hardening, fail-closed payment/authentication gates and expanded regression coverage."
 };
 
 export const GEO_ZONES = [
@@ -26,8 +26,35 @@ export const INITIAL_CATEGORIES = [
   { id: "veg_fruits", nameKey: "cat_veg_fruits", name: "Farm Veg & Fruits", icon: "\uD83E\uDD6C", badge: "Rytu Mandi Rate", partnerType: "merchant", flow: "instant_goods", minOrderValue: 99, baseDeliveryFee: 20 },
   { id: "non_veg", nameKey: "cat_non_veg", name: "Fresh Meat & Fish", icon: "\uD83C\uDF57", badge: "Live Cut 100% Fresh", partnerType: "merchant", flow: "instant_goods", minOrderValue: 149, baseDeliveryFee: 25 },
   { id: "construction", nameKey: "cat_construction", name: "Construction & Steel", icon: "\uD83E\uDDF1", badge: "3W/4W Heavy Dispatch", partnerType: "merchant", flow: "heavy_goods", minOrderValue: 350, baseDeliveryFee: 150 },
-  { id: "medicines", nameKey: "cat_medicines", name: "Medicines & Rx", icon: "\uD83D\uDC8A", badge: "Priority Pharmacy", partnerType: "merchant", flow: "instant_goods", minOrderValue: 49, baseDeliveryFee: 20 }
+  { id: "medicines", nameKey: "cat_medicines", name: "Medicines & Rx", icon: "\uD83D\uDC8A", badge: "Priority Pharmacy", partnerType: "merchant", flow: "instant_goods", minOrderValue: 49, baseDeliveryFee: 20 },
+  { id: "kisan_mandi", nameKey: "cat_kisan_mandi", name: "Kisan Mandi", icon: "\uD83C\uDF3E", badge: "Farmer Direct Market", partnerType: "merchant", flow: "mandi_goods", minOrderValue: 0, baseDeliveryFee: 20 }
 ];
+
+export const CUSTOMER_QUICK_LINKS = [
+  { id: "groceries", label: "Groceries", icon: "\uD83D\uDED2", tab: "stores", categoryId: "daily_needs" },
+  { id: "vegetables", label: "Veg & Fruits", icon: "\uD83E\uDD6C", tab: "stores", categoryId: "veg_fruits" },
+  { id: "meat", label: "Meat & Fish", icon: "\uD83C\uDF57", tab: "stores", categoryId: "non_veg" },
+  { id: "construction", label: "Cement & Steel", icon: "\uD83E\uDDF1", tab: "stores", categoryId: "construction" },
+  { id: "medihub", label: "MediHub", icon: "\uD83D\uDC8A", tab: "stores", categoryId: "medicines" },
+  { id: "labour", label: "Labour Adda", icon: "\uD83D\uDC77", tab: "labour" },
+  { id: "services", label: "1-Hour Services", icon: "\uD83D\uDD27", tab: "services" },
+  { id: "events", label: "Decor & Halls", icon: "\uD83C\uDF89", tab: "events" },
+  { id: "rides", label: "2W/3W/4W Rides", icon: "\uD83D\uDE95", tab: "taxi" },
+  { id: "kisan_mandi", label: "Kisan Mandi", icon: "\uD83C\uDF3E", tab: "stores", categoryId: "kisan_mandi" }
+];
+
+// Keep required product categories available when restoring older/empty cloud snapshots.
+// Cloud-defined values can customize built-in categories; custom categories remain intact.
+export function mergeRequiredCategories(required = [], saved = []) {
+  const savedList = Array.isArray(saved) ? saved : [];
+  const byId = new Map(savedList.filter((item) => item && item.id).map((item) => [item.id, item]));
+  const requiredIds = new Set(required.filter((item) => item && item.id).map((item) => item.id));
+  const mergedRequired = required
+    .filter((item) => item && item.id)
+    .map((item) => ({ ...item, ...(byId.get(item.id) || {}) }));
+  const custom = savedList.filter((item) => item && item.id && !requiredIds.has(item.id));
+  return [...mergedRequired, ...custom];
+}
 
 export const SERVICE_CATEGORIES = [
   { id: "srv_plumbing", nameKey: "srv_plumbing", name: "Plumbers & Water Fix", icon: "\uD83D\uDD27", startingVisitFee: 99, badge: "40-Min Arrival" },
