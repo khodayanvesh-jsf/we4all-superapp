@@ -43,6 +43,38 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
 
   const admin = ctx.supabaseAdmin;
 
+  if (body.action === "fee_list") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage fee policies" }, 403);
+    const { data: policies, error } = await admin
+      .from("we4all_fee_policies")
+      .select("id,fee_type,scope_type,scope_key,rate_percent,fixed_inr,fee_basis,display_name,disclosure_text,terms_version,active,effective_at,ends_at,version,updated_at")
+      .order("fee_type", { ascending: true })
+      .order("scope_type", { ascending: true })
+      .order("scope_key", { ascending: true });
+    if (error) {
+      console.error("WE4ALL fee policy list failed:", error.message);
+      return json({ ok: false, error: "Could not load the server fee policies" }, 500);
+    }
+    return json({ ok: true, policies: policies || [] });
+  }
+
+  if (body.action === "fee_save") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage fee policies" }, 403);
+    if (!body.policy || typeof body.policy !== "object" || Array.isArray(body.policy)) {
+      return json({ ok: false, error: "A valid fee policy is required" }, 400);
+    }
+    const { data, error } = await admin.rpc("we4all_manage_fee_policy", {
+      p_policy: body.policy,
+      p_actor_id: reviewerId
+    });
+    if (error) {
+      console.error("WE4ALL fee policy save failed:", error.message);
+      const status = error.code === "42501" ? 403 : 400;
+      return json({ ok: false, error: error.message || "Could not save the fee policy" }, status);
+    }
+    return json({ ok: true, result: data });
+  }
+
   if (body.action === "whoami") {
     return json({
       ok: true,

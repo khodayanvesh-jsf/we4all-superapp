@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
+import { validateFeePolicy } from "./workflows/feePolicies";
 import {
   saveCloudAndLocalState,
   pullRemoteSupabaseState,
@@ -189,6 +190,75 @@ export default function FounderAdminSuite({
   const [serverPartnerApplicationsLoading, setServerPartnerApplicationsLoading] = useState(false);
   const [serverPartnerApplicationsError, setServerPartnerApplicationsError] = useState("");
   const [serverReviewBusyId, setServerReviewBusyId] = useState("");
+  const [feePolicies, setFeePolicies] = useState([]);
+  const [feePolicyLoading, setFeePolicyLoading] = useState(false);
+  const [feePolicyMessage, setFeePolicyMessage] = useState("");
+  const [feePolicyDraft, setFeePolicyDraft] = useState({
+    fee_type: "customer_platform_fee",
+    scope_type: "global",
+    scope_key: "*",
+    rate_percent: 0,
+    fixed_inr: 0,
+    fee_basis: "order",
+    display_name: "WE4ALL platform fee",
+    disclosure_text: "",
+    terms_version: "",
+    active: false,
+    effective_at: new Date().toISOString()
+  });
+
+  const refreshFeePolicies = async () => {
+    if (!supabase) {
+      setFeePolicyMessage("Supabase client is not configured. Fee settings have not been saved.");
+      return;
+    }
+    setFeePolicyLoading(true);
+    setFeePolicyMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "fee_list" } });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Founder fee access was denied.");
+      setFeePolicies(Array.isArray(data.policies) ? data.policies : []);
+      setFeePolicyMessage("Server fee policies loaded. The launch policy is 0%; active customer fees appear before checkout confirmation.");
+    } catch (error) {
+      setFeePolicyMessage(error?.message || "Could not load server fee policies.");
+    } finally {
+      setFeePolicyLoading(false);
+    }
+  };
+
+  const saveFeePolicy = async () => {
+    const localError = validateFeePolicy(feePolicyDraft);
+    if (localError) {
+      setFeePolicyMessage(localError);
+      return;
+    }
+    if (feePolicyDraft.active && Number(feePolicyDraft.rate_percent || 0) + Number(feePolicyDraft.fixed_inr || 0) > 0) {
+      if (feePolicyDraft.fee_type !== "customer_platform_fee") {
+        setFeePolicyMessage("This fee can be saved as a draft. It cannot be activated until the related merchant settlement or rider selection flow is connected and verified.");
+        return;
+      }
+      if (!["global", "category", "catalog_item"].includes(feePolicyDraft.scope_type)) {
+        setFeePolicyMessage("This fee can be saved as a draft. Service and zone transactions must be connected to server checkout before activation.");
+        return;
+      }
+    }
+    setFeePolicyLoading(true);
+    setFeePolicyMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "fee_save", policy: feePolicyDraft }
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Could not save the fee policy.");
+      setFeePolicyMessage("Fee policy saved to Supabase and recorded in the audit history.");
+      await refreshFeePolicies();
+    } catch (error) {
+      setFeePolicyMessage(error?.message || "Could not save the fee policy.");
+    } finally {
+      setFeePolicyLoading(false);
+    }
+  };
   const [serverKycChecklist, setServerKycChecklist] = useState({});
   const [serverReviewReasons, setServerReviewReasons] = useState({});
 
@@ -263,6 +333,7 @@ export default function FounderAdminSuite({
 
   useEffect(() => {
     if (founderTab === "approvals") refreshServerPartnerApplications();
+    if (founderTab === "monetization") refreshFeePolicies();
   }, [founderTab]);
 
   const [otaForm, setOtaForm] = useState({
@@ -2201,110 +2272,74 @@ export default function FounderAdminSuite({
       )}
 
       {/* =====================================================================
-          TAB 8: COMMISSIONS & SILENT BACKEND MONETIZATION ENGINE
+          TAB 8: SERVER-SIDE FEE GOVERNANCE
       ===================================================================== */}
       {founderTab === "monetization" && (
         <div className="space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h3 className="font-black text-emerald-400 text-sm">
-              Town Commission Governance Sliders
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <p className="font-bold">Merchant Commission: {merchantCommissionPct}%</p>
-                <input
-                  type="range"
-                  min="0"
-                  max="15"
-                  step="0.5"
-                  value={merchantCommissionPct}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setMerchantCommissionPct(v);
-                    saveCloudAndLocalState({ merchantCommissionPct: v });
-                  }}
-                  className="w-full mt-2 accent-emerald-400"
-                />
-              </div>
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <p className="font-bold">Consumer Platform Fee: {consumerFeePct}%</p>
-                <input
-                  type="range"
-                  min="0"
-                  max="10"
-                  step="0.5"
-                  value={consumerFeePct}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setConsumerFeePct(v);
-                    saveCloudAndLocalState({ consumerFeePct: v });
-                  }}
-                  className="w-full mt-2 accent-emerald-400"
-                />
-              </div>
-            </div>
+          <div className="rounded-2xl border border-emerald-700/60 bg-emerald-950/30 p-4 space-y-2">
+            <h3 className="font-black text-emerald-300 text-sm">Zero-commission launch and fee controls</h3>
+            <p className="text-[11px] text-slate-200">Launch defaults: merchant commission 0%, customer platform fee Rs.0, and rider priority fee Rs.0. Customer fees appear in the itemized checkout total before confirmation. A new merchant deduction requires final merchant terms and a working settlement flow.</p>
+            <p className="text-[10px] text-amber-200">Changes are versioned in Supabase and written to an audit history. New policies apply only from their effective time; existing orders keep their original fee snapshot.</p>
           </div>
 
-          <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-4 space-y-3">
-            <h3 className="font-black text-amber-400 text-sm">
-              Silent Backend Monetization Engine
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <label className="text-[10px] text-slate-400 block">
-                  Global Checkout Surcharge (Rs.)
-                </label>
-                <input
-                  type="number"
-                  value={monetizationConfig?.globalPlatformFee || 0}
-                  onChange={(e) => {
-                    const next = {
-                      ...monetizationConfig,
-                      globalPlatformFee: Number(e.target.value) || 0
-                    };
-                    setMonetizationConfig(next);
-                    saveCloudAndLocalState({ monetizationConfig: next });
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white mt-1"
-                />
-              </div>
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <label className="text-[10px] text-slate-400 block">
-                  Service Booking Surcharge (Rs.)
-                </label>
-                <input
-                  type="number"
-                  value={monetizationConfig?.serviceBookingSurcharge || 0}
-                  onChange={(e) => {
-                    const next = {
-                      ...monetizationConfig,
-                      serviceBookingSurcharge: Number(e.target.value) || 0
-                    };
-                    setMonetizationConfig(next);
-                    saveCloudAndLocalState({ monetizationConfig: next });
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white mt-1"
-                />
-              </div>
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                <label className="text-[10px] text-slate-400 block">
-                  Per-Product Surcharge (Rs.)
-                </label>
-                <input
-                  type="number"
-                  value={monetizationConfig?.productSpecificFee || 0}
-                  onChange={(e) => {
-                    const next = {
-                      ...monetizationConfig,
-                      productSpecificFee: Number(e.target.value) || 0
-                    };
-                    setMonetizationConfig(next);
-                    saveCloudAndLocalState({ monetizationConfig: next });
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white mt-1"
-                />
-              </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-black text-amber-300 text-sm">Create or update a fee policy</h3>
+              <button type="button" onClick={refreshFeePolicies} disabled={feePolicyLoading} className="rounded-lg bg-slate-700 px-3 py-2 text-[10px] font-bold disabled:opacity-50">{feePolicyLoading ? "Loading…" : "Refresh server policies"}</button>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <label className="text-[10px] text-slate-300">Fee type
+                <select value={feePolicyDraft.fee_type} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, fee_type: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white">
+                  <option value="customer_platform_fee">Customer platform fee</option>
+                  <option value="merchant_commission">Merchant commission</option>
+                  <option value="rider_priority_fee">Rider priority fee</option>
+                </select>
+              </label>
+              <label className="text-[10px] text-slate-300">Apply to
+                <select value={feePolicyDraft.scope_type} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_type: e.target.value, scope_key: e.target.value === "global" ? "*" : "" }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white">
+                  <option value="global">All supported orders</option><option value="category">Product category</option><option value="catalog_item">Specific catalogue item</option><option value="service">Service selection</option><option value="zone">Zone</option>
+                </select>
+              </label>
+              {feePolicyDraft.scope_type !== "global" && <label className="text-[10px] text-slate-300">Category, item, service, or zone key
+                <input value={feePolicyDraft.scope_key} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_key: e.target.value }))} placeholder="e.g. daily_needs or catalogue UUID" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>}
+              <label className="text-[10px] text-slate-300">Percentage (max merchant 10%, customer 5%)
+                <input type="number" min="0" max={feePolicyDraft.fee_type === "customer_platform_fee" ? "5" : "10"} step="0.5" value={feePolicyDraft.rate_percent} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, rate_percent: Number(e.target.value) || 0, fixed_inr: 0 }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              <label className="text-[10px] text-slate-300">Or fixed fee (Rs.)
+                <input type="number" min="0" max="10000" step="1" value={feePolicyDraft.fixed_inr} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, fixed_inr: Number(e.target.value) || 0, rate_percent: 0 }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              <label className="text-[10px] text-slate-300">Fee label shown to users
+                <input value={feePolicyDraft.display_name} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, display_name: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              <label className="text-[10px] text-slate-300 md:col-span-2">Plain-language disclosure shown before confirmation
+                <textarea value={feePolicyDraft.disclosure_text} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, disclosure_text: e.target.value }))} placeholder="Explain who pays this fee and how it is calculated." rows={2} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              <label className="text-[10px] text-slate-300">Effective from
+                <input type="datetime-local" value={new Date(feePolicyDraft.effective_at).toISOString().slice(0, 16)} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, effective_at: new Date(e.target.value).toISOString() }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>
+              {feePolicyDraft.fee_type === "merchant_commission" && <label className="text-[10px] text-slate-300">Final merchant terms version
+                <input value={feePolicyDraft.terms_version} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, terms_version: e.target.value }))} placeholder="final-2026-01" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" />
+              </label>}
+              <label className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-200 md:col-span-2">
+                <input type="checkbox" checked={Boolean(feePolicyDraft.active)} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, active: e.target.checked }))} className="accent-emerald-400" /> Save as active from the effective time
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={saveFeePolicy} disabled={feePolicyLoading} className="rounded-lg bg-emerald-500 px-4 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">{feePolicyLoading ? "Saving…" : "Save policy to server"}</button>
+              <p className="self-center text-[10px] text-slate-400">Merchant commission and rider priority fees stay draft-only until their settlement/selection modules are connected.</p>
+            </div>
+            {feePolicyMessage && <p role="status" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-amber-100">{feePolicyMessage}</p>}
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
+            <div className="flex justify-between items-center"><h3 className="font-black text-white text-sm">Server fee policies</h3><span className="text-[10px] text-slate-400">{feePolicies.length} records</span></div>
+            {feePolicies.length === 0 ? <p className="text-[10px] text-slate-400">No server policies loaded yet. Refresh after the fee-policy migration is installed in staging.</p> : feePolicies.map((policy) => (
+              <div key={policy.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3 text-[10px]">
+                <div><strong className="text-white">{policy.display_name}</strong><p className="text-slate-400">{policy.fee_type.replaceAll("_", " ")} · {policy.scope_type}:{policy.scope_key} · v{policy.version}</p><p className="text-amber-200">{policy.rate_percent}% {Number(policy.fixed_inr) ? `+ Rs.${policy.fixed_inr}` : ""} · {policy.active ? "Active" : "Draft"}</p></div>
+                <button type="button" onClick={() => setFeePolicyDraft({ ...policy, active: Boolean(policy.active), rate_percent: Number(policy.rate_percent || 0), fixed_inr: Number(policy.fixed_inr || 0) })} className="rounded-lg bg-slate-700 px-3 py-1.5 font-bold text-white">Edit policy</button>
+              </div>
+            ))}
           </div>
         </div>
       )}
