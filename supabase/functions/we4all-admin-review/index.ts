@@ -406,7 +406,7 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
           Deno.env.get("WE4ALL_TRIAL_OTP_ENABLED") === "true" &&
           Deno.env.get("WE4ALL_TRIAL_OTP_ENV") === "preview";
         if (!trialOverrideEnabled || body.allow_trial_phone_override !== true) {
-          return json({ ok: false, error: "Trial-generated codes do not verify phone ownership. Preview approval requires the Founder’s explicit test override after completing every KYC and signature check." }, 409);
+          return json({ ok: false, error: "The trial-generated code does not prove phone ownership. Preview approval requires the Founder’s explicit test override after completing every KYC and signature check." }, 409);
         }
       }
     }
