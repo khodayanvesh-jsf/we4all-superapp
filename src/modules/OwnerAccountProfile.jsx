@@ -110,6 +110,12 @@ export default function OwnerAccountProfile(rawProps = {}) {
         return;
       }
       const user = data.user;
+      const activation = await activateSupabaseAccount(user.id);
+      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
+      if (activation.changed && typeof window !== "undefined") {
+        window.location.reload();
+        return;
+      }
       const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
         supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
