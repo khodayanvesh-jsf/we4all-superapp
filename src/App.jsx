@@ -35,6 +35,7 @@ import RiderCaptainPortal from "./modules/RiderCaptainPortal";
 import { canOpenPartnerPortal, isCustomerVisibleListing, calculateDecoratorAdvance } from "./modules/workflows/portalRules";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
+import AdminSecurityGate from "./modules/AdminSecurityGate";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
 import {
@@ -1958,80 +1959,13 @@ function AppContent() {
 
       {viewMode === "founder_web" ? (
         !isAdminAuthenticated ? (
-          <div className="max-w-md mx-auto mt-12 bg-slate-900 border border-amber-400/50 rounded-3xl p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="font-black text-amber-400 text-base">
-                WE4ALL Founder Admin 2-Factor Gate
-              </h2>
-              <button
-                type="button"
-                onClick={() => setViewMode("mobile_app")}
-                className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer"
-              >
-                Back to App
-              </button>
-            </div>
-            {adminLoginError && (
-              <p className="text-rose-400 text-xs font-bold">{adminLoginError}</p>
-            )}
-            {adminAuthStep === 1 ? (
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={adminLoginForm.username}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, username: e.target.value })
-                  }
-                  placeholder="Founder username (server authentication required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <input
-                  type="password"
-                  value={adminLoginForm.password}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, password: e.target.value })
-                  }
-                  placeholder="Founder password (server authentication required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    setAdminAuthStep(1);
-                    setAdminLoginError(
-                      "Founder login is disabled until server-side founder authentication and step-up verification are configured. No browser-stored fallback credentials are accepted."
-                    );
-                  }}
-                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Founder authentication unavailable
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <input
-                  type="password"
-                  value={adminPinInput}
-                  onChange={(e) => setAdminPinInput(e.target.value)}
-                  placeholder="Founder PIN (server verification required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-center font-black tracking-widest text-amber-300"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    setAdminLoginError(
-                      "Founder PIN verification is unavailable until a server-validated founder session is implemented."
-                    );
-                  }}
-                  className="w-full bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Server verification required
-                </button>
-              </div>
-            )}
-          </div>
+          <AdminSecurityGate
+            onBackToApp={() => setViewMode("mobile_app")}
+            onAuthorized={(access) => {
+              setAdminAccess(access);
+              setIsAdminAuthenticated(true);
+            }}
+          />
         ) : (
           <div className="p-4 space-y-4">
             <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-900 p-3 rounded-2xl border border-amber-400/40">
