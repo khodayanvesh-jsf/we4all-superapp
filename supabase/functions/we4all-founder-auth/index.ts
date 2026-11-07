@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
     if (!founder) {
       const matchesBootstrap = requested === BOOTSTRAP_USERNAME.toLowerCase() &&
         secureEqual(await sha256(password), BOOTSTRAP_PASSWORD_SHA256);
-      if (!matchesBootstrap) return json({ ok: false, error: "Founder sign-in failed. Check the username and password." }, 401);
+      if (!matchesBootstrap) return json({ ok: false, error: "Founder username or password is incorrect. After first-use reset, use your new password; the temporary bootstrap password no longer works." }, 401);
       const { data: created, error: createError } = await admin.auth.admin.createUser({
         email: BOOTSTRAP_EMAIL,
         email_confirm: true,
@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     const { data: signedIn, error: signInError } = await publicClient.auth.signInWithPassword({ email: accountEmail, password });
     if (signInError || !signedIn?.session) {
       console.error("Founder sign-in rejected", signInError?.message || "missing session");
-      return json({ ok: false, error: "Founder sign-in failed. Check the username and password." }, 401);
+      return json({ ok: false, error: "Founder username or password is incorrect. After first-use reset, use your new password; the temporary bootstrap password no longer works." }, 401);
     }
     return json({
       ok: true,

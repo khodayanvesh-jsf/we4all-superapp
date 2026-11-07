@@ -68,9 +68,11 @@ test("Founder bootstrap is server-verified and requires password rotation plus M
   const founderAuth = await read("../supabase/functions/we4all-founder-auth/index.ts");
   const adminFunction = await read("../supabase/functions/we4all-admin-review/index.ts");
   assert.match(gate, /we4all-founder-auth/);
+  assert.match(gate, /response\.json\(\)/);
   assert.match(gate, /complete_bootstrap_password_change/);
   assert.match(gate, /supabase.auth.mfa.enroll/);
   assert.match(founderAuth, /BOOTSTRAP_PASSWORD_SHA256/);
+  assert.match(founderAuth, /After first-use reset, use your new password/);
   assert.match(founderAuth, /we4all_bootstrap_required: true/);
   assert.match(adminFunction, /must_change_password/);
   assert.match(adminFunction, /Change the initial Founder password/);

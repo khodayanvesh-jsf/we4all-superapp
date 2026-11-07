@@ -69,6 +69,15 @@ export default function AdminSecurityGate({ onAuthorized, onBackToApp }) {
       const { data, error } = await supabase.functions.invoke("we4all-founder-auth", {
         body: { action: "login", username: signInForm.username.trim(), password: signInForm.password }
       });
+      if (error) {
+        let serverMessage = "";
+        try {
+          const response = error.context;
+          const payload = response && typeof response.json === "function" ? await response.json() : null;
+          serverMessage = typeof payload?.error === "string" ? payload.error : "";
+        } catch { /* Keep Supabase's safe fallback message when no JSON error body exists. */ }
+        throw new Error(serverMessage || error.message || "Founder sign-in failed.");
+      }
       if (error || data?.ok !== true || !data.session?.access_token || !data.session?.refresh_token) {
         throw new Error(data?.error || error?.message || "Founder sign-in failed.");
       }
