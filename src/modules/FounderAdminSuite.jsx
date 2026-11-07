@@ -217,6 +217,7 @@ export default function FounderAdminSuite({
   const [serverPartnerApplications, setServerPartnerApplications] = useState([]);
   const [serverPartnerApplicationsLoading, setServerPartnerApplicationsLoading] = useState(false);
   const [serverPartnerApplicationsError, setServerPartnerApplicationsError] = useState("");
+  const [trialPhoneOverrideByApplication, setTrialPhoneOverrideByApplication] = useState({});
   const [serverReviewBusyId, setServerReviewBusyId] = useState("");
   const [feePolicies, setFeePolicies] = useState([]);
   const [feePolicyLoading, setFeePolicyLoading] = useState(false);
@@ -432,6 +433,10 @@ export default function FounderAdminSuite({
         setServerPartnerApplicationsError("Approval is paused until the Founder publishes the final partner terms. This applicant accepted the trial declaration only.");
         return;
       }
+      if (application.trial_phone_verification && (!application.trial_approval_override_allowed || !trialPhoneOverrideByApplication[applicationId])) {
+        setServerPartnerApplicationsError("This trial OTP does not prove phone ownership. Only the Founder can explicitly approve a trial account during preview testing.");
+        return;
+      }
     }
     if (decision !== "approved" && reason.length < 4) {
       setServerPartnerApplicationsError("Enter a short reason before rejecting or suspending this application.");
@@ -441,7 +446,10 @@ export default function FounderAdminSuite({
     setServerPartnerApplicationsError("");
     try {
       const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "review", application_id: applicationId, decision, reason, checklist }
+        body: {
+          action: "review", application_id: applicationId, decision, reason, checklist,
+          allow_trial_phone_override: Boolean(application.trial_phone_verification && trialPhoneOverrideByApplication[applicationId])
+        }
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error || "Partner application review failed.");
@@ -1058,6 +1066,18 @@ export default function FounderAdminSuite({
                         </div>
                         <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2">
                           <p className="text-[10px] text-slate-300">Documents are private. Review each file before checking its box. Links expire after a few minutes; refresh the queue if one expires.</p>
+                          {application.trial_phone_verification && (
+                            <label className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-950/30 p-2 text-[10px] text-amber-100">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(trialPhoneOverrideByApplication[application.id])}
+                                disabled={!application.trial_approval_override_allowed}
+                                onChange={() => setTrialPhoneOverrideByApplication((current) => ({ ...current, [application.id]: !current[application.id] }))}
+                                className="mt-0.5 accent-amber-400"
+                              />
+                              <span>{application.trial_approval_override_allowed ? "Founder test override: I understand the generated trial code did not verify phone ownership, and approve this test account only after checking its documents." : "Trial code did not verify phone ownership. Preview approval override is available to the Founder only."}</span>
+                            </label>
+                          )}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             {reviewItems.map(([key, label]) => (
                               <label key={key} className="flex items-start gap-2 rounded-lg bg-slate-900 p-2 text-[10px] text-slate-200">
@@ -1076,7 +1096,7 @@ export default function FounderAdminSuite({
                       <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id || kyc.status !== "submitted" || !allChecksComplete || !String(kyc.terms?.version || "").startsWith("final-")}
+                        disabled={serverReviewBusyId === application.id || kyc.status !== "submitted" || !allChecksComplete || !String(kyc.terms?.version || "").startsWith("final-") || (application.trial_phone_verification && (!application.trial_approval_override_allowed || !trialPhoneOverrideByApplication[application.id]))}
                         onClick={() => reviewServerPartnerApplication(application, "approved")}
                         title={!String(kyc.terms?.version || "").startsWith("final-") ? "Publish final partner terms before activation" : "Complete all five checks first"}
                         className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
