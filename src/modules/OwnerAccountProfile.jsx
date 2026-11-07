@@ -7,8 +7,7 @@ import {
   getFounderCredentials,
   supabase,
   activateSupabaseAccount,
-  clearActiveSupabaseAccount,
-  probeSupabaseConnection
+  clearActiveSupabaseAccount
 } from "../supabaseClient";
 import { GEO_ZONES } from "../data";
 import SignaturePad from "./SignaturePad";
@@ -90,16 +89,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
   });
   const [kycSubmitting, setKycSubmitting] = useState(false);
   const [kycFeedback, setKycFeedback] = useState({ type: "", message: "" });
-  const [connectionHealth, setConnectionHealth] = useState({
-    checking: true,
-    configured: false,
-    backendReachable: false,
-    authenticated: false,
-    accountLinked: false,
-    syncReady: false,
-    message: "Checking Supabase connection…"
-  });
-
   useEffect(() => {
     let active = true;
     const guest = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
@@ -200,20 +189,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
     return () => { active = false; };
   }, []);
 
-
-  useEffect(() => {
-    let active = true;
-    const refreshConnection = async () => {
-      const result = await probeSupabaseConnection();
-      if (active) setConnectionHealth({ checking: false, ...result });
-    };
-    refreshConnection();
-    const timer = window.setInterval(refreshConnection, 30000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [localUser?.authUserId]);
 
   useEffect(() => {
     let active = true;
@@ -693,53 +668,18 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   return (
     <div className="space-y-4 pb-8 text-xs font-sans">
-      {/* Top Session Status Card */}
-      <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-4 shadow-xl flex flex-wrap justify-between items-center gap-3">
-        <div>
-          <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-[9px] font-black px-2.5 py-0.5 rounded uppercase">
-            {isLoggedIn
-              ? `Active Session: ${(localUser.role || "customer").toUpperCase()} Portal`
-              : "Guest Visitor Mode (Shopping Enabled)"}
-          </span>
-          <h3 className="text-base font-black text-white mt-1">
-            {isLoggedIn ? localUser.fullName || localUser.name : "Guest Visitor (Explore & Add to Cart)"}
-          </h3>
-          <p className="text-[11px] text-slate-300">
-            {isLoggedIn
-              ? `Mobile: +91 ${localUser.phone} | UPI: ${localUser.upiId || "N/A"}`
-              : "Browse products, add items to cart freely. Login/Registration is required only before payment."}
-          </p>
-        </div>
-        {isLoggedIn && (
+      {isLoggedIn && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
+          <p className="truncate font-black text-white">{localUser.fullName || localUser.name || "My Account"}</p>
           <button
             type="button"
             onClick={handleLogout}
-            className="bg-rose-600 hover:bg-rose-500 text-white font-black px-4 py-2 rounded-2xl cursor-pointer shadow text-xs"
+            className="shrink-0 rounded-xl bg-rose-600 px-3 py-2 text-[10px] font-black text-white"
           >
-            🚪 Logout Session
+            Log out
           </button>
-        )}
-      </div>
-
-      <div className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] space-y-1">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="font-black text-slate-200">Supabase cloud connection</span>
-          <span className={connectionHealth.syncReady ? "text-emerald-300 font-black" : connectionHealth.backendReachable ? "text-amber-300 font-black" : "text-rose-300 font-black"}>
-            {connectionHealth.checking
-              ? "CHECKING"
-              : connectionHealth.syncReady
-                ? "CONNECTED · ACCOUNT SYNC VERIFIED"
-                : connectionHealth.backendReachable
-                  ? connectionHealth.authenticated
-                    ? "API CONNECTED · ACCOUNT LINK PENDING"
-                    : "API CONNECTED · SIGN IN TO SYNC"
-                  : connectionHealth.configured
-                    ? "API UNREACHABLE"
-                    : "NOT CONFIGURED"}
-          </span>
         </div>
-        <p className="text-slate-400">{connectionHealth.message}</p>
-      </div>
+      )}
 
       {/* Account Navigation Tabs */}
       <div className={`grid ${partnerApplication ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"} gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800`}>

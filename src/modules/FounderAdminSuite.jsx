@@ -119,7 +119,7 @@ export default function FounderAdminSuite({
 
   const [adminDisplayMode, setAdminDisplayMode] = useState("web");
   const [founderTab, setFounderTab] = useState("approvals");
-  const [adminCredentialForm, setAdminCredentialForm] = useState({ email: "", password: "", confirmPassword: "" });
+  const [adminCredentialForm, setAdminCredentialForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
   const [adminCredentialMessage, setAdminCredentialMessage] = useState("");
   const [adminCredentialBusy, setAdminCredentialBusy] = useState(false);
   const [registrationRoleSettings, setRegistrationRoleSettings] = useState([]);
@@ -546,7 +546,7 @@ export default function FounderAdminSuite({
   const updateAdminCredentials = async (event) => {
     event?.preventDefault?.();
     if (!supabase) { setAdminCredentialMessage("Supabase is not configured; credentials were not changed."); return; }
-    const { email, password, confirmPassword } = adminCredentialForm;
+    const { username, email, password, confirmPassword } = adminCredentialForm;
     const updates = {};
     if (email.trim()) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setAdminCredentialMessage("Enter a valid sign-in email."); return; }
@@ -557,17 +557,26 @@ export default function FounderAdminSuite({
       if (password !== confirmPassword) { setAdminCredentialMessage("The new password entries do not match."); return; }
       updates.password = password;
     }
-    if (!Object.keys(updates).length) { setAdminCredentialMessage("Enter a new email or password."); return; }
+    const nextUsername = username.trim();
+    if (nextUsername && !/^[A-Za-z0-9._-]{3,64}$/.test(nextUsername)) { setAdminCredentialMessage("Use 3–64 letters, numbers, dots, underscores or hyphens for the Founder username."); return; }
+    if (!Object.keys(updates).length && !nextUsername) { setAdminCredentialMessage("Enter a new username, email or password."); return; }
     setAdminCredentialBusy(true);
     setAdminCredentialMessage("Verifying the administrator session…");
     try {
       const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (assuranceError) throw assuranceError;
       if (assurance?.currentLevel !== "aal2") throw new Error("Complete the administrator authenticator check again before changing credentials.");
-      const { error } = await supabase.auth.updateUser(updates);
-      if (error) throw error;
-      setAdminCredentialForm({ email: "", password: "", confirmPassword: "" });
-      setAdminCredentialMessage(updates.email ? "Credential change submitted. Confirm the email change through the verification message; the password is updated." : "Administrator password updated.");
+      if (nextUsername) {
+        const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "credentials_update", username: nextUsername } });
+        if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not update the Founder username.");
+      }
+      if (Object.keys(updates).length) {
+        const { error } = await supabase.auth.updateUser(updates);
+        if (error) throw error;
+      }
+      setAdminCredentialForm({ username: "", email: "", password: "", confirmPassword: "" });
+      const changes = [nextUsername && "username updated", updates.email && "email change submitted for confirmation", updates.password && "password updated"].filter(Boolean);
+      setAdminCredentialMessage(`Founder ${changes.join("; ")}.`);
     } catch (error) {
       setAdminCredentialMessage(error?.message || "Could not update administrator credentials.");
     } finally {
@@ -1879,7 +1888,8 @@ export default function FounderAdminSuite({
 
           <form onSubmit={updateAdminCredentials} className="bg-slate-900 border border-rose-400/40 rounded-2xl p-4 space-y-3">
             <h3 className="font-black text-white text-sm">Change administrator sign-in credentials</h3>
-            <p className="text-[11px] text-slate-300">This changes the signed-in Supabase administrator account. A fresh authenticator (MFA) check is required. Email changes require confirmation. The Founder role stays server-managed.</p>
+            <p className="text-[11px] text-slate-300">A fresh authenticator (MFA) check is required. Username and Founder role are controlled by the server; email changes require confirmation.</p>
+            <input type="text" autoComplete="username" value={adminCredentialForm.username} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, username: event.target.value })} placeholder="New Founder username (optional)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
             <input type="email" autoComplete="email" value={adminCredentialForm.email} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, email: event.target.value })} placeholder="New sign-in email (optional)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
             <input type="password" autoComplete="new-password" value={adminCredentialForm.password} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, password: event.target.value })} placeholder="New password (12+ characters)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
             <input type="password" autoComplete="new-password" value={adminCredentialForm.confirmPassword} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, confirmPassword: event.target.value })} placeholder="Confirm new password" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />

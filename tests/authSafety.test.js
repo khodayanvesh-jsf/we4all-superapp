@@ -27,8 +27,23 @@ test("registration creates a verified customer and submits partner applications 
 
 test("restored sessions are revalidated with Supabase rather than local identity storage", () => {
   assert.match(ownerAccountSource, /supabase\.auth\.getUser/);
+  assert.match(ownerAccountSource, /activateSupabaseAccount\(user\.id\)/);
   assert.doesNotMatch(ownerAccountSource, /we4all_persistent_user_session_v8/);
   assert.match(ownerAccountSource, /currentUser\?\.authUserId/);
+});
+
+test("account screen keeps guest shopping but hides connection and guest mode notices", async () => {
+  const feedback = await read("../src/modules/ActionAndErrorFeedbackLayer.jsx");
+  assert.doesNotMatch(ownerAccountSource, /Supabase cloud connection|API CONNECTED · SIGN IN TO SYNC|Guest Visitor Mode \(Shopping Enabled\)/);
+  assert.doesNotMatch(feedback, /Guest Visitor Mode Enabled|Explore products, add items to cart freely/);
+  assert.match(ownerAccountSource, /Guest Visitor/);
+  assert.match(ownerAccountSource, /activateSupabaseAccount\(user\.id\)/);
+});
+
+test("Supabase auth persists and refreshes signed-in sessions automatically", async () => {
+  const client = await read("../src/supabaseClient.js");
+  assert.match(client, /persistSession:\s*true/);
+  assert.match(client, /autoRefreshToken:\s*true/);
 });
 
 test("partner access still requires server-verified approved role", () => {
@@ -44,6 +59,22 @@ test("administrator credentials can be changed only in the MFA-protected Founder
   assert.match(founderAdmin, /supabase\.auth\.updateUser\(updates\)/);
   assert.match(founderAdmin, /password\.length < 12/);
   assert.match(founderAdmin, /Change administrator sign-in credentials/);
+  assert.match(founderAdmin, /credentials_update/);
+  assert.match(founderAdmin, /New Founder username/);
+});
+
+test("Founder bootstrap is server-verified and requires password rotation plus MFA", async () => {
+  const gate = await read("../src/modules/AdminSecurityGate.jsx");
+  const founderAuth = await read("../supabase/functions/we4all-founder-auth/index.ts");
+  const adminFunction = await read("../supabase/functions/we4all-admin-review/index.ts");
+  assert.match(gate, /we4all-founder-auth/);
+  assert.match(gate, /complete_bootstrap_password_change/);
+  assert.match(gate, /supabase.auth.mfa.enroll/);
+  assert.match(founderAuth, /BOOTSTRAP_PASSWORD_SHA256/);
+  assert.match(founderAuth, /we4all_bootstrap_required: true/);
+  assert.match(adminFunction, /must_change_password/);
+  assert.match(adminFunction, /Change the initial Founder password/);
+  assert.match(adminFunction, /claims\.aal !== "aal2"/);
 });
 
 test("PIN and biometric sign-in use Supabase Auth and native device authentication", () => {

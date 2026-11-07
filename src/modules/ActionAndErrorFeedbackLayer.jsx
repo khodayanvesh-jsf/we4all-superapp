@@ -23,7 +23,6 @@ export default function ActionAndErrorFeedbackLayer({ children }) {
       localStorage.setItem("we4all_install_permissions_granted_v1", "true");
     } catch (e) {}
     setPermissionsGranted(true);
-    showActionReflection("Guest Visitor Mode Enabled ✓", "READY ✓");
   };
 
   const isPaymentTrigger = (text) => {
@@ -231,15 +230,12 @@ export default function ActionAndErrorFeedbackLayer({ children }) {
             <h2 style={{ margin: "10px 0 4px", fontSize: "18px", fontWeight: 900, color: "#fff" }}>
               Allow App Permissions to Start
             </h2>
-            <p style={{ margin: "0 0 14px", fontSize: "12px", color: "#94a3b8" }}>
-              You start in <strong>Guest Visitor Mode</strong> where you can browse and add items or services to your cart freely. Login or registration is required only before payment.
-            </p>
             <button
               type="button"
               onClick={handleGrantAllInstallPermissions}
               style={{ width: "100%", background: "#10b981", color: "#022c22", border: "none", borderRadius: "16px", padding: "13px", fontWeight: 900, fontSize: "13px", cursor: "pointer" }}
             >
-              ✓ Allow &amp; Start as Guest Visitor →
+              ✓ Allow &amp; Start →
             </button>
           </div>
         </div>

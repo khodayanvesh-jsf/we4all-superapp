@@ -43,6 +43,54 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
 
   const admin = ctx.supabaseAdmin;
 
+  if (body.action === "whoami") {
+    return json({
+      ok: true,
+      user_id: reviewerId,
+      role: adminRole,
+      zone_id: adminRole === "founder" ? null : zoneId,
+      username: typeof appMetadata.we4all_username === "string" ? appMetadata.we4all_username : null,
+      must_change_password: adminRole === "founder" && appMetadata.we4all_bootstrap_required === true
+    });
+  }
+
+  if (body.action === "complete_bootstrap_password_change") {
+    if (adminRole !== "founder" || appMetadata.we4all_bootstrap_required !== true) {
+      return json({ ok: false, error: "No pending Founder bootstrap password change was found" }, 409);
+    }
+    const { data: userData, error: userError } = await admin.auth.admin.getUserById(reviewerId);
+    if (userError || !userData?.user) return json({ ok: false, error: "Could not verify the Founder account" }, 500);
+    const nextMetadata = {
+      ...(userData.user.app_metadata || {}),
+      we4all_bootstrap_required: false,
+      we4all_bootstrap_complete: true,
+      we4all_bootstrap_used_at: new Date().toISOString()
+    };
+    const { error: updateError } = await admin.auth.admin.updateUserById(reviewerId, { app_metadata: nextMetadata });
+    if (updateError) return json({ ok: false, error: "Could not complete Founder bootstrap" }, 500);
+    return json({ ok: true });
+  }
+
+  if (adminRole === "founder" && appMetadata.we4all_bootstrap_required === true) {
+    return json({ ok: false, error: "Change the initial Founder password before opening administrator tools" }, 403);
+  }
+
+  if (body.action === "credentials_update") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to update the Founder username" }, 403);
+    const username = String(body.username || "").trim();
+    if (!/^[A-Za-z0-9._-]{3,64}$/.test(username)) return json({ ok: false, error: "Use 3–64 letters, numbers, dots, underscores or hyphens for the Founder username" }, 400);
+    const { data: users, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (listError) return json({ ok: false, error: "Could not verify username availability" }, 500);
+    const taken = (users?.users || []).some((user) => user.id !== reviewerId && user.app_metadata?.we4all_role === "founder" && String(user.app_metadata?.we4all_username || "").toLowerCase() === username.toLowerCase());
+    if (taken) return json({ ok: false, error: "That Founder username is already in use" }, 409);
+    const { data: userData, error: userError } = await admin.auth.admin.getUserById(reviewerId);
+    if (userError || !userData?.user) return json({ ok: false, error: "Could not verify the Founder account" }, 500);
+    const nextMetadata = { ...(userData.user.app_metadata || {}), we4all_username: username };
+    const { error: updateError } = await admin.auth.admin.updateUserById(reviewerId, { app_metadata: nextMetadata });
+    if (updateError) return json({ ok: false, error: "Could not update the Founder username" }, 500);
+    return json({ ok: true, username });
+  }
+
   if (body.action === "registration_roles_list") {
     if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage registration roles" }, 403);
     const { data: roles, error } = await admin.from("we4all_registration_roles").select("role_key,label,enabled,sort_order,updated_at").order("sort_order");
@@ -93,15 +141,6 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
       return json({ ok: false, error: error.message || "Could not save the fee policy" }, status);
     }
     return json({ ok: true, result: data });
-  }
-
-  if (body.action === "whoami") {
-    return json({
-      ok: true,
-      user_id: reviewerId,
-      role: adminRole,
-      zone_id: adminRole === "founder" ? null : zoneId
-    });
   }
 
   if (body.action === "list") {
