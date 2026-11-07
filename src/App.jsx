@@ -1535,7 +1535,7 @@ function AppContent() {
                       <button
                         type="button"
                         disabled={checkoutSubmitting}
-                        onClick={handlePlaceOrderForCheckout
+                        onClick={handlePlaceOrderForCheckout}
                         className="w-full bg-emerald-600 disabled:bg-slate-400 text-white font-black py-2.5 rounded-xl cursor-pointer"
                       >
                         {checkoutSubmitting
