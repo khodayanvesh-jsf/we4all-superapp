@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
+import { useRef } from "react";
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import { APP_VERSION, APP_BUILD_NUMBER } from "../appVersion.js";
 import {
@@ -24,6 +25,17 @@ const ROLE_OPTIONS = [
 ];
 const KYC_BUCKET = "we4all-partner-kyc";
 const PARTNER_TERMS_VERSION = "trial-draft-1";
+const getFunctionResponseError = async (error, fallback) => {
+  const response = error?.context;
+  if (response && typeof response.clone === "function") {
+    try {
+      const payload = await response.clone().json();
+      if (typeof payload?.error === "string" && payload.error.trim()) return payload.error;
+      if (typeof payload?.message === "string" && payload.message.trim()) return payload.message;
+    } catch { /* Use the SDK message if the response has no JSON error body. */ }
+  }
+  return error?.message || fallback;
+};
 export default function OwnerAccountProfile(rawProps = {}) {
   const {
     currentUser,
@@ -86,6 +98,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [locationBusy, setLocationBusy] = useState(false);
   const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
   const [trialChallengeId, setTrialChallengeId] = useState("");
+  const otpInputRef = useRef(null);
   const [partnerApplication, setPartnerApplication] = useState(null);
   const [partnerApplicationLoading, setPartnerApplicationLoading] = useState(false);
   const [kycFiles, setKycFiles] = useState({});
@@ -100,6 +113,23 @@ export default function OwnerAccountProfile(rawProps = {}) {
   });
   const [kycSubmitting, setKycSubmitting] = useState(false);
   const [kycFeedback, setKycFeedback] = useState({ type: "", message: "" });
+  useEffect(() => {
+    if (!otpState.sent) return undefined;
+    otpInputRef.current?.focus();
+
+    // WebOTP auto-reads origin-bound SMS on supported secure browsers. The
+    // one-time-code autocomplete hint also enables OS keyboard autofill where
+    // WebOTP itself is unavailable. Users can always type the code manually.
+    if (trialChallengeId || typeof window === "undefined" || !window.isSecureContext || !navigator.credentials?.get) return undefined;
+    const controller = new AbortController();
+    navigator.credentials.get({ otp: { transport: ["sms"] }, signal: controller.signal })
+      .then((credential) => {
+        const code = String(credential?.code || "").replace(/\D/g, "").slice(0, 6);
+        if (code.length === 6) setOtpState((current) => current.sent ? { ...current, token: code } : current);
+      })
+      .catch(() => { /* Manual entry remains available when WebOTP is unsupported or cancelled. */ });
+    return () => controller.abort();
+  }, [otpState.sent, trialChallengeId]);
   useEffect(() => {
     let active = true;
     const guest = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
@@ -381,6 +411,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       return;
     }
     setOtpState({ sent: false, phone: "", token: "", busy: true });
+    setTrialChallengeId("");
     const phone = `+91${phoneDigits}`;
     try {
       const isRegistration = authMode === "register";
@@ -404,7 +435,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
               market_id: regForm.zoneId
             }
           });
-          if (error) throw new Error(data?.error || error.message || "Trial OTP service is unavailable.");
+          if (error) throw new Error(data?.error || await getFunctionResponseError(error, "Trial OTP service is unavailable."));
           if (data?.ok !== true || !data.challenge_id || !/^\d{6}$/.test(String(data.trial_code || ""))) {
             throw new Error(data?.error || "Trial OTP service returned an invalid challenge.");
           }
@@ -438,7 +469,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       setOtpState({ sent: true, phone, token: "", busy: false });
       setFormFeedback({ type: "success", message: `SMS verification code sent to +91 ${phoneDigits}. Enter it below to ${isRegistration ? "create your account" : "set a new PIN"}.` });
     } catch (error) {
-      setOtpState({ sent: false, phone: "", token: "", busy: false });
+      setOtpState({ sent: false, phone, token: "", busy: false });
       setFormFeedback({
         type: "error",
         message: error?.message || "Could not send SMS OTP. Check that Phone Auth and an SMS provider are enabled in Supabase."
@@ -586,7 +617,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
             area: regForm.area || "", zone_id: regForm.zoneId
           }
         });
-        if (error) throw new Error(trialData?.error || error.message || "Could not verify trial code.");
+        if (error) throw new Error(trialData?.error || await getFunctionResponseError(error, "Could not verify trial code."));
         if (trialData?.ok !== true || !trialData.session?.access_token || !trialData.session?.refresh_token) {
           throw new Error(trialData?.error || "Trial registration did not return a server-authenticated session.");
         }
@@ -863,9 +894,13 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   </button>
                   {otpState.sent && (
                     <input
+                      ref={otpInputRef}
                       type="text"
                       inputMode="numeric"
                       autoComplete="one-time-code"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      aria-label="Six-digit phone verification code"
                       maxLength={6}
                       value={otpState.token}
                       onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
@@ -891,7 +926,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
               {loginMethod === "otp" && (
                 <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-[10px] text-slate-300">
                   <button type="button" disabled={otpState.busy} onClick={sendPhoneOtp} className="w-full rounded-xl bg-amber-400 px-3 py-2 font-black text-slate-950">{otpState.busy ? "Sending…" : otpState.sent ? "Resend phone code" : "Send one-time phone code"}</button>
-                  {otpState.sent && <input aria-label="Phone verification code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otpState.token} onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })} placeholder="6-digit verification code" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-center font-mono tracking-widest text-white" />}
+                  {otpState.sent && <input ref={otpInputRef} aria-label="Phone verification code" type="text" inputMode="numeric" autoComplete="one-time-code" autoCorrect="off" spellCheck={false} maxLength={6} value={otpState.token} onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })} placeholder="6-digit verification code" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-center font-mono tracking-widest text-white" />}
                   <p>OTP is used only to create an account or recover a forgotten PIN. Normal sign-in uses your PIN.</p>
                 </div>
               )}
@@ -1010,9 +1045,13 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 </button>
                 {otpState.sent && (
                   <input
+                    ref={otpInputRef}
                     type="text"
                     inputMode="numeric"
                     autoComplete="one-time-code"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    aria-label="Six-digit registration OTP"
                     maxLength={6}
                     value={otpState.token}
                     onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
