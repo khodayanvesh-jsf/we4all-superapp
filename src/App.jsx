@@ -1961,10 +1961,7 @@ function AppContent() {
         !isAdminAuthenticated ? (
           <AdminSecurityGate
             onBackToApp={() => setViewMode("mobile_app")}
-            onAuthorized={(access) => {
-              setAdminAccess(access);
-              setIsAdminAuthenticated(true);
-            }}
+            onAuthorized={() => setIsAdminAuthenticated(true)}
           />
         ) : (
           <div className="p-4 space-y-4">
