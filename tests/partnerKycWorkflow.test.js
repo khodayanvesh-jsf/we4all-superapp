@@ -34,7 +34,7 @@ test("partner application explains the steps, file limits, privacy, and draft te
 });
 
 test("Founder review exposes private document links and requires five checks and a decision reason", () => {
-  assert.match(review, /createSignedUrl\(path, 300\)/);
+  assert.match(review, /createSignedUrl\\(path, 3600\\)/);
   assert.match(admin, /documentKeys\.map/);
   assert.match(admin, /payout_proof/);
   assert.match(admin, /terms/);
