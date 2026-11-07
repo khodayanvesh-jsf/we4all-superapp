@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
+import { APP_VERSION, APP_BUILD_NUMBER } from "../appVersion.js";
 import {
   loadCloudAndLocalState,
   performZeroLossOtaUpdate,
@@ -38,6 +39,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
     liveTelemetryPing,
     appUpdateInfo = {},
     setAppUpdateInfo,
+    onCheckForUpdate = () => {},
+    checkingUpdate = false,
+    onRunOtaUpdate = () => {},
+    otaProgress = null,
     onOpenAdminGate,
     onPartnerAuthenticated,
     onLogoutPartner,
@@ -734,11 +739,12 @@ export default function OwnerAccountProfile(rawProps = {}) {
       )}
 
       {/* Account Navigation Tabs */}
-      <div className={`grid ${partnerApplication ? "grid-cols-2 md:grid-cols-4" : "grid-cols-3"} gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800`}>
+      <div className={`grid ${partnerApplication ? "grid-cols-2 md:grid-cols-5" : "grid-cols-2 md:grid-cols-4"} gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800`}>
         {[
           { id: isLoggedIn ? "account_details" : "kyc_gate", label: isLoggedIn ? "📋 Account Details" : "🔐 Login / Register" },
           { id: "profile_upi", label: "✏️ Profile & UPI" },
           { id: "addresses", label: "📍 Addresses" },
+          { id: "about_app", label: "ℹ️ About App" },
           ...(partnerApplication ? [{ id: "partner_kyc", label: "🛡️ Partner application" }] : [])
         ].map((t) => (
           <button
@@ -1067,6 +1073,45 @@ export default function OwnerAccountProfile(rawProps = {}) {
             </div>
           </div>
         </div>
+      )}
+
+      {subTab === "about_app" && (
+        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-4 shadow-xl" aria-labelledby="about-app-title">
+          <div>
+            <h3 id="about-app-title" className="text-base font-black text-emerald-300">ℹ️ About WE4ALL</h3>
+            <p className="mt-1 text-xs text-slate-400">App version and safe update status for this device.</p>
+          </div>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+              <dt className="text-[10px] text-slate-400">Installed app version</dt>
+              <dd className="mt-1 text-sm font-black text-white">{appUpdateInfo.installedAppVersion || appUpdateInfo.currentVersion || APP_VERSION}</dd>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+              <dt className="text-[10px] text-slate-400">Build number</dt>
+              <dd className="mt-1 text-sm font-black text-white">{appUpdateInfo.installedBuildNumber || APP_BUILD_NUMBER}</dd>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+              <dt className="text-[10px] text-slate-400">Installed update bundle</dt>
+              <dd className="mt-1 text-sm font-black text-white">{appUpdateInfo.currentBundleVersion || "Built-in app"}</dd>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+              <dt className="text-[10px] text-slate-400">Latest available bundle</dt>
+              <dd className="mt-1 text-sm font-black text-white">{appUpdateInfo.latestAvailableVersion || APP_VERSION}</dd>
+            </div>
+          </dl>
+          <div role="status" className={`rounded-2xl border p-3 text-xs ${appUpdateInfo.updateAvailable ? "border-amber-400/40 bg-amber-950/40 text-amber-100" : "border-emerald-500/30 bg-emerald-950/30 text-emerald-100"}`}>
+            {checkingUpdate ? "Checking the secure update channel…" : otaProgress?.msg || (appUpdateInfo.updateAvailable ? "A verified update is ready to install." : appUpdateInfo.nativeUpdaterRequired ? "Automatic OTA updates are available in the installed Android/iOS app." : "This app is up to date on its current channel.")}
+            {appUpdateInfo.releaseNotes && <p className="mt-2 text-[10px] text-slate-300">{appUpdateInfo.releaseNotes}</p>}
+            {otaProgress && <progress className="mt-2 h-2 w-full accent-emerald-400" max="100" value={otaProgress.pct || 0} />}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button type="button" onClick={onCheckForUpdate} disabled={checkingUpdate || Boolean(otaProgress)} className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-xs font-black text-white disabled:opacity-50">
+              {checkingUpdate ? "Checking…" : "Check for updates"}
+            </button>
+            {appUpdateInfo.updateAvailable && <button type="button" onClick={onRunOtaUpdate} disabled={checkingUpdate || Boolean(otaProgress)} className="rounded-xl bg-emerald-400 px-3 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50">Download and install update</button>}
+          </div>
+          <p className="text-[10px] text-slate-500">Verified native updates are queued safely and activate after the app backgrounds or relaunches.</p>
+        </section>
       )}
 
       {isLoggedIn && subTab === "partner_kyc" && partnerApplication && (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
 import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
 import { marketCellId } from "./modules/workflows/marketLocation.js";
 import {
@@ -369,6 +370,7 @@ function AppContent() {
   );
   const [otaProgress, setOtaProgress] = useState(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const otaLaunchCheckStarted = useRef(false);
 
   const handleManualCheckForUpdate = async () => {
     setCheckingUpdate(true);
@@ -405,6 +407,41 @@ function AppContent() {
       triggerToast(error?.message || "OTA update failed. The current app bundle remains active.");
     }
   };
+
+  // Check once on each native app launch. Queue signed Capgo bundles for the
+  // next safe background/relaunch; the native updater handles activation and
+  // notifyAppReady() rolls back a bundle that cannot start successfully.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || otaLaunchCheckStarted.current) return undefined;
+    otaLaunchCheckStarted.current = true;
+    let active = true;
+    const checkAndQueueLaunchUpdate = async () => {
+      try {
+        setCheckingUpdate(true);
+        const latest = await checkLiveCloudOtaManifest((payload) => {
+          if (active && payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+        });
+        if (!active || latest?.error || !latest?.updateAvailable) return;
+        setOtaProgress({ pct: 5, msg: "A verified app update was found. Downloading it in the background…" });
+        const queued = await performZeroLossOtaUpdate(
+          latest.latestAvailableVersion,
+          latest.releaseNotes,
+          (stage) => { if (active) setOtaProgress(stage); },
+          (info) => { if (active) setAppUpdateInfo(info); }
+        );
+        if (active) setAppUpdateInfo(queued);
+      } catch (error) {
+        console.warn("WE4ALL automatic Capgo update check failed:", error?.message || error);
+      } finally {
+        if (active) {
+          setCheckingUpdate(false);
+          setOtaProgress(null);
+        }
+      }
+    };
+    void checkAndQueueLaunchUpdate();
+    return () => { active = false; };
+  }, []);
 
   const [accountSecurity, setAccountSecurity] = useState(
     savedCloud?.accountSecurity || {
