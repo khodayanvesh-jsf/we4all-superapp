@@ -30,44 +30,32 @@ export default function ServiceProviderPortal({
   renderAccountTab
 }) {
   // Tab 1: Visits & Geo Happy Code + Spare Parts Bill Builder State
-  const [providerInsideGeoFence, setProviderInsideGeoFence] = useState(true);
+  const [providerInsideGeoFence] = useState(false);
   const [happyCodeInputs, setHappyCodeInputs] = useState({});
   const [partsFormMap, setPartsFormMap] = useState({});
 
   // Tab 2: 1-Hr Slots Matrix State
-  const [selectedSlotDate, setSelectedSlotDate] = useState("2026-10-29");
+  const [selectedSlotDate, setSelectedSlotDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Tab 3: Rate Card & Service Offering Builder State
   const activeProProfile =
-    serviceProviders.find(
+    (serviceProviders || []).find(
       (sp) =>
-        sp.phone === currentUser?.phone ||
-        sp.providerName?.toLowerCase() === currentUser?.fullName?.toLowerCase()
-    ) ||
-    serviceProviders[0] || {
-      id: "sp_default",
+        (sp.userId && sp.userId === currentUser?.id) ||
+        (sp.phone && sp.phone === currentUser?.phone)
+    ) || {
+      id: null,
       serviceCategoryId: "srv_plumbing",
-      providerName: currentUser?.fullName || "Raju Master Technician",
-      maskedId: "Verified Pro #108",
-      serviceCategory: "Plumbing, Electrical & AC Care",
-      specialization: "Certified Doorstep Repair & Fittings",
+      providerName: currentUser?.fullName || "Service Provider",
+      specialization: "",
       visitingFee: 99,
       hourlyRate: 150,
       emergencyFee: 199,
-      availableSlots: [
-        "09:00 AM - 10:00 AM",
-        "10:00 AM - 11:00 AM",
-        "11:00 AM - 12:00 PM",
-        "02:00 PM - 03:00 PM",
-        "04:00 PM - 05:00 PM"
-      ],
-      rateCardItems: [
-        { id: "rc_1", title: "Doorstep Inspection & Fault Diagnosis", price: 99, unit: "Visit Escrow" },
-        { id: "rc_2", title: "Standard 1-Hour Repair Labor", price: 150, unit: "Per Hour" },
-        { id: "rc_3", title: "Jet Pump AC Servicing / Deep Clean", price: 499, unit: "Per Unit" }
-      ],
-      image: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=300&auto=format&fit=crop&q=80"
+      availableSlots: [],
+      rateCardItems: [],
+      image: ""
     };
+
 
   const [rateCardConfig, setRateCardConfig] = useState({
     serviceCategoryId: activeProProfile.serviceCategoryId || "srv_plumbing",
@@ -91,17 +79,25 @@ export default function ServiceProviderPortal({
 
   // Check if current Service Provider is pending admin approval or published live
   const myPendingPro = (pendingServiceProviders || []).find(
-    (p) => p.phone === currentUser?.phone || p.providerName === currentUser?.fullName
+    (p) => (p.userId && p.userId === currentUser?.id) || (p.phone && p.phone === currentUser?.phone)
   );
-  const isPublishedLive =
-    !myPendingPro ||
-    (serviceProviders || []).some(
-      (p) =>
-        (p.phone === currentUser?.phone || p.providerName === currentUser?.fullName) &&
-        p.status === "Approved"
-    );
+  const isPublishedLive = Boolean(
+    currentUser?.authUserId &&
+    currentUser?.role === "service_provider" &&
+    currentUser?.status === "Approved" &&
+    activeProProfile.id &&
+    activeProProfile.status === "Approved"
+  );
+  const providerBookings = (serviceBookings || []).filter((booking) =>
+    (booking.providerId && booking.providerId === activeProProfile.id) ||
+    (booking.providerUserId && booking.providerUserId === currentUser?.id)
+  );
 
   const handleToggleSlotAvailability = (slotLabel) => {
+    if (!isPublishedLive || !activeProProfile.id) {
+      onTriggerToast("Slot management is locked until your own service-provider account is approved.");
+      return;
+    }
     const currentSlots = activeProProfile.availableSlots || [];
     const exists = currentSlots.includes(slotLabel);
     const updatedSlots = exists
@@ -121,6 +117,14 @@ export default function ServiceProviderPortal({
   const handleWorkPhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!isPublishedLive || !activeProProfile.id) {
+      onTriggerToast("Portfolio upload is locked until your own service-provider account is approved.");
+      return;
+    }
+    if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) {
+      onTriggerToast("Choose an image up to 5 MB.");
+      return;
+    }
     onTriggerToast(`Uploading ${file.name} to we4all-media/portfolio...`);
     const cloudUrl = await uploadFileToSupabaseStorage(file, "portfolio");
     if (cloudUrl && cloudUrl.startsWith("http")) {
@@ -135,6 +139,10 @@ export default function ServiceProviderPortal({
   };
 
   const handleSaveMasterRateCard = () => {
+    if (!isPublishedLive || !activeProProfile.id) {
+      onTriggerToast("Rate-card updates are locked until your own service-provider account is approved.");
+      return;
+    }
     if (!rateCardConfig.consortRulesAccepted) {
       alert("Please accept the WE4ALL Service Provider Consort Rules & SLA checkbox.");
       return;
@@ -160,6 +168,10 @@ export default function ServiceProviderPortal({
   };
 
   const handleAddRateCardTask = () => {
+    if (!isPublishedLive || !activeProProfile.id) {
+      onTriggerToast("Rate-card editing is locked until your own service-provider account is approved.");
+      return;
+    }
     if (!newTaskItem.title.trim()) {
       alert("Enter a service task name (e.g. AC Gas Refill, Tap Replacement).");
       return;
@@ -177,7 +189,7 @@ export default function ServiceProviderPortal({
       )
     );
     setNewTaskItem({ title: "", price: "", unit: "Fixed Job" });
-    onTriggerToast(`Added "${itemObj.title}" (Rs.${itemObj.price}) to your Rate Card!`);
+    onTriggerToast(`"${itemObj.title}" added to your local rate-card draft. Customer visibility is pending server sync and approval.`);
   };
 
   // Printable / Downloadable PDF Escrow & Final Tax Invoice
@@ -229,7 +241,7 @@ export default function ServiceProviderPortal({
               <tbody>
                 <tr>
                   <td>1. Doorstep Visiting Fee (Escrow Locked)</td>
-                  <td>Happy Code: ${sb.happyCode} (${sb.escrowStatus})</td>
+                  <td>Customer code protected · ${sb.escrowStatus}</td>
                   <td style="text-align:right;">Rs.${visitEscrow}</td>
                 </tr>
                 <tr>
@@ -309,50 +321,22 @@ export default function ServiceProviderPortal({
             <div className="flex justify-between items-center">
               <div>
                 <h4 className="font-black text-indigo-300 text-xs">
-                  1. Scheduled Doorstep Visits ({(serviceBookings || []).length})
+                  1. Scheduled Doorstep Visits ({providerBookings.length})
                 </h4>
                 <p className="text-[10px] text-slate-400">
                   Verify Geo-Fenced Happy Code to unlock Visiting Fee Escrow & bill spare parts
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const simBooking = {
-                    id: `SRV-${Math.floor(1000 + Math.random() * 9000)}`,
-                    providerId: activeProProfile.id,
-                    providerName: activeProProfile.providerName,
-                    maskedId: activeProProfile.maskedId,
-                    customerName: "Anil Reddy (Adilabad)",
-                    address: "Subhash Nagar, Adilabad",
-                    bookedDate: selectedSlotDate,
-                    bookedSlot: "10:00 AM - 11:00 AM",
-                    visitingFee: activeProProfile.visitingFee || 99,
-                    hourlyRate: activeProProfile.hourlyRate || 150,
-                    escrowVisitingAmount: activeProProfile.visitingFee || 99,
-                    happyCode: String(Math.floor(1000 + Math.random() * 9000)),
-                    periodTag: "TODAY",
-                    escrowStatus: "VISITING_FEE_HELD_IN_ESCROW",
-                    status: "CONFIRMED_PROVIDER_EN_ROUTE"
-                  };
-                  setServiceBookings([simBooking, ...serviceBookings]);
-                  onTriggerToast(
-                    `Simulated Customer Visit #${simBooking.id} (Slot: ${simBooking.bookedSlot})!`
-                  );
-                }}
-                className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
-              >
-                + Test Visit
-              </button>
+              <p className="text-[10px] text-amber-200">New customer visits appear here only after the customer booking service confirms the booking. Test data is not inserted into this live queue.</p>
             </div>
 
             <div className="flex justify-between items-center bg-slate-950 p-2 rounded-xl border border-slate-800">
               <span className="text-[10px] text-slate-300 font-bold">
-                Customer Doorstep GPS Geo-Fence Status:
+                Device GPS status (server verification not configured):
               </span>
               <button
                 type="button"
-                onClick={() => setProviderInsideGeoFence(!providerInsideGeoFence)}
+                disabled
                 className={`px-2.5 py-1 rounded-lg font-black text-[9px] cursor-pointer ${
                   providerInsideGeoFence
                     ? "bg-emerald-400 text-slate-950"
@@ -366,7 +350,7 @@ export default function ServiceProviderPortal({
             </div>
           </div>
 
-          {(serviceBookings || []).length === 0 ? (
+          {providerBookings.length === 0 ? (
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 text-center space-y-2">
               <p className="font-bold text-slate-300">No active customer visits in your queue.</p>
               <p className="text-[10px] text-slate-400">
@@ -374,7 +358,7 @@ export default function ServiceProviderPortal({
               </p>
             </div>
           ) : (
-            serviceBookings.map((sb) => {
+            providerBookings.map((sb) => {
               const pForm = partsFormMap[sb.id] || {
                 extraHours: sb.extraHours || 0,
                 sparePartsDesc: sb.sparePartsDesc || "",
@@ -419,7 +403,7 @@ export default function ServiceProviderPortal({
                       <input
                         type="text"
                         maxLength={4}
-                        placeholder={`Happy Code (${sb.happyCode})`}
+                        placeholder="Server-issued Happy Code (pending integration)"
                         value={happyCodeInputs[sb.id] ?? ""}
                         onChange={(e) =>
                           setHappyCodeInputs({ ...happyCodeInputs, [sb.id]: e.target.value })
@@ -428,36 +412,10 @@ export default function ServiceProviderPortal({
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          if (!providerInsideGeoFence) {
-                            alert(
-                              "GEO-FENCE BLOCKED: You must be physically inside the Customer GPS Geo-Fence to verify the Happy Code!"
-                            );
-                            return;
-                          }
-                          const entered = (happyCodeInputs[sb.id] || "").trim() || sb.happyCode;
-                          if (entered === sb.happyCode) {
-                            setServiceBookings(
-                              serviceBookings.map((b) =>
-                                b.id === sb.id
-                                  ? {
-                                      ...b,
-                                      escrowStatus: "RELEASED_TO_PROVIDER_WALLET",
-                                      status: "ON_SITE_WORK_IN_PROGRESS"
-                                    }
-                                  : b
-                              )
-                            );
-                            onTriggerToast(
-                              `Happy Code (${sb.happyCode}) Verified! Rs.${sb.escrowVisitingAmount} Visiting Escrow Released to Wallet.`
-                            );
-                          } else {
-                            alert(`Invalid Happy Code. Customer Happy Code is: ${sb.happyCode}`);
-                          }
-                        }}
-                        className="flex-1 bg-emerald-400 text-slate-950 font-black rounded-xl text-[10px] cursor-pointer"
+                        onClick={() => onTriggerToast("Happy Code verification requires a server-issued, order-bound code and backend confirmation. No escrow state was changed.")}
+                        disabled className="flex-1 bg-slate-700 text-slate-300 font-black rounded-xl text-[10px] cursor-not-allowed"
                       >
-                        Verify Happy Code ({sb.happyCode})
+                        Server verification required
                       </button>
                     </div>
                   </div>
@@ -545,18 +503,18 @@ export default function ServiceProviderPortal({
                                   sparePartsCost: pForm.sparePartsCost,
                                   repairLaborFee: pForm.repairLaborFee,
                                   finalServiceBill: totalBill,
-                                  status: "FINAL_BILL_SENT_WAIT_PAYMENT"
+                                  status: "FINAL_BILL_PENDING_CUSTOMER_REVIEW"
                                 }
                               : b
                           )
                         );
                         onTriggerToast(
-                          `Final Bill (Rs.${totalBill}) pushed to Customer Orders tab for UPI Payment!`
+                          `Final estimate ₹${totalBill} saved for customer review in local app state. No payment or escrow was initiated.`
                         );
                       }}
                       className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-black py-2 rounded-xl text-[10px] cursor-pointer"
                     >
-                      Push Final Spare Parts & Labor Bill to Customer &rarr;
+                      Save Final Estimate for Customer Review
                     </button>
                   </div>
                 </div>
@@ -599,7 +557,7 @@ export default function ServiceProviderPortal({
               <div className="bg-amber-950/50 border border-amber-500/40 p-2 rounded-xl">
                 <p className="text-slate-400 text-[9px]">Booked Today</p>
                 <p className="font-black text-amber-300 text-sm">
-                  {serviceBookings.filter((b) => !b.bookedDate || b.bookedDate === selectedSlotDate).length}
+                  {providerBookings.filter((b) => !b.bookedDate || b.bookedDate === selectedSlotDate).length}
                 </p>
               </div>
               <div className="bg-slate-950 border border-slate-800 p-2 rounded-xl">
@@ -613,7 +571,9 @@ export default function ServiceProviderPortal({
             <div className="flex gap-2">
               <button
                 type="button"
+                disabled={!isPublishedLive || !activeProProfile.id}
                 onClick={() => {
+                  if (!isPublishedLive || !activeProProfile.id) return;
                   setServiceProviders(
                     serviceProviders.map((sp) =>
                       sp.id === activeProProfile.id
@@ -621,7 +581,7 @@ export default function ServiceProviderPortal({
                         : sp
                     )
                   );
-                  onTriggerToast("All 11 One-Hour Slots marked AVAILABLE!");
+                  onTriggerToast("All 11 one-hour slots updated in the device's saved state. Server availability sync is not confirmed.");
                 }}
                 className="flex-1 bg-emerald-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
               >
@@ -629,13 +589,15 @@ export default function ServiceProviderPortal({
               </button>
               <button
                 type="button"
+                disabled={!isPublishedLive || !activeProProfile.id}
                 onClick={() => {
+                  if (!isPublishedLive || !activeProProfile.id) return;
                   setServiceProviders(
                     serviceProviders.map((sp) =>
                       sp.id === activeProProfile.id ? { ...sp, availableSlots: [] } : sp
                     )
                   );
-                  onTriggerToast("Marked all slots Off-Duty.");
+                  onTriggerToast("All slots blocked in the device's saved state. Server availability sync is not confirmed.");
                 }}
                 className="bg-slate-800 text-rose-300 font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
               >
@@ -647,7 +609,7 @@ export default function ServiceProviderPortal({
           <div className="space-y-1.5">
             {MASTER_ONE_HOUR_SLOTS.map((slotLabel) => {
               const isEnabled = (activeProProfile.availableSlots || []).includes(slotLabel);
-              const bookingForSlot = serviceBookings.find(
+              const bookingForSlot = providerBookings.find(
                 (b) =>
                   b.bookedSlot === slotLabel &&
                   (!b.bookedDate || b.bookedDate === selectedSlotDate)
@@ -918,11 +880,11 @@ export default function ServiceProviderPortal({
               <button
                 type="button"
                 onClick={() => {
-                  if ((serviceBookings || []).length === 0) {
+                  if (providerBookings.length === 0) {
                     alert("No service bookings yet. Tap '+ Test Visit' in the Visits tab first!");
                     return;
                   }
-                  handleDownloadEscrowInvoicePdf(serviceBookings[0]);
+                  handleDownloadEscrowInvoicePdf(providerBookings[0]);
                 }}
                 className="bg-emerald-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[10px] cursor-pointer"
               >
@@ -953,7 +915,7 @@ export default function ServiceProviderPortal({
             </div>
 
             {(() => {
-              const filtered = serviceBookings.filter((b) => {
+              const filtered = providerBookings.filter((b) => {
                 if (billPeriodFilter !== "ALL" && b.periodTag && b.periodTag !== billPeriodFilter) {
                   return false;
                 }

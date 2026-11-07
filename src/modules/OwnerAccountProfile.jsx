@@ -1,9 +1,12 @@
 ﻿import React, { useState, useEffect } from "react";
 import {
   loadCloudAndLocalState,
-  saveCloudAndLocalState,
   performZeroLossOtaUpdate,
-  getFounderCredentials
+  getFounderCredentials,
+  supabase,
+  activateSupabaseAccount,
+  clearActiveSupabaseAccount,
+  probeSupabaseConnection
 } from "../supabaseClient";
 
 const ROLE_OPTIONS = [
@@ -11,7 +14,8 @@ const ROLE_OPTIONS = [
   { id: "merchant", label: "🏪 Product Merchant Partner", isConsumer: false },
   { id: "service_provider", label: "🔧 Home Service Provider Partner", isConsumer: false },
   { id: "decorator", label: "🌺 Event Decorator & Function Hall Partner", isConsumer: false },
-  { id: "rider", label: "🛵 Delivery Captain & Bike/Auto Taxi Partner", isConsumer: false }
+  { id: "rider", label: "🛵 Delivery Captain & Bike/Auto Taxi Partner", isConsumer: false },
+  { id: "labour", label: "🧱 Labour & Mistri Worker Partner", isConsumer: false }
 ];
 
 export default function OwnerAccountProfile(rawProps = {}) {
@@ -30,24 +34,19 @@ export default function OwnerAccountProfile(rawProps = {}) {
     appUpdateInfo = {},
     setAppUpdateInfo,
     onOpenAdminGate,
+    onPartnerAuthenticated,
+    onLogoutPartner,
     onTriggerToast = () => {}
   } = rawProps;
 
-  const [localUser, setLocalUser] = useState(() => {
-    if (currentUser && !currentUser.isGuest) return currentUser;
-    try {
-      const saved = localStorage.getItem("we4all_persistent_user_session_v8");
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return currentUser || { isGuest: true, role: "customer", fullName: "Guest Visitor" };
-  });
+  const [localUser, setLocalUser] = useState({ isGuest: true, role: "customer", fullName: "Guest Visitor" });
 
-  const isLoggedIn = Boolean(localUser && !localUser.isGuest);
+  const isLoggedIn = Boolean(localUser?.authUserId && !localUser.isGuest);
 
   // If logged in, default to account details; if guest, show login/register gate
   const [subTab, setSubTab] = useState(() => (isLoggedIn ? "account_details" : "kyc_gate"));
   const [authMode, setAuthMode] = useState("login"); // login | register
-  const [loginMethod, setLoginMethod] = useState("pin"); // pin | otp | biometric
+  const [loginMethod, setLoginMethod] = useState("otp"); // OTP is the only enabled login method
   const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
   const [showPinText, setShowPinText] = useState(false);
 
@@ -55,7 +54,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   const [loginForm, setLoginForm] = useState({
     identifier: "", // phone or username
-    pin: ""
   });
 
   const [regForm, setRegForm] = useState({
@@ -63,25 +61,117 @@ export default function OwnerAccountProfile(rawProps = {}) {
     businessName: "",
     phone: "",
     upiId: "",
-    pin: "",
     area: "Subhash Nagar, Adilabad"
   });
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
-  const [otpState, setOtpState] = useState({ sent: false, generatedOtp: "", enteredOtp: "" });
+  const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
+  const [connectionHealth, setConnectionHealth] = useState({
+    checking: true,
+    configured: false,
+    backendReachable: false,
+    authenticated: false,
+    accountLinked: false,
+    syncReady: false,
+    message: "Checking Supabase connection…"
+  });
 
   useEffect(() => {
-    if (currentUser && !currentUser.isGuest) {
-      setLocalUser(currentUser);
-    }
-  }, [currentUser]);
+    let active = true;
+    const guest = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
+    (async () => {
+      if (!supabase) {
+        if (active) setLocalUser(guest);
+        return;
+      }
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data?.user) {
+        if (active) {
+          setLocalUser(guest);
+          if (currentUser?.authUserId) {
+            setCurrentUser?.(guest);
+            setActivePortal?.("customer");
+            onSelectRole?.("customer");
+          }
+        }
+        return;
+      }
+      const user = data.user;
+      const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
+        supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
+      ]);
+      if (profileError) throw profileError;
+      if (rolesError) throw rolesError;
+      const customerRole = (roles || []).find((item) => item.role === "customer" && item.status === "approved");
+      if (!customerRole) throw new Error("Verified Supabase session has no approved customer role.");
+      const preferredRole = currentUser?.authUserId === user.id ? currentUser.role : "customer";
+      const approvedRole = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
+      const resolvedRole = approvedRole?.role || "customer";
+      let partnerRecord = null;
+      if (resolvedRole !== "customer") {
+        const { data, error: partnerError } = await supabase
+          .from("we4all_partners")
+          .select("id,partner_type,approval_status")
+          .eq("owner_user_id", user.id)
+          .eq("partner_type", resolvedRole)
+          .eq("approval_status", "approved")
+          .maybeSingle();
+        if (partnerError) throw partnerError;
+        if (!data) throw new Error("Your approved role has no active WE4ALL partner profile. Contact Founder support.");
+        partnerRecord = data;
+      }
+      const signedInUser = {
+        id: user.id,
+        authUserId: user.id,
+        phone: user.phone || profile?.phone || "",
+        fullName: profile?.full_name || user.user_metadata?.full_name || "",
+        businessName: profile?.business_name || "",
+        area: profile?.area || "",
+        role: resolvedRole,
+        partnerId: partnerRecord?.id || null,
+        status: "Approved",
+        isGuest: false
+      };
+      if (!active) return;
+      setLocalUser(signedInUser);
+      setCurrentUser?.(signedInUser);
+      if (resolvedRole !== "customer") {
+        onPartnerAuthenticated?.(resolvedRole, signedInUser);
+      } else {
+        setActivePortal?.("customer");
+        onSelectRole?.("customer");
+      }
+    })().catch((error) => {
+      console.warn("WE4ALL session restore failed:", error?.message || error);
+      if (active) {
+        setLocalUser(guest);
+        setCurrentUser?.(guest);
+        setActivePortal?.("customer");
+      }
+    });
+    return () => { active = false; };
+  }, [currentUser?.authUserId]);
+
+
+  useEffect(() => {
+    let active = true;
+    const refreshConnection = async () => {
+      const result = await probeSupabaseConnection();
+      if (active) setConnectionHealth({ checking: false, ...result });
+    };
+    refreshConnection();
+    const timer = window.setInterval(refreshConnection, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [localUser?.authUserId]);
 
   const cleanPhoneDigits = (raw) => {
     const digits = String(raw || "").replace(/\D/g, "");
     return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits.slice(0, 10);
   };
-
-  const cleanPinDigits = (raw) => String(raw || "").replace(/\D/g, "").slice(0, 4);
 
   const normalizeUpiId = (rawUpi, fallbackPhone) => {
     const trimmed = String(rawUpi || "").trim();
@@ -89,87 +179,236 @@ export default function OwnerAccountProfile(rawProps = {}) {
     return fallbackPhone ? `${fallbackPhone}@ybl` : "";
   };
 
-  const handleLoginSubmit = () => {
-    const ident = String(loginForm.identifier || "").trim();
-    const pin = cleanPinDigits(loginForm.pin);
-
-    if (!ident) {
-      setFormFeedback({ type: "error", message: "Please enter your Registered Phone Number or Username." });
+  const sendPhoneOtp = async () => {
+    const phoneDigits = cleanPhoneDigits(authMode === "register" ? regForm.phone : loginForm.identifier);
+    if (phoneDigits.length !== 10) {
+      setFormFeedback({ type: "error", message: "Enter a valid 10-digit Indian mobile number." });
       return;
     }
-    if (loginMethod === "pin" && pin.length !== 4) {
-      setFormFeedback({ type: "error", message: "Please enter your valid 4-Digit Security PIN." });
+    if (!supabase) {
+      setFormFeedback({ type: "error", message: "Supabase client is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY." });
       return;
     }
-    if (loginMethod === "otp") {
-      if (!otpState.sent) {
-        setFormFeedback({ type: "error", message: "Please request a Mobile OTP first." });
-        return;
+    setOtpState({ sent: false, phone: "", token: "", busy: true });
+    const phone = `+91${phoneDigits}`;
+    try {
+      const isRegistration = authMode === "register";
+      if (isRegistration) {
+        if (!regForm.fullName.trim()) throw new Error("Enter your full name before requesting OTP.");
+        if (!isConsumerSelected && !regForm.businessName.trim()) throw new Error("Enter your business or partner name.");
+        const { error } = await supabase.auth.signInWithOtp({
+          phone,
+          options: {
+            shouldCreateUser: true,
+            data: {
+              full_name: regForm.fullName.trim(),
+              business_name: regForm.businessName.trim(),
+              area: regForm.area || ""
+            }
+          }
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithOtp({
+          phone,
+          options: { shouldCreateUser: false }
+        });
+        if (error) throw error;
       }
-      if (String(otpState.enteredOtp).trim() !== String(otpState.generatedOtp).trim()) {
-        setFormFeedback({ type: "error", message: "Incorrect 4-Digit OTP entered." });
-        return;
-      }
-    }
-
-    const snap = loadCloudAndLocalState() || {};
-    const registeredUsers = Array.isArray(snap.registeredUsers) ? snap.registeredUsers : [];
-
-    const matched = registeredUsers.find(
-      (u) =>
-        (u?.phone && cleanPhoneDigits(u.phone) === cleanPhoneDigits(ident)) ||
-        (u?.username && u.username.toLowerCase() === ident.toLowerCase()) ||
-        (u?.fullName && u.fullName.toLowerCase() === ident.toLowerCase())
-    );
-
-    if (!matched) {
+      setOtpState({ sent: true, phone, token: "", busy: false });
+      setFormFeedback({ type: "success", message: `SMS verification code sent to +91 ${phoneDigits}. Enter it below to continue.` });
+    } catch (error) {
+      setOtpState({ sent: false, phone: "", token: "", busy: false });
       setFormFeedback({
         type: "error",
-        message: `No account found for "${ident}". Please check your details or switch to New Registration.`
+        message: error?.message || "Could not send SMS OTP. Check that Phone Auth and an SMS provider are enabled in Supabase."
       });
-      return;
     }
-
-    if (loginMethod === "pin" && matched.pin && String(matched.pin) !== pin) {
-      setFormFeedback({ type: "error", message: "Incorrect 4-Digit Security PIN." });
-      return;
-    }
-
-    const activeRole = matched.role || selectedRoleKey || "customer";
-    const activeUser = {
-      ...matched,
-      role: activeRole,
-      portal: activeRole,
-      isGuest: false,
-      lastLoginAt: new Date().toLocaleString()
-    };
-
-    setLocalUser(activeUser);
-    try {
-      localStorage.setItem("we4all_persistent_user_session_v8", JSON.stringify(activeUser));
-    } catch (e) {}
-    saveCloudAndLocalState({ currentUser: activeUser });
-
-    if (setCurrentUser) setCurrentUser(activeUser);
-    if (setActivePortal) setActivePortal(activeRole);
-    if (onSelectRole) onSelectRole(activeRole);
-
-    setSubTab("account_details");
-    onTriggerToast(`✓ Successfully logged into ${activeRole.toUpperCase()} portal! Session persists.`);
   };
 
-  const handleLogout = () => {
+  const handleLoginSubmit = async () => {
+    if (loginMethod !== "otp") {
+      setFormFeedback({ type: "error", message: "Only server-verified SMS OTP sign-in is enabled. PIN and biometric login are not active." });
+      return;
+    }
+    if (!otpState.sent || otpState.token.trim().length < 6) {
+      setFormFeedback({ type: "error", message: "Request an SMS OTP and enter the six-digit code." });
+      return;
+    }
+    setOtpState((s) => ({ ...s, busy: true }));
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: otpState.phone,
+        token: otpState.token.trim(),
+        type: "sms"
+      });
+      if (error) throw error;
+      const user = data?.user;
+      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified user session.");
+
+      const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
+        supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
+      ]);
+      if (profileError) throw profileError;
+      if (rolesError) throw rolesError;
+
+      const activation = await activateSupabaseAccount(user.id);
+      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
+      if (activation.changed && typeof window !== "undefined") {
+        window.location.reload();
+        return;
+      }
+
+      const customerRole = (roles || []).find((r) => r.role === "customer" && r.status === "approved");
+      const baseUser = {
+        id: user.id,
+        authUserId: user.id,
+        phone: user.phone || profile?.phone || otpState.phone.replace("+91", ""),
+        fullName: profile?.full_name || user.user_metadata?.full_name || "",
+        businessName: profile?.business_name || user.user_metadata?.business_name || "",
+        area: profile?.area || user.user_metadata?.area || "",
+        isGuest: false
+      };
+      if (!customerRole) throw new Error("Customer profile is not yet provisioned. Contact WE4ALL support.");
+
+      const requestedRole = selectedRoleKey;
+      if (requestedRole !== "customer") {
+        const approved = (roles || []).find((r) => r.role === requestedRole && r.status === "approved");
+        if (!approved) {
+          const partnerUser = { ...baseUser, role: "customer", status: "Approved" };
+          setLocalUser(partnerUser);
+          setCurrentUser?.(partnerUser);
+          setActivePortal?.("customer");
+          onSelectRole?.("customer");
+          setFormFeedback({ type: "error", message: `Your customer account is active. The ${requestedRole.replace("_", " ")} portal is still pending Founder approval.` });
+          setSubTab("account_details");
+          return;
+        }
+        const { data: partnerRecord, error: partnerError } = await supabase
+          .from("we4all_partners")
+          .select("id,partner_type,approval_status")
+          .eq("owner_user_id", user.id)
+          .eq("partner_type", requestedRole)
+          .eq("approval_status", "approved")
+          .maybeSingle();
+        if (partnerError) throw partnerError;
+        if (!partnerRecord) throw new Error("Founder-approved role has no active WE4ALL partner profile yet.");
+        const partnerUser = { ...baseUser, role: requestedRole, partnerId: partnerRecord.id, status: "Approved" };
+        setLocalUser(partnerUser);
+        setCurrentUser?.(partnerUser);
+        onPartnerAuthenticated?.(requestedRole, partnerUser);
+        setFormFeedback({ type: "success", message: `${requestedRole.replace("_", " ")} portal access verified.` });
+        setSubTab("account_details");
+        return;
+      }
+
+      const customer = { ...baseUser, role: "customer", status: "Approved" };
+      setLocalUser(customer);
+      setCurrentUser?.(customer);
+      setActivePortal?.("customer");
+      onSelectRole?.("customer");
+      setFormFeedback({ type: "success", message: "Phone verified. Your WE4ALL customer account is connected to Supabase." });
+      setSubTab("account_details");
+    } catch (error) {
+      setFormFeedback({ type: "error", message: error?.message || "OTP verification failed." });
+    } finally {
+      setOtpState((s) => ({ ...s, busy: false }));
+    }
+  };
+
+  const handleRegistrationSubmit = async () => {
+    if (!otpState.sent || otpState.token.trim().length < 6) {
+      setFormFeedback({ type: "error", message: "Request an SMS OTP and enter the six-digit code." });
+      return;
+    }
+    try {
+      setOtpState((s) => ({ ...s, busy: true }));
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: otpState.phone,
+        token: otpState.token.trim(),
+        type: "sms"
+      });
+      if (error) throw error;
+      const user = data?.user;
+      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified account.");
+      const profilePayload = {
+        user_id: user.id,
+        full_name: regForm.fullName.trim(),
+        business_name: regForm.businessName.trim(),
+        phone: user.phone || otpState.phone,
+        area: regForm.area || "",
+        updated_at: new Date().toISOString()
+      };
+      const { error: profileError } = await supabase.from("we4all_profiles").upsert(profilePayload, { onConflict: "user_id" });
+      if (profileError) throw profileError;
+
+      const customer = {
+        id: user.id, authUserId: user.id,
+        phone: user.phone || otpState.phone.replace("+91", ""),
+        fullName: regForm.fullName.trim(),
+        businessName: regForm.businessName.trim(),
+        area: regForm.area || "",
+        role: "customer", status: "Approved", isGuest: false
+      };
+
+      if (selectedRoleKey !== "customer") {
+        const { error: applicationError } = await supabase.from("we4all_partner_applications").insert({
+          user_id: user.id,
+          requested_role: selectedRoleKey,
+          application_payload: {
+            full_name: regForm.fullName.trim(),
+            business_name: regForm.businessName.trim(),
+            phone: profilePayload.phone,
+            area: profilePayload.area
+          }
+        });
+        if (applicationError) throw applicationError;
+      }
+
+      const activation = await activateSupabaseAccount(user.id);
+      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
+      if (activation.changed && typeof window !== "undefined") {
+        window.location.reload();
+        return;
+      }
+
+      setLocalUser(customer);
+      setCurrentUser?.(customer);
+      setActivePortal?.("customer");
+      onSelectRole?.("customer");
+      setSubTab("account_details");
+      setFormFeedback({
+        type: "success",
+        message: selectedRoleKey === "customer"
+          ? "Customer account created and verified. Your account is now connected to Supabase."
+          : "Customer account created. Your partner application was submitted as pending Founder approval."
+      });
+    } catch (error) {
+      setFormFeedback({ type: "error", message: error?.message || "Could not complete registration." });
+    } finally {
+      setOtpState((s) => ({ ...s, busy: false }));
+    }
+  };
+
+
+  const handleLogout = async () => {
+    try {
+      await supabase?.auth.signOut();
+      clearActiveSupabaseAccount();
+    } catch (error) {
+      console.warn("WE4ALL sign-out failed:", error?.message || error);
+    }
     const guestUser = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
     setLocalUser(guestUser);
-    try {
-      localStorage.removeItem("we4all_persistent_user_session_v8");
-    } catch (e) {}
-    saveCloudAndLocalState({ currentUser: guestUser });
     if (setCurrentUser) setCurrentUser(guestUser);
     if (setActivePortal) setActivePortal("customer");
     if (onSelectRole) onSelectRole("customer");
+    onLogoutPartner?.();
+    setOtpState({ sent: false, phone: "", token: "", busy: false });
     setSubTab("kyc_gate");
-    onTriggerToast("🚪 Logged out successfully. Returned to Guest Visitor mode.");
+    onTriggerToast("Signed out of Supabase. Returned to Guest Visitor mode.");
+    if (typeof window !== "undefined") window.location.reload();
   };
 
   return (
@@ -200,6 +439,26 @@ export default function OwnerAccountProfile(rawProps = {}) {
             🚪 Logout Session
           </button>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-black text-slate-200">Supabase cloud connection</span>
+          <span className={connectionHealth.syncReady ? "text-emerald-300 font-black" : connectionHealth.backendReachable ? "text-amber-300 font-black" : "text-rose-300 font-black"}>
+            {connectionHealth.checking
+              ? "CHECKING"
+              : connectionHealth.syncReady
+                ? "CONNECTED · ACCOUNT SYNC VERIFIED"
+                : connectionHealth.backendReachable
+                  ? connectionHealth.authenticated
+                    ? "API CONNECTED · ACCOUNT LINK PENDING"
+                    : "API CONNECTED · SIGN IN TO SYNC"
+                  : connectionHealth.configured
+                    ? "API UNREACHABLE"
+                    : "NOT CONFIGURED"}
+          </span>
+        </div>
+        <p className="text-slate-400">{connectionHealth.message}</p>
       </div>
 
       {/* Account Navigation Tabs */}
@@ -299,9 +558,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
               <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
                 {[
-                  { id: "pin", label: "PIN Code" },
-                  { id: "otp", label: "Mobile OTP" },
-                  { id: "biometric", label: "Biometric / Passkey" }
+                  { id: "otp", label: "Mobile OTP" }
                 ].map((m) => (
                   <button
                     key={m.id}
@@ -316,7 +573,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 ))}
               </div>
 
-              {loginMethod === "pin" && (
+              {false && loginMethod === "pin" && (
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-[10px] text-slate-400 font-bold">4-Digit Security PIN *</label>
@@ -341,40 +598,39 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
               {loginMethod === "otp" && (
                 <div className="space-y-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const code = String(Math.floor(1000 + Math.random() * 9000));
-                        setOtpState({ sent: true, generatedOtp: code, enteredOtp: code });
-                        onTriggerToast(`📲 Instant OTP Generated: ${code}`);
-                      }}
-                      className="bg-amber-400 text-slate-950 font-black px-3 py-2 rounded-xl cursor-pointer text-[11px]"
-                    >
-                      📲 Send Mobile OTP
-                    </button>
+                  <button
+                    type="button"
+                    disabled={otpState.busy}
+                    onClick={sendPhoneOtp}
+                    className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black rounded-xl px-3 py-2"
+                  >
+                    {otpState.busy ? "Working…" : otpState.sent ? "Resend SMS OTP" : "Send SMS OTP"}
+                  </button>
+                  {otpState.sent && (
                     <input
                       type="text"
-                      maxLength={4}
-                      value={otpState.enteredOtp}
-                      onChange={(e) => setOtpState({ ...otpState, enteredOtp: cleanPinDigits(e.target.value) })}
-                      placeholder="4-Digit OTP"
-                      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-emerald-300 font-mono text-center font-black"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={otpState.token}
+                      onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+                      placeholder="Enter 6-digit SMS code"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center font-black tracking-widest"
                     />
-                  </div>
+                  )}
+                  <p className="text-[10px] text-slate-400">Codes are issued and verified by Supabase Auth. WE4ALL does not generate or display OTPs.</p>
                 </div>
               )}
 
-              {loginMethod === "biometric" && (
+              {false && loginMethod === "biometric" && (
                 <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/40 text-center space-y-2">
                   <p className="text-emerald-300 font-bold text-xs">Touch Fingerprint Sensor or FaceID</p>
                   <button
                     type="button"
-                    onClick={() => {
-                      setLoginForm({ ...loginForm, identifier: currentUser?.phone || "9848011223" });
-                      onTriggerToast("✓ Biometric Passkey Verified!");
-                      setTimeout(handleLoginSubmit, 400);
-                    }}
+                    onClick={() => setFormFeedback({
+                      type: "error",
+                      message: "Biometric/passkey sign-in is not configured yet. WE4ALL needs server-side passkey enrollment and verification before this can be enabled."
+                    })}
                     className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl cursor-pointer text-xs"
                   >
                     Authenticate with Device Biometrics 👆
@@ -385,9 +641,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
               <button
                 type="button"
                 onClick={handleLoginSubmit}
+                disabled={otpState.busy || !otpState.sent || otpState.token.length !== 6}
                 className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs"
               >
-                Unlock &amp; Stay Logged In to Portal →
+                Verify OTP &amp; Sign In →
               </button>
             </div>
           ) : (
@@ -438,54 +695,42 @@ export default function OwnerAccountProfile(rawProps = {}) {
               <input
                 type="text"
                 maxLength={4}
-                value={regForm.pin}
-                onChange={(e) => setRegForm({ ...regForm, pin: cleanPinDigits(e.target.value) })}
-                placeholder="Create 4-Digit PIN * (e.g. 1990)"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-emerald-300 font-mono text-center tracking-widest font-black"
+                value={regForm.area}
+                onChange={(e) => setRegForm({ ...regForm, area: e.target.value })}
+                placeholder="Area / address"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
               />
 
-              <button
-                type="button"
-                onClick={() => {
-                  const phone = cleanPhoneDigits(regForm.phone);
-                  const pin = cleanPinDigits(regForm.pin);
-                  if (!regForm.fullName.trim() || phone.length !== 10 || pin.length !== 4) {
-                    setFormFeedback({ type: "error", message: "Please fill Name, 10-digit mobile, and 4-digit PIN." });
-                    return;
-                  }
-                  const newUser = {
-                    id: `${selectedRoleKey}_${Date.now()}`,
-                    fullName: regForm.fullName.trim(),
-                    name: regForm.fullName.trim(),
-                    businessName: regForm.businessName.trim() || regForm.fullName.trim(),
-                    phone,
-                    role: selectedRoleKey,
-                    portal: selectedRoleKey,
-                    upiId: normalizeUpiId(regForm.upiId, phone),
-                    pin,
-                    isGuest: false,
-                    status: isConsumerSelected ? "Approved" : "Pending Admin Approval"
-                  };
-                  const snap = loadCloudAndLocalState() || {};
-                  const list = Array.isArray(snap.registeredUsers) ? snap.registeredUsers : [];
-                  saveCloudAndLocalState({
-                    currentUser: newUser,
-                    registeredUsers: [newUser, ...list]
-                  });
-                  setLocalUser(newUser);
-                  try {
-                    localStorage.setItem("we4all_persistent_user_session_v8", JSON.stringify(newUser));
-                  } catch (e) {}
-                  if (setCurrentUser) setCurrentUser(newUser);
-                  if (setActivePortal) setActivePortal(selectedRoleKey);
-                  if (onSelectRole) onSelectRole(selectedRoleKey);
-                  setSubTab("account_details");
-                  onTriggerToast(`✓ Registration complete! Logged into ${selectedRoleKey.toUpperCase()} portal.`);
-                }}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow text-xs"
-              >
-                Complete Registration &amp; Start Session →
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={otpState.busy}
+                  onClick={sendPhoneOtp}
+                  className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
+                >
+                  {otpState.sent ? "Resend Registration OTP" : "Send Registration OTP"}
+                </button>
+                {otpState.sent && (
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={otpState.token}
+                    onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+                    placeholder="Enter 6-digit SMS code"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-center font-mono tracking-widest"
+                  />
+                )}
+                <button
+                  type="button"
+                  disabled={otpState.busy || !otpState.sent || otpState.token.length !== 6}
+                  onClick={handleRegistrationSubmit}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl shadow text-xs"
+                >
+                  Verify OTP &amp; Create Account →
+                </button>
+              </div>
             </div>
           )}
         </div>

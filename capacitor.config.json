@@ -1,9 +1,18 @@
 {
-  "appId": "com.khodayanvesh.we4all",
+  "appId": "com.we4all.superapp",
   "appName": "WE4ALL",
   "webDir": "dist",
-  "server": {
-    "url": "https://we-4-all-super-app.vercel.app",
-    "cleartext": true
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "CapacitorUpdater": {
+      "appId": "com.we4all.superapp",
+      "autoUpdate": "atBackground",
+      "appReadyTimeout": 10000,
+      "httpsOnly": true,
+      "keepUrlPathAfterReload": true,
+      "autoDeleteFailed": true
+    }
   }
 }
