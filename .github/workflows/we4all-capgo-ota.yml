@@ -86,6 +86,10 @@ jobs:
           test -f android/app/src/main/assets/capacitor.config.json
           node --input-type=module -e 'import fs from "node:fs";const c=JSON.parse(fs.readFileSync("android/app/src/main/assets/capacitor.config.json","utf8"));if(c.plugins?.CapacitorUpdater?.publicKey!==process.env.CAPGO_PUBLIC_KEY)process.exit(1)'
 
+      - name: Register Capgo app if needed
+        continue-on-error: true
+        run: npx --yes @capgo/cli@latest app add "$CAPGO_APP_ID" --apikey "$CAPGO_API_KEY"
+
       - name: Publish encrypted, checksum-verified Capgo bundle
         shell: bash
         run: |
