@@ -128,6 +128,8 @@ export default function FounderAdminSuite({
   const [founderProfileMessage, setFounderProfileMessage] = useState("");
   const [founderProfileBusy, setFounderProfileBusy] = useState(false);
   const [managedUsers, setManagedUsers] = useState([]);
+  const [managedUserFilter, setManagedUserFilter] = useState("active");
+  const [managedListings, setManagedListings] = useState([]);
   const [usersMessage, setUsersMessage] = useState("");
   const [usersBusy, setUsersBusy] = useState(false);
   const [geoManagers, setGeoManagers] = useState([]);
@@ -356,14 +358,33 @@ export default function FounderAdminSuite({
   };
 
   const removeManagedUserAccess = async (account) => {
-    if (!window.confirm("Suspend all portal access for this account? Orders and audit history will be retained.")) return;
+    if (!window.confirm("Remove this account from WE4ALL? This blocks sign-in and deactivates its listings while retaining order, KYC and audit history.")) return;
     setUsersBusy(true);
     try {
-      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile: account.profile || {}, remove_access: true } });
-      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not suspend account access.");
-      await refreshManagedUsers();
-      setUsersMessage("All portal access suspended. Account and transaction history were retained.");
-    } catch (error) { setUsersMessage(error?.message || "Could not suspend account access."); setUsersBusy(false); }
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "account_remove", user_id: account.user_id } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not remove account.");
+      await Promise.all([refreshManagedUsers(), refreshManagedListings()]);
+      setUsersMessage("Account removed from active use; order, KYC and audit history retained.");
+    } catch (error) { setUsersMessage(error?.message || "Could not remove account."); setUsersBusy(false); }
+  };
+
+  const refreshManagedListings = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "listings_list" } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not load listings.");
+      setManagedListings(Array.isArray(data.listings) ? data.listings : []);
+    } catch (error) { setUsersMessage(error?.message || "Could not load listings."); }
+  };
+
+  const removeManagedListing = async (listing) => {
+    if (!window.confirm(`Remove "${listing.title}" from the marketplace? Existing order records will be kept.`)) return;
+    setUsersBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "listing_remove", listing_id: listing.id } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not remove listing.");
+      await refreshManagedListings();
+      setUsersMessage("Listing removed from the marketplace; order history retained.");
+    } catch (error) { setUsersMessage(error?.message || "Could not remove listing."); setUsersBusy(false); }
   };
 
   const refreshGeoManagers = async () => {
@@ -716,7 +737,7 @@ export default function FounderAdminSuite({
     { id: "database", label: "2. 8-Table Master Database CRUD", badge: "Edit All Data" },
     { id: "categories", label: "3. Categories, Sub-Pills & Stock", badge: `${safeCategories.length} Cats` },
     { id: "founder_profile", label: "4. Founder Profile", badge: "My Details" },
-    { id: "portal_users", label: "5. Portal Accounts", badge: `${managedUsers.length} Users` },
+    { id: "portal_users", label: "5. Portal Accounts", badge: `${managedUsers.filter((user) => user.portal_status === "active").length} Active` },
     { id: "geo_managers", label: "6. Geo Managers & Markets", badge: `${geoManagers.length} Managers` },
     { id: "security_server", label: "7. Admin Credentials & Data Server", badge: "PIN + Cloud" },
     { id: "live_locator", label: "8. Live GPS Locator & Inspector", badge: `${unifiedDirectory.length}` },
@@ -1065,7 +1086,8 @@ export default function FounderAdminSuite({
                           {!application.kyc_document_urls?.signature && kyc.signature?.signer_name && <p className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-300">Typed signer: {kyc.signature.signer_name} · method: {kyc.signature.method || "typed name"}</p>}
                         </div>
                         <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2">
-                          <p className="text-[10px] text-slate-300">Documents are private. Review each file before checking its box. Links expire after a few minutes; refresh the queue if one expires.</p>
+                          <p className="text-[10px] text-slate-300">Documents are private. Review each file before checking its box. Links refresh with the queue and expire after one hour.</p>
+              {Object.entries(application.kyc_document_errors || {}).map(([key, message]) => <p key={key} className="rounded bg-rose-950/40 p-2 text-[10px] text-rose-200">{key.replaceAll("_", " ")} could not open: {message}</p>)}
                           {application.trial_phone_verification && (
                             <label className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-950/30 p-2 text-[10px] text-amber-100">
                               <input
@@ -1090,7 +1112,6 @@ export default function FounderAdminSuite({
                         </div>
                       </>
                     ) : <p className="rounded-lg bg-slate-950 p-3 text-[10px] text-slate-400">The applicant still needs to upload the documents listed for this role and complete the trial declaration before review can begin.</p>}
-                    {kyc.status === "submitted" && (
                     <div className="space-y-2">
                       <input value={serverReviewReasons[application.id] || ""} onChange={(event) => setServerReviewReasons((current) => ({ ...current, [application.id]: event.target.value }))} placeholder="Reason required for rejection or suspension" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] text-white" />
                       <div className="flex flex-wrap gap-2">
@@ -1113,7 +1134,6 @@ export default function FounderAdminSuite({
                       </button>
                       </div>
                     </div>
-                    )}
                   </div>
                 );
               })
@@ -2636,18 +2656,20 @@ export default function FounderAdminSuite({
 
       {founderTab === "portal_users" && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/30 bg-slate-900 p-4"><div><h3 className="text-sm font-black text-indigo-200">Portal account access</h3><p className="mt-1 text-[10px] text-slate-300">Edit registered profile details, adjust each role, or suspend access. Suspending retains order, KYC and audit records.</p></div><button type="button" disabled={usersBusy} onClick={refreshManagedUsers} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">{usersBusy ? "Loading…" : "Refresh users"}</button></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/30 bg-slate-900 p-4"><div><h3 className="text-sm font-black text-indigo-200">Portal account access</h3><p className="mt-1 text-[10px] text-slate-300">Active counts only approved roles. Pending applicants stay in the approval queue and Pending filter. Removing an account blocks sign-in and active listings while preserving transaction, KYC and audit history.</p></div><div className="flex gap-2"><button type="button" disabled={usersBusy} onClick={refreshManagedUsers} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">{usersBusy ? "Loading…" : "Refresh users"}</button><button type="button" disabled={usersBusy} onClick={refreshManagedListings} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-black text-white">Refresh listings</button></div></div>
+          <label className="flex items-center gap-2 text-[10px] text-slate-300">Show accounts<select aria-label="Filter portal accounts" value={managedUserFilter} onChange={(event) => setManagedUserFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="active">Active portal users</option><option value="pending">Pending applicants</option><option value="suspended">Suspended / removed</option><option value="all">All accounts</option></select><span>{managedUsers.filter((account) => managedUserFilter === "all" || account.portal_status === managedUserFilter).length} shown</span></label>
           {usersMessage && <p role="status" className="rounded-xl bg-slate-950 p-2 text-[10px] text-amber-200">{usersMessage}</p>}
-          {managedUsers.map((account) => {
+          {managedUsers.filter((account) => managedUserFilter === "all" || account.portal_status === managedUserFilter).map((account) => {
             const profile = account.profile || {};
             return <article key={account.user_id} className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black text-white">{profile.full_name || "Unnamed account"}</p><p className="font-mono text-[9px] text-slate-500">{account.user_id}</p></div><button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => removeManagedUserAccess(account)} className="rounded-lg border border-rose-700 bg-rose-950 px-3 py-1.5 text-[9px] font-black text-rose-200 disabled:opacity-40">Suspend all access</button></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black text-white">{profile.full_name || "Unnamed account"} <span className={account.portal_status === "active" ? "text-emerald-300" : "text-amber-300"}>· {account.portal_status || "pending"}</span></p><p className="font-mono text-[9px] text-slate-500">{account.user_id}</p></div><button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => removeManagedUserAccess(account)} className="rounded-lg border border-rose-700 bg-rose-950 px-3 py-1.5 text-[9px] font-black text-rose-200 disabled:opacity-40">Remove from platform</button></div>
               <div className="grid gap-2 md:grid-cols-3"><input aria-label="User full name" defaultValue={profile.full_name || ""} data-field="full_name" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Full name"/><input aria-label="Business name" defaultValue={profile.business_name || ""} data-field="business_name" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Business name"/><input aria-label="Area" defaultValue={profile.area || ""} data-field="area" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Area / address"/></div>
               <button type="button" disabled={usersBusy} onClick={(event) => { const inputs = event.currentTarget.parentElement.querySelectorAll("input[data-field]"); const edited = Object.fromEntries([...inputs].map((input) => [input.dataset.field, input.value])); supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile: { ...profile, ...edited }, roles: account.roles || [] } }).then(({ data, error }) => { if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Save failed"); setUsersMessage("Portal account details saved."); }).catch((error) => setUsersMessage(error.message)); }} className="rounded-lg bg-slate-700 px-3 py-1.5 text-[9px] font-bold text-white">Save profile details</button>
               <div className="space-y-1">{(account.roles || []).map((role) => <div key={role.role} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950 p-2"><span className="text-[10px] font-bold text-slate-200">{role.role.replaceAll("_", " ")} · {role.status}</span><select aria-label={`${role.role} access state`} value={role.status} disabled={usersBusy} onChange={(event) => changeManagedRole(account, role.role, event.target.value)} className="rounded border border-slate-700 bg-slate-900 p-1.5 text-[9px] text-white"><option value="approved">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option></select></div>)}</div>
               <div className="flex flex-wrap gap-2"><select aria-label="Add portal role" id={`new-role-${account.user_id}`} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[9px] text-white"><option value="merchant">Product Merchant</option><option value="service_provider">Service Provider</option><option value="decorator">Decorator / Hall</option><option value="rider">Delivery Captain</option><option value="labour">Labour / Mistri</option></select><button type="button" disabled={usersBusy} onClick={(event) => { const select = event.currentTarget.parentElement.querySelector("select"); changeManagedRole(account, select.value, "pending"); }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[9px] font-black text-white">Add pending portal</button></div>
             </article>;
           })}
+          <section className="space-y-2 rounded-2xl border border-rose-500/30 bg-slate-900 p-3"><div><h4 className="text-xs font-black text-rose-200">Products & services</h4><p className="text-[10px] text-slate-400">Remove a selected listing from customer discovery while retaining previous order records.</p></div>{managedListings.map((listing) => <div key={listing.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-950 p-2"><span className="text-[10px] text-white">{listing.title} · {listing.item_type} · {listing.approval_status}{listing.is_active ? " · active" : " · removed"}</span>{listing.is_active && <button type="button" disabled={usersBusy} onClick={() => removeManagedListing(listing)} className="rounded-lg bg-rose-900 px-3 py-1.5 text-[9px] font-black text-white">Remove listing</button>}</div>)}{managedListings.length === 0 && <p className="text-[10px] text-slate-500">Select Refresh listings to load products and services.</p>}</section>
         </div>
       )}
 
