@@ -15,6 +15,106 @@ const hash = async (value: string) => {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((n) => n.toString(16).padStart(2, "0")).join("");
 };
+const trialLoginEmail = (phone: string) => `w4all-${phone.replace(/\D/g, "")}@login.we4all.invalid`;
+
+async function trialPinSession(admin: ReturnType<typeof createClient>, url: string, anonKey: string, phone: string, pin: string) {
+  const { data: profile, error: profileError } = await admin.from("we4all_profiles")
+    .select("user_id").eq("phone", phone).maybeSingle();
+  if (profileError || !profile?.user_id) return { data: null, error: new Error("Invalid mobile number or PIN.") };
+
+  const { data: userData, error: getUserError } = await admin.auth.admin.getUserById(profile.user_id);
+  const user = userData?.user;
+  if (getUserError || !user || user.user_metadata?.trial_phone_verification !== true) {
+    return { data: null, error: new Error("Invalid mobile number or PIN.") };
+  }
+
+  const email = trialLoginEmail(phone);
+  if (user.email !== email || user.email_confirmed_at == null) {
+    const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
+      email,
+      email_confirm: true,
+      user_metadata: { ...(user.user_metadata || {}), trial_login_email: email }
+    });
+    if (updateError) {
+      console.error("Trial PIN alias setup failed", updateError.message);
+      return { data: null, error: new Error("Trial PIN sign-in could not be prepared. Contact the Founder.") };
+    }
+  }
+
+  const publicClient = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  return publicClient.auth.signInWithPassword({ email, password: pin });
+}
+
+async function savePendingPartnerApplication(admin: ReturnType<typeof createClient>, body: Record<string, unknown>, userId: string, phone: string) {
+  const role = String(body.requested_role || "");
+  if (!roles.has(role) || role === "customer") return { id: null, marketId: null };
+  const latitude = Number(body.latitude);
+  const longitude = Number(body.longitude);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    throw new Error("Add a valid business GPS location before submitting the partner application.");
+  }
+
+  const { data: roleSetting, error: roleError } = await admin.from("we4all_registration_roles")
+    .select("enabled").eq("role_key", role).maybeSingle();
+  if (roleError) throw roleError;
+  if (!roleSetting?.enabled) throw new Error("This partner role is currently closed for registration.");
+
+  const area = String(body.area || "").trim().slice(0, 100);
+  const businessName = String(body.business_name || "").trim().slice(0, 120);
+  const fullName = String(body.full_name || "").trim().slice(0, 120);
+  const latitudeCell = Math.floor(latitude * 20 + 0.5);
+  const longitudeCell = Math.floor(longitude * 20 + 0.5);
+  const marketId = `m_${latitudeCell}_${longitudeCell}`;
+  const { data: market, error: marketReadError } = await admin.from("we4all_markets").select("id").eq("id", marketId).maybeSingle();
+  if (marketReadError) throw marketReadError;
+  if (!market) {
+    const { error: marketInsertError } = await admin.from("we4all_markets").insert({
+      id: marketId,
+      display_name: area || `Local market ${marketId}`,
+      center_lat: latitudeCell / 20,
+      center_lng: longitudeCell / 20,
+      state_name: "",
+      active: true
+    });
+    if (marketInsertError && marketInsertError.code !== "23505") throw marketInsertError;
+  }
+
+  const profilePayload = {
+    user_id: userId, full_name: fullName, business_name: businessName,
+    phone, area, updated_at: new Date().toISOString()
+  };
+  const { error: profileError } = await admin.from("we4all_profiles").upsert(profilePayload, { onConflict: "user_id" });
+  if (profileError) throw profileError;
+
+  const { data: pending, error: pendingError } = await admin.from("we4all_partner_applications")
+    .select("id,application_payload").eq("user_id", userId).eq("requested_role", role).eq("status", "pending")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (pendingError) throw pendingError;
+  const applicationPayload = {
+    ...(pending?.application_payload || {}),
+    full_name: fullName,
+    business_name: businessName,
+    phone,
+    area,
+    zone_id: marketId,
+    market_id: marketId,
+    latitude,
+    longitude,
+    partner_details: body.partner_details && typeof body.partner_details === "object" ? body.partner_details : {},
+    kyc: pending?.application_payload?.kyc || { status: "not_submitted", files: {} }
+  };
+
+  if (pending?.id) {
+    const { error } = await admin.from("we4all_partner_applications").update({ application_payload: applicationPayload }).eq("id", pending.id);
+    if (error) throw error;
+    return { id: pending.id, marketId };
+  }
+  const { data: inserted, error: insertError } = await admin.from("we4all_partner_applications").insert({
+    user_id: userId, requested_role: role, application_payload: applicationPayload, status: "pending"
+  }).select("id").single();
+  if (insertError) throw insertError;
+  return { id: inserted.id, marketId };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -37,6 +137,15 @@ Deno.serve(async (req) => {
     const action = String(body?.action || "");
     const phone = String(body?.phone || "");
     if (!/^\+91[6-9]\d{9}$/.test(phone)) return json({ ok: false, error: "Enter a valid Indian mobile number." }, 400);
+
+    if (action === "trial_pin_login") {
+      const pin = String(body?.pin || "");
+      if (!/^\d{6}$/.test(pin)) return json({ ok: false, error: "Enter your six-digit PIN." }, 400);
+      const signedIn = await trialPinSession(admin, url, anonKey, phone, pin);
+      if (signedIn.error || !signedIn.data?.session) return json({ ok: false, error: signedIn.error?.message || "Invalid mobile number or PIN." }, 401);
+      return json({ ok: true, user: signedIn.data.user, session: signedIn.data.session, trial_only: true });
+    }
+
     const phoneHash = await hash(`${pepper}:${phone}`);
 
     if (action === "request") {
@@ -97,17 +206,43 @@ Deno.serve(async (req) => {
       const { data: created, error: createError } = await admin.auth.admin.createUser({
         phone, phone_confirm: true, password: pin, user_metadata: metadata
       });
-      if (createError || !created?.user?.id) {
-        return json({ ok: false, error: "This number may already have an account. Try PIN sign-in or use PIN recovery." }, 409);
+      let userId = created?.user?.id || "";
+      if (createError || !userId) {
+        const { data: existingProfile, error: existingProfileError } = await admin.from("we4all_profiles")
+          .select("user_id").eq("phone", phone).maybeSingle();
+        if (existingProfileError || !existingProfile?.user_id) {
+          return json({ ok: false, error: "This number may already have an account. Use its existing PIN or contact the Founder." }, 409);
+        }
+        const { data: existingUser, error: existingUserError } = await admin.auth.admin.getUserById(existingProfile.user_id);
+        if (existingUserError || existingUser?.user?.user_metadata?.trial_phone_verification !== true) {
+          return json({ ok: false, error: "This number belongs to an existing account. Sign in with its current PIN." }, 409);
+        }
+        userId = existingProfile.user_id;
       }
 
-      const publicClient = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
-      const { data: signedIn, error: signInError } = await publicClient.auth.signInWithPassword({ phone, password: pin });
-      if (signInError || !signedIn?.session) {
-        console.error("Trial account created but sign-in could not be issued", signInError?.message || "missing session");
-        return json({ ok: false, error: "Account created. Sign in using your mobile number and new PIN." }, 500);
+      let pendingApplication: { id: string | null; marketId: string | null } = { id: null, marketId: null };
+      if (requestedRole !== "customer") {
+        pendingApplication = await savePendingPartnerApplication(admin, body, userId, phone);
       }
-      return json({ ok: true, user: signedIn.user, session: signedIn.session, trial_only: true });
+
+      const signedIn = await trialPinSession(admin, url, anonKey, phone, pin);
+      const signInError = signedIn.error;
+      if (signInError || !signedIn.data?.session) {
+        console.error("Trial account created but sign-in could not be issued", signInError?.message || "missing session");
+        if (pendingApplication.id) {
+          return json({
+            ok: true, user_id: userId, pending_review: true, trial_only: true,
+            partner_application_id: pendingApplication.id, market_id: pendingApplication.marketId,
+            message: "Partner application submitted for Founder/Admin review. Partner portal access remains locked until approval."
+          });
+        }
+        return json({ ok: false, error: "Account created, but PIN sign-in is unavailable. Enable the Supabase phone provider or contact the Founder." }, 503);
+      }
+      return json({
+        ok: true, user: signedIn.data.user, session: signedIn.data.session, trial_only: true,
+        pending_review: Boolean(pendingApplication.id), partner_application_id: pendingApplication.id,
+        market_id: pendingApplication.marketId
+      });
     }
     return json({ ok: false, error: "Unsupported trial OTP action." }, 400);
   } catch (error) {
