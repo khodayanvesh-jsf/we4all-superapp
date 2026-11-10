@@ -1,102 +1,36 @@
-# WE4ALL — Offline Desktop Development Copy
+# WE4ALL Windows source sync and local backup
 
-Source exported from GitHub repository `khodayanvesh-jsf/we4all-superapp`.
+The current review source is version **3.3.1** on branch `codex/we4all-offline-sync`. It builds on the shop/rider and accounts/OTA draft branches. The installed APK, production database and live website may still be on older versions. Nothing here publishes a release or changes production data.
 
-- Branch: `fix/payment-safety-guest-default`
-- Exact source commit: `d1e2c44910162b3e1d9f8f171c56b93c516ca6c9`
-- App version in this source: `3.3.0`, Android build number `330`
-- Android package ID: `com.we4all.superapp`
+## One-click Windows setup
 
-## Open in Visual Studio Code
+Install [Git for Windows](https://git-scm.com/download/win), [Node.js 22](https://nodejs.org/), and Visual Studio Code. Download this repository's source ZIP once, extract it fully, then double-click **`offline\Sync-WE4ALL.cmd`**. The script clones the current review source to `Documents\WE4ALL-Workspace` and runs `npm ci`. It prints the exact Git commit. Open that workspace folder in VS Code.
 
-1. Extract this ZIP to a normal folder, for example `C:\WE4ALL`.
-2. Open Visual Studio Code → **File → Open Folder** → choose `C:\WE4ALL`.
-3. Open **Terminal → New Terminal**.
+For later updates, double-click the same command again from the updated workspace's `offline` folder. It fetches the selected branch and applies a fast-forward only. Local edits stop the sync with an explanation; save or commit them first. It does not switch your branch, replace another folder, or delete uncommitted files. If you prefer stable approved code after merge, run `offline\Sync-WE4ALL.ps1 -Branch main -Destination "$HOME\Documents\WE4ALL-Stable"` in PowerShell; keep the two copies separate.
 
-## Required tools
+The GitHub Actions **Export WE4ALL offline source package** workflow also creates a commit-stamped ZIP and SHA-256 checksum on every push to this review branch and to `main`. Download from **Actions → Export WE4ALL offline source package → latest successful run → Artifacts**. This ZIP contains a source snapshot without Git history; use the sync command for future pulls. Artifacts expire after 30 days; the repository remains the long-term source.
 
-For web development: Node.js 22 LTS (20+ may work), npm, and Visual Studio Code.
-For Android APK builds: Java 21 (Temurin recommended), Android Studio and Android SDK Platform/Build Tools.
+## Work and test
 
-## First-time setup (internet required once)
+In the cloned workspace, run `npm run dev` and open the localhost address printed by Vite. Run `npm test`, `npm run build`, and `npx cap sync android` when you change the Android web bundle. A debug APK also needs Java 21, Android SDK, and `cd android; .\gradlew.bat assembleDebug`. A customer upgrade APK requires the same permanent signing certificate as their installed app; a debug build is not an in-place replacement.
 
-The ZIP intentionally does not contain `node_modules`. Run once from the project root:
+The source clone includes `src/`, `android/`, `supabase/migrations/`, `supabase/functions/`, `supabase/config.toml`, `tests/`, workflow files, and the npm lockfile. The script copies `.env.example` to the ignored `.env.local` on first setup only. Set the public `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` values there if the sample key is a placeholder. Only public frontend values belong there. Do not put a service-role key, database password, Founder password, SMS/payment secret, OTA signing key, or Android keystore in Git, `.env.local`, the frontend, or an APK.
 
-```powershell
-npm ci
-```
+Git source sync does **not** download live users, documents, product records, secret values, provider accounts, deployed functions, or database content. The frontend needs internet to use online Supabase services. A local development UI can run without internet after `npm ci`, but online sign-in, market sync, order dispatch and OTA checks cannot.
 
-This downloads dependencies from `package-lock.json`. After dependencies are installed, local UI/code work can run without internet:
+## Back up live Supabase data to your Windows computer
 
-```powershell
-npm run dev -- --host 127.0.0.1
-```
+Install Supabase CLI and Docker Desktop, sign in with `supabase login`, then run `offline\Backup-WE4ALL-Data.ps1` from a PowerShell terminal in the workspace. The CLI will ask for a database password when linking if needed. If bucket discovery fails, supply every bucket explicitly: `offline\Backup-WE4ALL-Data.ps1 -Buckets @("partner-documents","products")` (replace the example names with actual names). The script creates `Documents\WE4ALL-Backups\we4all-YYYYMMDD-HHMMSS` with schema, data, roles, Storage objects and a SHA-256 manifest. A failed step leaves an explicitly incomplete snapshot.
 
-Open the Vite URL printed in the terminal (normally `http://localhost:5173`). Stop with `Ctrl+C`.
+These dumps contain personal and authentication records. Store the backup on a Windows encrypted drive with access limited to you; keep a separate encrypted external copy. Do not commit it, upload it to a public folder, or share it in chat. The CLI uses Git-tracked migrations/functions as source, but server-side secrets, Auth provider settings, DNS, payment/provider consoles and signing keys must be recorded and backed up separately in a password manager. Database exports and Storage downloads are snapshots, not automatic two-way sync. Test restoration in a separate Supabase project before depending on them. Do not restore a database snapshot into production without a reviewed migration plan.
 
-Check code and build:
+### What is synchronized
 
-```powershell
-npm test
-npm run build
-```
-
-The source snapshot is development code, not a certified production release. Check the latest GitHub Actions result before distributing a new APK.
-
-## Supabase configuration
-
-Copy `.env.example` to `.env.local` and set the Supabase project URL and publishable key. The code has fallback values for the current project, but local environment variables are easier to manage.
-
-Only these public frontend variables belong in Vite:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-
-Never place a Supabase secret/service-role key, SMS/payment secrets, Founder credentials, Capgo private key, or Android keystore/password in `.env.local`, React code, an APK, or this source folder. Keep server credentials in the relevant backend/provider secret manager.
-
-## Offline versus online capabilities
-
-**Can work offline once dependencies are installed:** editing source in VS Code, local Vite UI preview, local code tests that do not call remote services, and building the static web bundle.
-
-**Requires internet and configured services:** Supabase login and shared records, Edge Functions, live catalogue/order sync, verified payments/webhooks, SMS OTP, Capgo OTA download/checks, GitHub Actions, Vercel, maps/location and other remote APIs.
-
-WE4ALL is not currently a fully offline-first marketplace. A local preview or locally cached data is not proof that a real order/payment/booking has completed.
-
-## Build Android debug APK (Windows)
-
-From the project root:
-
-```powershell
-npm ci
-npm test
-npm run build
-npx cap sync android
-cd android
-.\gradlew.bat --no-daemon --stacktrace clean assembleDebug
-```
-
-Output: `android\app\build\outputs\apk\debug\app-debug.apk`.
-This is a test APK. GitHub Actions debug APK artifacts have been found to use different signing certificates between runs. Do not rely on debug APKs for customer upgrades.
-
-## Direct APK signing and OTA
-
-WE4ALL is shared directly as an APK; Google Play is not required. Android still requires the same signing certificate for in-place app upgrades. Read:
-- `docs/APK_SIGNING_AUDIT_2026-11-06.md`
-- `docs/GITHUB_DEBUG_APK_MIGRATION.md`
-- `docs/SUPABASE_OTA_STAGING.md`
-
-Do not create a new signing key until the existing-user migration plan is approved and any owner-held key has been searched for. Protect the permanent keystore and back it up offline in two secure places. Never commit it.
-
-Capgo OTA can update compatible web assets only after an updater-enabled signed native APK is installed and Capgo channels/credentials are configured. Native plugin or permission changes require a new APK signed with the same permanent key.
-
-## Included backend and workflow source
-
-- `supabase/migrations/` — database migrations.
-- `supabase/functions/` — sync, Founder review and customer order Edge Functions.
-- `tests/` — automated regression tests.
-- `.github/workflows/` — CI, APK release, OTA and source-export workflows.
-
-The new marketplace schema and initial customer order transaction are foundations. Not all seven portals are connected to complete live transaction APIs. Payments, bookings, dispatch, labour attendance and settlements still require implementation, provider configuration and end-to-end testing.
-
-## Production safety
-
-This is a development branch snapshot. The PR remains a draft. Do not overwrite the production site or distribute a new APK to customers until tests, authentication, order/payment flows, signing continuity and device-upgrade tests pass.
+| Item | Windows copy | Update mechanism |
+| --- | --- | --- |
+| Web, Android, SQL migrations and Edge Function source | Yes | Git fast-forward from chosen branch |
+| npm dependencies | Reinstalled locally | `npm ci` from lockfile |
+| Public Supabase endpoint/key | Local `.env.local` | First-run template, review when changed |
+| Live database records and uploaded object bytes | Separate local snapshot | Run backup again after changes |
+| Server secrets, provider dashboards, signing keys | Owner-managed private backup | Never stored in Git/source ZIP |
+| OTA updates and signed installable APK | Not produced by source sync | Separate verified release process |

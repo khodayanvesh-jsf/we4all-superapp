@@ -5,6 +5,7 @@ on:
     branches:
       - codex/we4all-supabase-accounts-ota
       - codex/we4all-shop-rides
+      - codex/we4all-offline-sync
   workflow_dispatch:
 
 permissions:
