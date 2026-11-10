@@ -82,7 +82,7 @@ This is a test APK. GitHub Actions debug APK artifacts have been found to use di
 WE4ALL is shared directly as an APK; Google Play is not required. Android still requires the same signing certificate for in-place app upgrades. Read:
 - `docs/APK_SIGNING_AUDIT_2026-11-06.md`
 - `docs/GITHUB_DEBUG_APK_MIGRATION.md`
-- `docs/CAPGO_OTA_RELEASE.md`
+- `docs/SUPABASE_OTA_STAGING.md`
 
 Do not create a new signing key until the existing-user migration plan is approved and any owner-held key has been searched for. Protect the permanent keystore and back it up offline in two secure places. Never commit it.
 

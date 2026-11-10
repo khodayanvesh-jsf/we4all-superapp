@@ -5,12 +5,15 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import ActionAndErrorFeedbackLayer from "./modules/ActionAndErrorFeedbackLayer.jsx";
 
-// Must run on every native launch, before network requests or app initialization.
-// Capgo rolls back a candidate bundle when this acknowledgement is not received.
-if (Capacitor.isNativePlatform()) {
-  void CapacitorUpdater.notifyAppReady().catch((error) => {
-    console.error("WE4ALL OTA app-ready acknowledgement failed:", error);
-  });
+function NativeBundleReady() {
+  React.useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorUpdater.notifyAppReady().catch((error) => {
+        console.error("WE4ALL OTA app-ready acknowledgement failed:", error);
+      });
+    }
+  }, []);
+  return null;
 }
 
 class RootErrorBoundary extends React.Component {
@@ -70,6 +73,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <RootErrorBoundary>
       <ActionAndErrorFeedbackLayer>
         <App />
+        <NativeBundleReady />
       </ActionAndErrorFeedbackLayer>
     </RootErrorBoundary>
   </React.StrictMode>

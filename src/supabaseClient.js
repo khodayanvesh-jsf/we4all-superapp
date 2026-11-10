@@ -42,6 +42,19 @@ export const supabase = SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY
     })
   : null;
 
+// Recovery sessions never replace the normal signed-in session on this device.
+export function createIsolatedSupabaseClient() {
+  if (!supabase) return null;
+  return createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: "we4all-isolated-auth"
+    }
+  });
+}
+
 export function getServerConfig() {
   return {
     supabaseUrl: SUPABASE_URL,
@@ -564,7 +577,7 @@ export async function checkLiveCloudOtaManifest(callback) {
     installedBuildNumber: APP_BUILD_NUMBER,
     currentVersion: APP_VERSION,
     currentBundleVersion: "BUILT-IN",
-    nativeUpdater: Capacitor.isNativePlatform() ? "Capgo" : "Not installed"
+    nativeUpdater: Capacitor.isNativePlatform() ? "WE4ALL" : "Not installed"
   };
 
   if (!Capacitor.isNativePlatform()) {
@@ -587,16 +600,16 @@ export async function checkLiveCloudOtaManifest(callback) {
     const currentBundleVersion = current?.bundle?.version || "BUILT-IN";
     const currentVersion = APP_VERSION;
     const latestVersion = latest?.version || currentBundleVersion;
-    const available = Boolean(latest?.url && latest?.version && latest.version !== currentBundleVersion);
+    const available = Boolean(latest?.url && latest?.version && latest?.checksum && latest?.sessionKey && latest.version !== currentBundleVersion);
     const info = {
       ...installedInfo,
       currentVersion,
       currentBundleVersion,
       latestAvailableVersion: latestVersion,
       updateAvailable: available,
-      releaseNotes: latest?.message || "",
+      releaseNotes: available ? latest?.comment || "" : "",
       downloadUrl: available ? latest.url : "",
-      nativeUpdater: "Capgo"
+      nativeUpdater: "WE4ALL"
     };
     if (callback) callback({ appUpdateInfo: info });
     return info;
@@ -605,7 +618,7 @@ export async function checkLiveCloudOtaManifest(callback) {
       ...installedInfo,
       latestAvailableVersion: APP_VERSION,
       updateAvailable: false,
-      error: error?.message || "Could not check the Capgo update channel."
+      error: error?.message || "Could not check the WE4ALL update channel."
     };
   }
 }
@@ -829,20 +842,22 @@ export async function performZeroLossOtaUpdate(targetVersion, releaseNotes, onPr
   }
 
   const latest = await CapacitorUpdater.getLatest();
-  if (!latest?.url || !latest?.version) {
-    throw new Error(latest?.message || "No verified Capgo update is available for this device.");
+  if (!latest?.url || !latest?.version || !latest?.checksum || !latest?.sessionKey) {
+    throw new Error(latest?.message || "No verified WE4ALL update is available for this device.");
   }
   if (targetVersion && latest.version !== targetVersion) {
     throw new Error("The available OTA version changed. Check for updates again before installing.");
   }
 
-  onProgress?.({ pct: 20, msg: "Downloading update from the configured Capgo channel..." });
+  onProgress?.({ pct: 20, msg: "Downloading update from WE4ALL staging..." });
   const bundle = await CapacitorUpdater.download({
     url: latest.url,
-    version: latest.version
+    version: latest.version,
+    checksum: latest.checksum,
+    sessionKey: latest.sessionKey
   });
   if (!bundle?.id) {
-    throw new Error("Capgo did not return a valid downloaded bundle identifier.");
+    throw new Error("The updater did not return a valid downloaded bundle identifier.");
   }
 
   onProgress?.({ pct: 80, msg: "Bundle downloaded. Queueing it for safe activation..." });
@@ -855,7 +870,7 @@ export async function performZeroLossOtaUpdate(targetVersion, releaseNotes, onPr
     updateAvailable: false,
     releaseNotes: releaseNotes || latest.message || "",
     status: "QUEUED_FOR_NEXT_BACKGROUND",
-    nativeUpdater: "Capgo"
+    nativeUpdater: "WE4ALL"
   };
   onProgress?.({ pct: 100, msg: "Update queued. It will activate on the next safe app background/relaunch." });
   onComplete?.(updatedInfo);

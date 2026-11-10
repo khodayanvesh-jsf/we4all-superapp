@@ -10,7 +10,7 @@ const [main, configText, client, app, account, pkgText, workflow] = await Promis
   read("../src/App.jsx"),
   read("../src/modules/OwnerAccountProfile.jsx"),
   read("../package.json"),
-  read("../.github/workflows/we4all-capgo-ota.yml")
+  read("../.github/workflows/we4all-supabase-staging.yml")
 ]);
 const config = JSON.parse(configText);
 const pkg = JSON.parse(pkgText);
@@ -22,18 +22,21 @@ test("Capgo updater is installed for the Capacitor 8 runtime", () => {
 test("native startup acknowledges the currently executing bundle", () => {
   assert.match(main, /CapacitorUpdater\.notifyAppReady\(\)/);
   assert.match(main, /Capacitor\.isNativePlatform\(\)/);
-  assert.ok(main.indexOf("CapacitorUpdater.notifyAppReady") < main.indexOf("ReactDOM.createRoot"));
+  assert.match(main, /<App \/>[\s\S]*<NativeBundleReady \/>/);
 });
 
-test("Capgo config uses safe background application and HTTPS", () => {
+test("default native config requires explicit staging configuration and never calls a cloud default", () => {
   const updater = config.plugins.CapacitorUpdater;
   assert.equal(updater.appId, "com.we4all.superapp");
-  assert.equal(updater.autoUpdate, "atBackground");
+  assert.equal(updater.autoUpdate, false);
+  assert.equal(updater.updateUrl, "");
+  assert.equal(updater.statsUrl, "");
+  assert.equal(updater.channelUrl, "");
   assert.equal(updater.httpsOnly, true);
   assert.equal(updater.keepUrlPathAfterReload, true);
 });
 
-test("OTA checks use the native Capgo channel, not a static Vercel version manifest", () => {
+test("OTA checks use the configured native updater endpoint", () => {
   assert.match(client, /CapacitorUpdater\.getLatest\(\)/);
   assert.match(client, /CapacitorUpdater\.current\(\)/);
   assert.doesNotMatch(client, /ota-manifest\.json/);
@@ -57,15 +60,10 @@ test("native app checks for OTA on launch and exposes version/update status in A
   assert.match(account, /Check for updates/);
 });
 
-test("OTA release workflow restricts channels and requires encrypted upload secrets", () => {
-  assert.match(workflow, /CAPGO_API_KEY/);
-  assert.match(workflow, /CAPGO_PRIVATE_KEY/);
-  assert.match(workflow, /--key-data-v2/);
-  assert.match(workflow, /inputs\.channel == 'production'.*refs\/heads\/main/s);
-  assert.match(workflow, /inputs\.channel == 'staging'.*refs\/heads\/fix\/payment-safety-guest-default/s);
-  assert.match(workflow, /inputs\.channel == 'staging'.*refs\/heads\/codex\/we4all-partner-registration-kyc-20261107/s);
-  assert.match(workflow, /push:[\s\S]*branches:[\s\S]*codex\/we4all-partner-registration-kyc-20261107/);
-  assert.match(workflow, /github\.event_name == 'push' && 'staging'/);
-  assert.match(workflow, /CapacitorUpdater\?\.publicKey!==process\.env\.CAPGO_PUBLIC_KEY/);
-  assert.doesNotMatch(workflow, /--no-key/);
+test("OTA workflow uses a protected Supabase staging environment and verified packaging", () => {
+  assert.match(workflow, /environment: supabase-ota-staging/);
+  assert.match(workflow, /WE4ALL_STAGING_RELEASE_ENABLED/);
+  assert.match(workflow, /verify-ota-package\.mjs/);
+  assert.match(workflow, /publish-staging-ota\.mjs/);
+  assert.doesNotMatch(workflow, /CAPGO_API_KEY|bundle upload|--no-key/);
 });

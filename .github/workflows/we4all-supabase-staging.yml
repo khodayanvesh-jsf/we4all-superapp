@@ -1,0 +1,102 @@
+name: WE4ALL account and Supabase OTA candidate
+
+on:
+  push:
+    branches:
+      - codex/we4all-supabase-accounts-ota
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: we4all-supabase-staging
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Verify offline bundle packaging with a disposable signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          openssl genrsa -traditional -out "$work/key.pem" 2048
+          npm exec --yes --package=@capgo/cli@8.100.0 -- capgo bundle zip com.we4all.superapp \
+            --path dist --name "$work/bundle.zip" --bundle 3.3.1000 --for-upload --key-v2 "$work/key.pem" --json > "$work/pack.json"
+          node scripts/verify-ota-package.mjs "$work/pack.json" "$work/bundle.zip" "$work/key.pem"
+
+  release-staging:
+    needs: verify
+    if: github.ref == 'refs/heads/codex/we4all-supabase-accounts-ota' && vars.WE4ALL_STAGING_RELEASE_ENABLED == 'true'
+    environment: supabase-ota-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      WE4ALL_STAGING_SUPABASE_URL: ${{ vars.WE4ALL_STAGING_SUPABASE_URL }}
+      WE4ALL_OTA_PUBLIC_KEY: ${{ vars.WE4ALL_OTA_PUBLIC_KEY }}
+      VITE_SUPABASE_URL: ${{ vars.WE4ALL_STAGING_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.WE4ALL_STAGING_PUBLISHABLE_KEY }}
+      VITE_WE4ALL_TRIAL_OTP_MODE: 'false'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - run: npm ci
+      - name: Configure staging endpoint and native updater key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${VITE_SUPABASE_PUBLISHABLE_KEY:?Set the staging publishable key}"
+          node scripts/configure-staging-ota.mjs
+          npm run build
+          npx cap sync android
+      - name: Build a QA APK
+        working-directory: android
+        run: bash ./gradlew --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WE4ALL-Supabase-staging-Android-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Publish signed web bundle to Supabase staging
+        shell: bash
+        env:
+          WE4ALL_STAGING_SUPABASE_SERVICE_KEY: ${{ secrets.WE4ALL_STAGING_SUPABASE_SERVICE_KEY }}
+          WE4ALL_OTA_PRIVATE_KEY: ${{ secrets.WE4ALL_OTA_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          printf '%s\n' "${WE4ALL_OTA_PRIVATE_KEY:?Set the staging OTA signing key}" > "$work/key.pem"
+          version="3.3.$((100000 + GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))"
+          npm exec --yes --package=@capgo/cli@8.100.0 -- capgo bundle zip com.we4all.superapp \
+            --path dist --name "$work/bundle.zip" --bundle "$version" --for-upload --key-v2 "$work/key.pem" --json > "$work/pack.json"
+          node scripts/verify-ota-package.mjs "$work/pack.json" "$work/bundle.zip" "$work/key.pem"
+          node scripts/publish-staging-ota.mjs "$work/pack.json" "$work/bundle.zip" "$work/key.pem"

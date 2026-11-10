@@ -16,7 +16,7 @@ A public certificate can verify an APK but cannot sign a later APK. The private 
    keytool -genkeypair -v -keystore we4all-release.jks -alias we4all -keyalg RSA -keysize 2048 -validity 10000
    ```
 3. Back up the keystore offline in two secure locations. Do not commit it or send it through chat.
-4. Add GitHub Environment `android-release` secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`, and `CAPGO_PUBLIC_KEY`.
+4. Add GitHub Environment `android-release` secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 5. Merge the reviewed release branch into `main` only after its checks pass and the owner has approved the transition.
 6. Run the signed APK workflow on `main`. Install the result on a spare test phone first, verify package ID `com.we4all.superapp`, versionCode `329`, versionName `3.2.9`, and inspect the signing fingerprint.
 7. Because this certificate differs from the old GitHub debug certificate, users with the old debug APK will need to uninstall that app before installing the release APK under the same package ID. Uninstalling may erase local-only app data. Before doing this, provide a backup/export path and ensure users can sign back into accounts; never promise that local-only data is preserved automatically.
@@ -26,7 +26,7 @@ A public certificate can verify an APK but cannot sign a later APK. The private 
 WE4ALL is an APK-distribution app. Google Play is not required. The GitHub workflow builds a signed APK artifact only and does not publish to Play.
 
 ## Capgo settings
-Create Capgo app `com.we4all.superapp` and channels `staging`, `production`. Add to BOTH GitHub Environments `capgo-staging` and `capgo-production`: `CAPGO_API_KEY`, `CAPGO_PRIVATE_KEY`, `CAPGO_PUBLIC_KEY`. Add a production approval reviewer. Capgo key values belong in GitHub Environment secrets, not in `.env` or frontend code.
+Use the dedicated [Supabase staging procedure](SUPABASE_OTA_STAGING.md) for the OTA candidate. Match the Android signing certificate before an in-place upgrade.
 
 ## Important limit
 This migration plan is based on the inspected artifact from run `42128617872`. If customers received an APK from a different Actions run, inspect that exact APK too: GitHub-hosted runner debug signing certificates can differ from run to run.

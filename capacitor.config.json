@@ -8,11 +8,16 @@
   "plugins": {
     "CapacitorUpdater": {
       "appId": "com.we4all.superapp",
-      "autoUpdate": "atBackground",
+      "autoUpdate": false,
       "appReadyTimeout": 10000,
       "httpsOnly": true,
       "keepUrlPathAfterReload": true,
-      "autoDeleteFailed": true
+      "autoDeleteFailed": true,
+      "updateUrl": "",
+      "channelUrl": "",
+      "statsUrl": "",
+      "allowModifyUrl": false,
+      "persistModifyUrl": false
     }
   }
 }
