@@ -33,6 +33,7 @@ import MerchantPortal from "./modules/MerchantPortal";
 import ServiceProviderPortal from "./modules/ServiceProviderPortal";
 import DecoratorPortal from "./modules/DecoratorPortal";
 import RiderCaptainPortal from "./modules/RiderCaptainPortal";
+const RideWorkspace = React.lazy(() => import("./modules/rides/RideWorkspace"));
 import { canOpenPartnerPortal, isCustomerVisibleListing, calculateDecoratorAdvance } from "./modules/workflows/portalRules";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
@@ -1085,8 +1086,8 @@ function AppContent() {
         const matchCat = selectedCategory === "all" || p.categoryId === selectedCategory;
         const matchSearch =
           !searchQuery.trim() ||
-          p.subCategoryBrand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.shopName.toLowerCase().includes(searchQuery.toLowerCase());
+          String(p.subCategoryBrand || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+          String(p.shopName || "").toLowerCase().includes(searchQuery.toLowerCase());
         return matchCat && matchSearch;
       });
 
@@ -1146,6 +1147,7 @@ function AppContent() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search local products and shops"
                 placeholder={t.searchPlaceholder || "Search stores, items, services..."}
                 className="flex-1 bg-slate-900 text-white border border-slate-700 rounded-xl px-2.5 py-1 text-[11px]"
               />
@@ -1210,6 +1212,11 @@ function AppContent() {
 
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
+                  <section className="w4-shop-hero" aria-label="Your local market">
+                    <div><p>NEARBY SHOPS · EVERYDAY NEEDS</p><h2>Your town.<br />Your market.</h2>
+                    <p>Discover local favourites, compare shops and keep your essentials in one cart.</p></div>
+                    <button type="button" onClick={() => { setActiveCartViewTab("merchant_cart"); setFooterTab("cart"); }}>View cart</button>
+                  </section>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
                     <button
                       type="button"
@@ -1254,7 +1261,7 @@ function AppContent() {
                       >Merchant Partner Login / KYC</button>}
                     </div>
                   ) : (
-                    filteredProducts.map((prod) => {
+                    <div className="w4-shop-products">{filteredProducts.map((prod) => {
                       const chosenVarId = selectedVariantMap[prod.id] || prod.variants[0]?.id;
                       const activeVar =
                         prod.variants.find((v) => v.id === chosenVarId) || prod.variants[0];
@@ -1264,6 +1271,7 @@ function AppContent() {
                           key={prod.id}
                           className="p-3 rounded-2xl border border-slate-300/80 bg-white text-slate-900 shadow-sm space-y-2"
                         >
+                          <div className="w4-product-motif" aria-hidden="true">{visibleCategories.find(category => category.id === prod.categoryId)?.icon || "🛍️"}</div>
                           <div className="flex justify-between items-start gap-2">
                             <div>
                               <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-900">
@@ -1273,11 +1281,11 @@ function AppContent() {
                             </div>
                             <div className="text-right">
                               <p className="font-black text-sm text-emerald-700">
-                                Rs.{activeOffer.price || activeVar?.price}
+                                Rs.{activeOffer.price ?? activeVar?.price}
                               </p>
-                              <p className="text-[9px] line-through text-slate-400">
-                                MRP Rs.{activeVar?.mrp || (activeVar?.price || 100) + 25}
-                              </p>
+                              {Number(activeVar?.mrp) > Number(activeOffer.price ?? activeVar?.price) && <p className="text-[10px] line-through text-slate-500">
+                                MRP Rs.{activeVar.mrp}
+                              </p>}
                             </div>
                           </div>
 
@@ -1316,6 +1324,7 @@ function AppContent() {
                             <button
                               type="button"
                               onClick={() => handleAddToUnifiedMerchantCart(prod)}
+                              aria-label={`Add ${prod.subCategoryBrand} to cart`}
                               className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                             >
                               + Add
@@ -1344,7 +1353,7 @@ function AppContent() {
                           )}
                         </div>
                       );
-                    })
+                    })}</div>
                   )}
                 </div>
               )}
@@ -1522,59 +1531,10 @@ function AppContent() {
               )}
 
               {customerHomeSubTab === "taxi" && (
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-2">
-                  <h3 className="font-black text-xs">Instant Local Point-to-Point Ride</h3>
-                  <input
-                    type="text"
-                    value={taxiBookingForm.pickupPin}
-                    onChange={(e) =>
-                      setTaxiBookingForm({ ...taxiBookingForm, pickupPin: e.target.value })
-                    }
-                    placeholder="Pickup Location"
-                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-                  />
-                  <input
-                    type="text"
-                    value={taxiBookingForm.dropPin}
-                    onChange={(e) =>
-                      setTaxiBookingForm({ ...taxiBookingForm, dropPin: e.target.value })
-                    }
-                    placeholder="Drop Location"
-                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-                  />
-                  <div className="grid grid-cols-3 gap-1.5 pt-1">
-                    {[
-                      { type: "2W Bike", rate: 12 },
-                      { type: "3W Auto", rate: 22 },
-                      { type: "AC Cab", rate: 35 }
-                    ].map((v) => {
-                      const fare = Math.round(taxiBookingForm.distanceKm * v.rate + 20);
-                      return (
-                        <button
-                          key={v.type}
-                          type="button"
-                          onClick={() => {
-                            setTaxiCart([
-                              ...taxiCart,
-                              {
-                                id: "RIDE-" + Date.now(),
-                                vehicle: v.type,
-                                pickup: taxiBookingForm.pickupPin,
-                                drop: taxiBookingForm.dropPin,
-                                fare
-                              }
-                            ]);
-                            triggerToast(v.type + " (Rs." + fare + ") added to Ride Cart!");
-                          }}
-                          className="p-2 rounded-xl border border-emerald-600 bg-emerald-50 text-center cursor-pointer"
-                        >
-                          <p className="font-black text-[10px]">{v.type}</p>
-                          <p className="font-black text-xs text-emerald-800">Rs.{fare}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                <React.Suspense fallback={<p role="status">Opening rides…</p>}>
+                  <RideWorkspace key={currentUser?.authUserId || "guest"} currentUser={currentUser}
+                    onSignIn={() => setFooterTab("account")} onShop={() => setCustomerHomeSubTab("stores")} />
+                </React.Suspense>
               )}
 
               {customerHomeSubTab === "labour" && (
@@ -1834,26 +1794,14 @@ function AppContent() {
               )}
 
               {activeCartViewTab === "taxi_cart" && (
-                <div className="space-y-2">
-                  {taxiCart.map((r, i) => (
-                    <div key={i} className="flex justify-between border-b pb-1">
-                      <span>
-                        {r.vehicle}: {r.pickup} to {r.drop}
-                      </span>
-                      <span className="font-black">Rs.{r.fare}</span>
-                    </div>
-                  ))}
-                  {(taxiCart || []).length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerToast("Ride request has not been dispatched. Live captain allocation and fare confirmation are not yet connected. Your ride cart is unchanged.");
-                      }}
-                      className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-                    >
-                      Request ride (dispatch pending)
-                    </button>
-                  )}
+                <div className="space-y-3">
+                  <p>Request rides directly from the Rides screen and follow their progress there.</p>
+                  {!!taxiCart.length && <p>Your older ride cart contains {taxiCart.length} saved selections. These were never dispatched; confirm pickup again when booking.</p>}
+                  {(taxiCart || []).map((ride, index) => <div key={`${ride.id || "saved"}-${index}`} className="rounded-xl border border-slate-300 p-2">
+                    {ride.vehicle}: {ride.pickup} → {ride.drop} · saved estimate Rs.{ride.fare}
+                  </div>)}
+                  <button type="button" onClick={() => { setCustomerHomeSubTab("taxi"); setFooterTab("home"); }}
+                    className="bg-emerald-700 text-white px-4 py-3 rounded-xl font-bold">Open rides</button>
                 </div>
               )}
             </div>

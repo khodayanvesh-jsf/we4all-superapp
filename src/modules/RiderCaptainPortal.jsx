@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import LiveRouteMap from "./LiveRouteMap";
+const RideWorkspace = React.lazy(() => import("./rides/RideWorkspace"));
 
 export const VEHICLE_CONSORT_RULES = {
   "2W": {
@@ -236,6 +237,12 @@ export default function RiderCaptainPortal({
 
   if (footerTab === "account") {
     return renderAccountTab();
+  }
+  if (footerTab === "home") {
+    return <React.Suspense fallback={<p role="status">Opening rider workspace…</p>}>
+      <RideWorkspace key={currentUser?.authUserId || "guest"} currentUser={currentUser}
+        mode="rider" onShop={onSwitchToPersonalShop} />
+    </React.Suspense>;
   }
 
   return (
