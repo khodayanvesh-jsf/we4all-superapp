@@ -16,6 +16,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify-offline-sync:
+    if: github.ref == 'refs/heads/codex/we4all-offline-sync'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Clone and safely fast-forward a Windows copy
+        shell: powershell
+        run: |
+          $copy = Join-Path $env:RUNNER_TEMP 'WE4ALL-copy'
+          $syncParams = @{
+            Destination = $copy
+            RepoUrl = $env:GITHUB_WORKSPACE
+            Branch = $env:GITHUB_REF_NAME
+          }
+          & ./offline/Sync-WE4ALL.ps1 @syncParams
+          & ./offline/Sync-WE4ALL.ps1 @syncParams
+          $head = (& git -C $copy rev-parse HEAD).Trim()
+          if ($head -ne $env:GITHUB_SHA) { throw "Wrong source commit: $head" }
+          Set-Content -Path (Join-Path $copy 'unsaved-local-note.txt') -Value 'keep'
+          try {
+            & ./offline/Sync-WE4ALL.ps1 @syncParams
+            throw 'Dirty workspace was unexpectedly accepted.'
+          } catch {
+            if ($_.Exception.Message -notmatch 'Local changes found') { throw }
+          }
+          if (-not (Test-Path (Join-Path $copy 'unsaved-local-note.txt'))) {
+            throw 'The offline sync removed a local file.'
+          }
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
