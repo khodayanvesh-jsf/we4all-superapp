@@ -21,6 +21,11 @@ const REGISTRATION_ROLE_LABELS = {
   labour: "Labour & Mistri Worker Partner"
 };
 
+function hasReviewableTerms(application) {
+  const version = application.application_payload?.kyc?.terms?.version || "";
+  return version.startsWith("final-") || (application.founder_test_account === true && version === "trial-draft-1");
+}
+
 export default function FounderAdminSuite({
   founderLogoUrl,
   onUploadFounderPhoto,
@@ -376,6 +381,42 @@ export default function FounderAdminSuite({
     } catch (error) { setUsersMessage(error?.message || "Could not load listings."); }
   };
 
+  const [testPass, setTestPass] = useState(null);
+  const [issuingTestPass, setIssuingTestPass] = useState(false);
+
+  const runFounderTrialAction = async (body) => {
+    const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body });
+    const details = await error?.context?.clone?.().json().catch(() => null);
+    if (error || data?.ok !== true) throw new Error(details?.error || data?.error || error?.message || "WE4ALL could not save the change.");
+    return data;
+  };
+
+  const issueTestPass = async () => {
+    setIssuingTestPass(true);
+    setTestPass(null);
+    setUsersMessage("");
+    try {
+      setTestPass(await runFounderTrialAction({ action: "create_test_pass" }));
+    } catch (error) {
+      setUsersMessage(error.message);
+    } finally {
+      setIssuingTestPass(false);
+    }
+  };
+
+  const reviewListing = async (listing, decision) => {
+    setUsersBusy(true);
+    try {
+      await runFounderTrialAction({ action: "listing_review", listing_id: listing.id, decision });
+      await refreshManagedListings();
+      onTriggerToast(decision === "approved" ? "Product approved on the server. Add stock in the merchant portal." : "Product rejected on the server.");
+    } catch (error) {
+      onTriggerToast(error.message);
+    } finally {
+      setUsersBusy(false);
+    }
+  };
+
   const removeManagedListing = async (listing) => {
     if (!window.confirm(`Remove "${listing.title}" from the marketplace? Existing order records will be kept.`)) return;
     setUsersBusy(true);
@@ -450,7 +491,7 @@ export default function FounderAdminSuite({
         setServerPartnerApplicationsError("Complete all five evidence checks before approving this application.");
         return;
       }
-      if (!String(application.application_payload?.kyc?.terms?.version || "").startsWith("final-")) {
+      if (!hasReviewableTerms(application)) {
         setServerPartnerApplicationsError("Approval is paused until the Founder publishes the final partner terms. This applicant accepted the trial declaration only.");
         return;
       }
@@ -1108,7 +1149,7 @@ export default function FounderAdminSuite({
                               </label>
                             ))}
                           </div>
-                          <p className="text-[10px] text-amber-200">Accepted terms: {kyc.terms?.version || "not recorded"}. Final terms required to activate this partner.</p>
+                          <p className="text-[10px] text-amber-200">Accepted terms: {kyc.terms?.version || "not recorded"}. {application.founder_test_account ? "Founder-issued test account. Review the trial declaration and every document." : "Final terms required to activate this partner."}</p>
                         </div>
                       </>
                     ) : <p className="rounded-lg bg-slate-950 p-3 text-[10px] text-slate-400">The applicant still needs to upload the documents listed for this role and complete the trial declaration before review can begin.</p>}
@@ -1117,9 +1158,9 @@ export default function FounderAdminSuite({
                       <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id || kyc.status !== "submitted" || !allChecksComplete || !String(kyc.terms?.version || "").startsWith("final-") || (application.trial_phone_verification && (!application.trial_approval_override_allowed || !trialPhoneOverrideByApplication[application.id]))}
+                        disabled={serverReviewBusyId === application.id || kyc.status !== "submitted" || !allChecksComplete || !hasReviewableTerms(application) || (application.trial_phone_verification && (!application.trial_approval_override_allowed || !trialPhoneOverrideByApplication[application.id]))}
                         onClick={() => reviewServerPartnerApplication(application, "approved")}
-                        title={!String(kyc.terms?.version || "").startsWith("final-") ? "Publish final partner terms before activation" : "Complete all five checks first"}
+                        title={!hasReviewableTerms(application) ? "Publish final partner terms before activation" : "Complete all five checks first"}
                         className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
                         Approve {(application.requested_role || "partner").replaceAll("_", " ")}
@@ -1147,7 +1188,7 @@ export default function FounderAdminSuite({
               { id: "service_providers", label: `3. Services (${safePendingServices.length})` },
               { id: "merchants", label: `4. Merchants (${safePendingMerchants.length})` },
               { id: "brands", label: `5. Brand Requests (${safePendingBrands.length})` },
-              { id: "product_approvals", label: `6. Products (${safePendingProductApprovals.length})` },
+              { id: "product_approvals", label: "6. Server Products" },
               { id: "function_halls", label: `7. Function Halls (${safePendingHallApprovals.length})` },
               { id: "labour_workers", label: `8. Labour Workers (${safePendingLabourApprovals.length})` },
               { id: "rejected", label: `9. Rejected (${safeRejectedItems.length})` },
@@ -1156,7 +1197,7 @@ export default function FounderAdminSuite({
               <button
                 key={sub.id}
                 type="button"
-                onClick={() => setApprovalQueueSubTab(sub.id)}
+                onClick={() => { setApprovalQueueSubTab(sub.id); if (sub.id === "product_approvals") refreshManagedListings(); }}
                 className={`py-2 px-1 rounded-xl font-black text-[10px] cursor-pointer ${
                   approvalQueueSubTab === sub.id
                     ? "bg-emerald-400 text-slate-950"
@@ -1278,32 +1319,21 @@ export default function FounderAdminSuite({
               ))}
 
             {approvalQueueSubTab === "product_approvals" && (
-              safePendingProductApprovals.length === 0 ? (
-                <p className="text-slate-400 text-center py-4">No new products are waiting for approval.</p>
-              ) : (
-                safePendingProductApprovals.map((product) => (
-                  <div key={product.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
-                    <div>
-                      <strong className="text-white">{product.subCategoryBrand || product.name}</strong>
-                      <p className="text-[10px] text-slate-400">Merchant: {product.shopName || product.ownerUserId} · Category: {product.categoryId} · ₹{product.variants?.[0]?.price || product.price || 0}</p>
-                    </div>
+              <section className="space-y-3">
+                <button type="button" onClick={refreshManagedListings} className="rounded-lg bg-slate-700 px-3 py-2 text-xs text-white">Refresh server products</button>
+                {usersMessage && <p role="status" className="text-xs text-amber-200">{usersMessage}</p>}
+                {managedListings.filter((listing) => listing.approval_status === "pending").map((listing) => (
+                  <div key={listing.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-950 p-3">
+                    <div><strong className="text-white">{listing.title}</strong>
+                      <p className="text-xs text-slate-400">{listing.category_key} · ₹{listing.price_inr} · {listing.stock_quantity} in stock</p></div>
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => {
-                        const next = safeProducts.map((item) => item.id === product.id ? { ...item, status: "Approved", isPublished: true, inStock: true, approvedAt: new Date().toISOString() } : item);
-                        setProducts(next);
-                        saveCloudAndLocalState({ products: next });
-                        onTriggerToast("Product approved for customer discovery. Inventory and orders are still subject to server validation.");
-                      }} className="bg-emerald-500 text-slate-950 px-3 py-1.5 rounded-lg font-black text-[10px]">Approve product</button>
-                      <button type="button" onClick={() => {
-                        const next = safeProducts.map((item) => item.id === product.id ? { ...item, status: "REJECTED", inStock: false, rejectedAt: new Date().toISOString() } : item);
-                        setProducts(next);
-                        saveCloudAndLocalState({ products: next });
-                        onTriggerToast("Product marked rejected.");
-                      }} className="bg-rose-700 text-white px-3 py-1.5 rounded-lg font-black text-[10px]">Reject</button>
+                      <button type="button" disabled={usersBusy} onClick={() => reviewListing(listing, "approved")} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950">Approve product</button>
+                      <button type="button" disabled={usersBusy} onClick={() => reviewListing(listing, "rejected")} className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-bold text-white">Reject</button>
                     </div>
                   </div>
-                ))
-              )
+                ))}
+                {!managedListings.some((listing) => listing.approval_status === "pending") && <p className="text-xs text-slate-400">No server products are awaiting review.</p>}
+              </section>
             )}
 
             {approvalQueueSubTab === "function_halls" && (
@@ -2669,6 +2699,16 @@ export default function FounderAdminSuite({
               <div className="flex flex-wrap gap-2"><select aria-label="Add portal role" id={`new-role-${account.user_id}`} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[9px] text-white"><option value="merchant">Product Merchant</option><option value="service_provider">Service Provider</option><option value="decorator">Decorator / Hall</option><option value="rider">Delivery Captain</option><option value="labour">Labour / Mistri</option></select><button type="button" disabled={usersBusy} onClick={(event) => { const select = event.currentTarget.parentElement.querySelector("select"); changeManagedRole(account, select.value, "pending"); }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[9px] font-black text-white">Add pending portal</button></div>
             </article>;
           })}
+          <section className="space-y-2 rounded-2xl border border-emerald-500/30 bg-slate-900 p-3">
+            <h4 className="text-xs font-black text-emerald-200">Private trial registration</h4>
+            <p className="text-xs text-slate-300">Issue one pass per tester. Share the pass and test login privately. The tester chooses a PIN and submits any required partner documents.</p>
+            <button type="button" disabled={issuingTestPass} onClick={issueTestPass} className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950">{issuingTestPass ? "Creating…" : "Create one-time test pass"}</button>
+            {testPass && <div className="space-y-2">
+              <label className="block text-xs text-white">Test login<input readOnly value={testPass.login} className="block w-full rounded bg-slate-950 p-2 font-mono" /></label>
+              <label className="block text-xs text-white">One-time pass<input readOnly value={testPass.code} className="block w-full rounded bg-slate-950 p-2 font-mono" /></label>
+              <button type="button" onClick={() => setTestPass(null)} className="text-xs text-emerald-200 underline">Hide pass</button>
+            </div>}
+          </section>
           <section className="space-y-2 rounded-2xl border border-rose-500/30 bg-slate-900 p-3"><div><h4 className="text-xs font-black text-rose-200">Products & services</h4><p className="text-[10px] text-slate-400">Remove a selected listing from customer discovery while retaining previous order records.</p></div>{managedListings.map((listing) => <div key={listing.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-950 p-2"><span className="text-[10px] text-white">{listing.title} · {listing.item_type} · {listing.approval_status}{listing.is_active ? " · active" : " · removed"}</span>{listing.is_active && <button type="button" disabled={usersBusy} onClick={() => removeManagedListing(listing)} className="rounded-lg bg-rose-900 px-3 py-1.5 text-[9px] font-black text-white">Remove listing</button>}</div>)}{managedListings.length === 0 && <p className="text-[10px] text-slate-500">Select Refresh listings to load products and services.</p>}</section>
         </div>
       )}

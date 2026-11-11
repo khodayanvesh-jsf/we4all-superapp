@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
 import { cancelMarketplaceOrder, confirmMarketplaceOrder, listMarketplaceOrders, supabase } from "../supabaseClient";
 import { listSubcategories } from "./workflows/subcategoryKeys";
@@ -41,6 +41,56 @@ export default function MerchantPortal({
   ];
   const [heavyLaborFees, setHeavyLaborFees] = useState({});
   const [productSubmitting, setProductSubmitting] = useState(false);
+  const [liveProducts, setLiveProducts] = useState([]);
+  const [stockDeltas, setStockDeltas] = useState({});
+  const [stockBusy, setStockBusy] = useState(false);
+  const stockAttempt = useRef(null);
+  const partnerId = currentUser?.partnerId;
+
+  useEffect(() => {
+    setLiveProducts([]);
+    setStockDeltas({});
+    stockAttempt.current = null;
+    if (footerTab !== "stock" || !supabase || !partnerId) return;
+    let active = true;
+    supabase.from("we4all_catalog_items")
+      .select("id,title,price_inr,stock_quantity,approval_status,is_active")
+      .eq("partner_id", partnerId).order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) onTriggerToast(error.message || "Could not load your live products.");
+        else setLiveProducts(data || []);
+      });
+    return () => { active = false; };
+  }, [footerTab, partnerId]);
+
+  const adjustLiveStock = async (product) => {
+    const delta = Number(stockDeltas[product.id]);
+    if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 100000) {
+      onTriggerToast("Enter a whole-number stock change, such as 10 to add or -2 to remove.");
+      return;
+    }
+    const previous = stockAttempt.current;
+    const idempotencyKey = previous?.id === product.id && previous.delta === delta ? previous.key : crypto.randomUUID();
+    stockAttempt.current = { id: product.id, delta, key: idempotencyKey };
+    setStockBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-adjust-stock", {
+        body: { partnerId, catalogItemId: product.id, quantityDelta: delta, idempotencyKey }
+      });
+      const details = await error?.context?.clone?.().json().catch(() => null);
+      if (error || !data?.ok || !Number.isInteger(data.stock_quantity)) throw new Error(details?.error || data?.error || "Stock update was not confirmed. Try again.");
+      setLiveProducts((items) => items.map((item) => item.id === product.id ? { ...item, stock_quantity: data.stock_quantity } : item));
+      setStockDeltas((values) => ({ ...values, [product.id]: "" }));
+      stockAttempt.current = null;
+      onTriggerToast("Stock saved to the marketplace.");
+    } catch (error) {
+      onTriggerToast(error.message);
+    } finally {
+      setStockBusy(false);
+    }
+  };
+
   const [newProdForm, setNewProdForm] = useState({
     categoryId: "daily_needs",
     subcategoryKey: "",
@@ -357,9 +407,21 @@ export default function MerchantPortal({
       {footerTab === "stock" && (
         <div className="space-y-2">
           <h4 className="font-black text-emerald-400">
-            2. My Products &amp; Stock Manual ({merchantProducts.length} Items)
+            My server products and stock
           </h4>
-          {merchantProducts.map((prod) => (
+          {liveProducts.map((product) => (
+            <div key={product.id} className="space-y-2 rounded-xl bg-slate-900 p-3">
+              <p className="text-sm font-bold text-white">{product.title}</p>
+              <p className="text-xs text-slate-300">₹{product.price_inr} · {product.approval_status} · {product.stock_quantity} in stock</p>
+              {product.is_active && product.approval_status === "approved" && <div className="flex gap-2">
+                <input type="number" aria-label={`Stock change for ${product.title}`} placeholder="+ Add / − Remove" value={stockDeltas[product.id] ?? ""}
+                  onChange={(event) => setStockDeltas((values) => ({ ...values, [product.id]: event.target.value }))} className="min-w-0 flex-1 rounded bg-slate-950 p-2 text-xs text-white" />
+                <button type="button" disabled={stockBusy} onClick={() => adjustLiveStock(product)} className="rounded bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950">Save stock change</button>
+              </div>}
+            </div>
+          ))}
+          {merchantProducts.some((product) => !product.catalogItemId) && <h5 className="text-xs text-slate-400">Local product drafts</h5>}
+          {merchantProducts.filter((product) => !product.catalogItemId).map((prod) => (
             <div
               key={prod.id}
               className="bg-slate-900 p-2.5 rounded-2xl border border-slate-800 flex justify-between items-center gap-2"

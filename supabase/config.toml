@@ -1,14 +1,15 @@
 project_id = "bdmbziwazpuzbukazmug"
 
 [functions.we4all-admin-review]
-verify_jwt = false
+verify_jwt = true
 
 # The Founder endpoint validates credentials itself; admin requests are verified inside the handler.
 [functions.we4all-founder-auth]
 verify_jwt = false
 
+# The KYC handler verifies the Supabase user token and ownership before reading evidence.
 [functions.we4all-submit-partner-kyc]
-verify_jwt = true
+verify_jwt = false
 
 [functions.we4all-create-order]
 verify_jwt = true
