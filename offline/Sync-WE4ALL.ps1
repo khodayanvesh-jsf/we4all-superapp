@@ -18,7 +18,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 if (-not (Test-Path $Destination)) {
     $parent = Split-Path -Parent $Destination
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force $parent | Out-Null }
-    Run git @('clone', '--branch', $Branch, '--single-branch', $RepoUrl, $Destination)
+    Run git @('clone', '--branch', $Branch, $RepoUrl, $Destination)
 } else {
     if (-not (Test-Path (Join-Path $Destination '.git'))) {
         throw "The destination is not a Git clone: $Destination. Choose an empty destination; keep your existing files."
@@ -32,8 +32,9 @@ if (-not (Test-Path $Destination)) {
         if ((& git status --porcelain).Length -gt 0) {
             throw 'Local changes found. Commit or save them elsewhere before synchronizing. No files changed.'
         }
-        Run git @('fetch', '--prune', 'origin', $Branch)
-        Run git @('merge', '--ff-only', 'FETCH_HEAD')
+        Run git @('config', '--replace-all', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*')
+        Run git @('fetch', '--prune', 'origin')
+        Run git @('merge', '--ff-only', "refs/remotes/origin/$Branch")
     } finally { Pop-Location }
 }
 
@@ -42,6 +43,7 @@ try {
     $commit = (& git rev-parse HEAD).Trim()
     Write-Host "WE4ALL $Branch is now at $commit"
     Write-Host "Source folder: $Destination"
+    Write-Host 'All GitHub branches are available under origin in VS Code.'
     Write-Host 'Includes Android source, Supabase migrations/functions, web modules and CI configuration.'
     if (-not (Test-Path '.env.local')) {
         Copy-Item '.env.example' '.env.local'

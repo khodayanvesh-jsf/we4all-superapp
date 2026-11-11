@@ -33,8 +33,16 @@ jobs:
             RepoUrl = $env:GITHUB_WORKSPACE
             Branch = $env:GITHUB_REF_NAME
           }
+          git branch offline-sync-ci-secondary
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the secondary test branch.' }
           & ./offline/Sync-WE4ALL.ps1 @syncParams
+          git -C $copy config --replace-all remote.origin.fetch "+refs/heads/$($env:GITHUB_REF_NAME):refs/remotes/origin/$($env:GITHUB_REF_NAME)"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not simulate the old single-branch setup.' }
+          git -C $copy update-ref -d refs/remotes/origin/offline-sync-ci-secondary
+          if ($LASTEXITCODE -ne 0) { throw 'Could not remove the secondary tracking branch.' }
           & ./offline/Sync-WE4ALL.ps1 @syncParams
+          git -C $copy show-ref --verify refs/remotes/origin/offline-sync-ci-secondary
+          if ($LASTEXITCODE -ne 0) { throw 'The sync did not fetch the secondary branch.' }
           $head = (& git -C $copy rev-parse HEAD).Trim()
           if ($head -ne $env:GITHUB_SHA) { throw "Wrong source commit: $head" }
           Set-Content -Path (Join-Path $copy 'unsaved-local-note.txt') -Value 'keep'
