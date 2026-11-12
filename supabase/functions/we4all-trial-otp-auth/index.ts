@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.118.0";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -17,21 +17,35 @@ const hash = async (value: string) => {
 };
 const trialLoginEmail = (phone: string) => `w4all-${phone.replace(/\D/g, "")}@login.we4all.invalid`;
 
-async function trialPinSession(url: string, anonKey: string, phone: string, pin: string) {
-  const email = trialLoginEmail(phone);
-  const publicClient = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const result = await publicClient.auth.signInWithPassword({ email, password: pin });
-  const user = result.data.user;
-  const legacyTrial = user?.email === email && user?.user_metadata?.trial_phone_verification === true;
-  if (result.error || !user || user.phone?.replace(/\D/g, "") !== phone.replace(/\D/g, "") ||
-      !(user.app_metadata.we4all_trial_account === true || legacyTrial)) {
-    if (result.data.session) await publicClient.auth.signOut({ scope: "local" });
+async function trialPinSession(admin: ReturnType<typeof createClient>, url: string, anonKey: string, phone: string, pin: string) {
+  const { data: profile, error: profileError } = await admin.from("we4all_profiles")
+    .select("user_id").eq("phone", phone).maybeSingle();
+  if (profileError || !profile?.user_id) return { data: null, error: new Error("Invalid mobile number or PIN.") };
+
+  const { data: userData, error: getUserError } = await admin.auth.admin.getUserById(profile.user_id);
+  const user = userData?.user;
+  if (getUserError || !user || user.user_metadata?.trial_phone_verification !== true) {
     return { data: null, error: new Error("Invalid mobile number or PIN.") };
   }
-  return result;
+
+  const email = trialLoginEmail(phone);
+  if (user.email !== email || user.email_confirmed_at == null) {
+    const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
+      email,
+      email_confirm: true,
+      user_metadata: { ...(user.user_metadata || {}), trial_login_email: email }
+    });
+    if (updateError) {
+      console.error("Trial PIN alias setup failed", updateError.message);
+      return { data: null, error: new Error("Trial PIN sign-in could not be prepared. Contact the Founder.") };
+    }
+  }
+
+  const publicClient = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  return publicClient.auth.signInWithPassword({ email, password: pin });
 }
 
-async function savePendingPartnerApplication(admin: SupabaseClient, body: Record<string, unknown>, userId: string, phone: string) {
+async function savePendingPartnerApplication(admin: ReturnType<typeof createClient>, body: Record<string, unknown>, userId: string, phone: string) {
   const role = String(body.requested_role || "");
   if (!roles.has(role) || role === "customer") return { id: null, marketId: null };
   const latitude = Number(body.latitude);
@@ -127,17 +141,12 @@ Deno.serve(async (req) => {
     if (action === "trial_pin_login") {
       const pin = String(body?.pin || "");
       if (!/^\d{6}$/.test(pin)) return json({ ok: false, error: "Enter your six-digit PIN." }, 400);
-      const signedIn = await trialPinSession(url, anonKey, phone, pin);
+      const signedIn = await trialPinSession(admin, url, anonKey, phone, pin);
       if (signedIn.error || !signedIn.data?.session) return json({ ok: false, error: signedIn.error?.message || "Invalid mobile number or PIN." }, 401);
       return json({ ok: true, user: signedIn.data.user, session: signedIn.data.session, trial_only: true });
     }
 
     const phoneHash = await hash(`${pepper}:${phone}`);
-
-    const allowedTrialPhones = (Deno.env.get("WE4ALL_TRIAL_OTP_ALLOWED_PHONES") || "").split(",").map(value => value.trim());
-    if ((action === "request" || action === "verify") && !allowedTrialPhones.includes(phone)) {
-      return json({ ok: false, error: "Use an authorized private test number or register by email." }, 403);
-    }
 
     if (action === "request") {
       const requestedRole = String(body?.requested_role || "customer");
@@ -195,13 +204,20 @@ Deno.serve(async (req) => {
         trial_phone_verification: true
       };
       const { data: created, error: createError } = await admin.auth.admin.createUser({
-        phone, phone_confirm: true, password: pin,
-        email: trialLoginEmail(phone), email_confirm: true,
-        user_metadata: metadata, app_metadata: { we4all_trial_account: true }
+        phone, phone_confirm: true, password: pin, user_metadata: metadata
       });
-      const userId = created?.user?.id;
+      let userId = created?.user?.id || "";
       if (createError || !userId) {
-        return json({ ok: false, error: "This test account could not be created. If already registered, use its existing PIN." }, 409);
+        const { data: existingProfile, error: existingProfileError } = await admin.from("we4all_profiles")
+          .select("user_id").eq("phone", phone).maybeSingle();
+        if (existingProfileError || !existingProfile?.user_id) {
+          return json({ ok: false, error: "This number may already have an account. Use its existing PIN or contact the Founder." }, 409);
+        }
+        const { data: existingUser, error: existingUserError } = await admin.auth.admin.getUserById(existingProfile.user_id);
+        if (existingUserError || existingUser?.user?.user_metadata?.trial_phone_verification !== true) {
+          return json({ ok: false, error: "This number belongs to an existing account. Sign in with its current PIN." }, 409);
+        }
+        userId = existingProfile.user_id;
       }
 
       let pendingApplication: { id: string | null; marketId: string | null } = { id: null, marketId: null };
@@ -209,7 +225,7 @@ Deno.serve(async (req) => {
         pendingApplication = await savePendingPartnerApplication(admin, body, userId, phone);
       }
 
-      const signedIn = await trialPinSession(url, anonKey, phone, pin);
+      const signedIn = await trialPinSession(admin, url, anonKey, phone, pin);
       const signInError = signedIn.error;
       if (signInError || !signedIn.data?.session) {
         console.error("Trial account created but sign-in could not be issued", signInError?.message || "missing session");

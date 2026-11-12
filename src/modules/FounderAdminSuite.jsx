@@ -3,8 +3,6 @@ import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import { validateFeePolicy } from "./workflows/feePolicies";
 import { listSubcategories } from "./workflows/subcategoryKeys";
 import {
-  getFounderCredentials,
-  saveFounderCredentials,
   saveCloudAndLocalState,
   pullRemoteSupabaseState,
   supabase,
@@ -22,11 +20,6 @@ const REGISTRATION_ROLE_LABELS = {
   rider: "Delivery Captain & Bike/Auto Taxi Partner",
   labour: "Labour & Mistri Worker Partner"
 };
-
-function hasReviewableTerms(application) {
-  const version = application.application_payload?.kyc?.terms?.version || "";
-  return version.startsWith("final-") || (application.founder_test_account === true && version === "trial-draft-1");
-}
 
 export default function FounderAdminSuite({
   founderLogoUrl,
@@ -108,9 +101,6 @@ export default function FounderAdminSuite({
   const safeDecorators = Array.isArray(decorators) ? decorators : [];
   const safeRiders = Array.isArray(riders) ? riders : [];
   const safeLabourWorkers = Array.isArray(labourWorkers) ? labourWorkers : [];
-  const safePendingProductApprovals = safeProducts.filter((product) => product.status === "PENDING_ADMIN_APPROVAL");
-  const safePendingHallApprovals = safeHalls.filter((hall) => hall.status === "PENDING_ADMIN_APPROVAL");
-  const safePendingLabourApprovals = safeLabourWorkers.filter((worker) => worker.status === "PENDING_ADMIN_APPROVAL");
   const safeUsers = Array.isArray(registeredUsers) ? registeredUsers : [];
   const safeProducts = Array.isArray(products) ? products : [];
   const safeHalls = Array.isArray(functionHalls) ? functionHalls : [];
@@ -131,15 +121,25 @@ export default function FounderAdminSuite({
 
   const [adminDisplayMode, setAdminDisplayMode] = useState("web");
   const [founderTab, setFounderTab] = useState("approvals");
-  const [dynamicModules, setDynamicModules] = useState([]);
-  const [dynamicModulesLoading, setDynamicModulesLoading] = useState(false);
-  const [dynamicModulesError, setDynamicModulesError] = useState("");
-  const [dynamicModuleBusy, setDynamicModuleBusy] = useState(false);
-  const [dynamicModuleForm, setDynamicModuleForm] = useState({
-    moduleKey: "", title: "", description: "", icon: "grid", categoryKey: "custom",
-    portalTarget: "customer", zoneCodes: "*", visibilityRoles: "customer",
-    moduleConfig: JSON.stringify({ layout: "grid", components: [] }, null, 2)
-  });
+  const [adminCredentialForm, setAdminCredentialForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
+  const [adminCredentialMessage, setAdminCredentialMessage] = useState("");
+  const [adminCredentialBusy, setAdminCredentialBusy] = useState(false);
+  const [founderProfile, setFounderProfile] = useState({ full_name: "", business_name: "", area: "", phone: "", email: "" });
+  const [founderProfileMessage, setFounderProfileMessage] = useState("");
+  const [founderProfileBusy, setFounderProfileBusy] = useState(false);
+  const [managedUsers, setManagedUsers] = useState([]);
+  const [managedUserFilter, setManagedUserFilter] = useState("active");
+  const [managedListings, setManagedListings] = useState([]);
+  const [usersMessage, setUsersMessage] = useState("");
+  const [usersBusy, setUsersBusy] = useState(false);
+  const [geoManagers, setGeoManagers] = useState([]);
+  const [geoMarkets, setGeoMarkets] = useState([]);
+  const [managerInvite, setManagerInvite] = useState({ full_name: "", email: "", market_id: "" });
+  const [managerMessage, setManagerMessage] = useState("");
+  const [managerBusy, setManagerBusy] = useState(false);
+  const [registrationRoleSettings, setRegistrationRoleSettings] = useState([]);
+  const [registrationRoleBusy, setRegistrationRoleBusy] = useState(false);
+  const [registrationRoleMessage, setRegistrationRoleMessage] = useState("");
   const [locatorSearch, setLocatorSearch] = useState("");
   const [locatorRoleFilter, setLocatorRoleFilter] = useState("ALL");
   const [selectedInspectEntity, setSelectedInspectEntity] = useState(null);
@@ -216,15 +216,204 @@ export default function FounderAdminSuite({
     isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
   );
 
-  // Supabase status is verified against the active Auth session; config presence alone is not authentication.
-  const [syncStatusMsg, setSyncStatusMsg] = useState(
-    isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
-  );
-
   const [serverPartnerApplications, setServerPartnerApplications] = useState([]);
   const [serverPartnerApplicationsLoading, setServerPartnerApplicationsLoading] = useState(false);
   const [serverPartnerApplicationsError, setServerPartnerApplicationsError] = useState("");
+  const [trialPhoneOverrideByApplication, setTrialPhoneOverrideByApplication] = useState({});
   const [serverReviewBusyId, setServerReviewBusyId] = useState("");
+  const [feePolicies, setFeePolicies] = useState([]);
+  const [feePolicyLoading, setFeePolicyLoading] = useState(false);
+  const [feePolicyMessage, setFeePolicyMessage] = useState("");
+  const [feePolicyDraft, setFeePolicyDraft] = useState({
+    fee_type: "customer_platform_fee",
+    scope_type: "global",
+    scope_key: "*",
+    subcategory_key: "",
+    rate_percent: 0,
+    fixed_inr: 0,
+    fee_basis: "order",
+    display_name: "WE4ALL platform fee",
+    disclosure_text: "",
+    terms_version: "",
+    active: false,
+    effective_at: new Date().toISOString()
+  });
+
+  const refreshFeePolicies = async () => {
+    if (!supabase) {
+      setFeePolicyMessage("Supabase client is not configured. Fee settings have not been saved.");
+      return;
+    }
+    setFeePolicyLoading(true);
+    setFeePolicyMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "fee_list" } });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Founder fee access was denied.");
+      setFeePolicies(Array.isArray(data.policies) ? data.policies : []);
+      setFeePolicyMessage("Server fee policies loaded. The launch policy is 0%; active customer fees appear before checkout confirmation.");
+    } catch (error) {
+      setFeePolicyMessage(error?.message || "Could not load server fee policies.");
+    } finally {
+      setFeePolicyLoading(false);
+    }
+  };
+
+  const saveFeePolicy = async () => {
+    const savedPolicy = feePolicyDraft.subcategory_key
+      ? { ...feePolicyDraft, scope_type: "subcategory", scope_key: feePolicyDraft.subcategory_key }
+      : feePolicyDraft;
+    const localError = validateFeePolicy(savedPolicy);
+    if (localError) {
+      setFeePolicyMessage(localError);
+      return;
+    }
+    if (feePolicyDraft.active && Number(feePolicyDraft.rate_percent || 0) + Number(feePolicyDraft.fixed_inr || 0) > 0) {
+      if (feePolicyDraft.fee_type !== "customer_platform_fee") {
+        setFeePolicyMessage("This fee can be saved as a draft. It cannot be activated until the related merchant settlement or rider selection flow is connected and verified.");
+        return;
+      }
+      if (!["global", "category", "catalog_item", "subcategory"].includes(savedPolicy.scope_type)) {
+        setFeePolicyMessage("This fee can be saved as a draft. Service and zone transactions must be connected to server checkout before activation.");
+        return;
+      }
+    }
+    setFeePolicyLoading(true);
+    setFeePolicyMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "fee_save", policy: savedPolicy }
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error || "Could not save the fee policy.");
+      setFeePolicyMessage("Fee policy saved to Supabase and recorded in the audit history.");
+      await refreshFeePolicies();
+    } catch (error) {
+      setFeePolicyMessage(error?.message || "Could not save the fee policy.");
+    } finally {
+      setFeePolicyLoading(false);
+    }
+  };
+
+  const loadFounderProfile = async () => {
+    if (!supabase) return;
+    setFounderProfileBusy(true);
+    setFounderProfileMessage("");
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData?.user?.id) throw new Error(authError?.message || "Founder session is unavailable.");
+      const { data, error } = await supabase.from("we4all_profiles").select("full_name,business_name,area,phone").eq("user_id", authData.user.id).maybeSingle();
+      if (error) throw error;
+      setFounderProfile({ full_name: data?.full_name || authData.user.user_metadata?.full_name || "", business_name: data?.business_name || "", area: data?.area || "", phone: data?.phone || authData.user.phone || "", email: authData.user.email || "" });
+      setFounderProfileMessage("Your Founder profile is loaded from your signed-in account.");
+    } catch (error) {
+      setFounderProfileMessage(error?.message || "Could not load your Founder profile.");
+    } finally { setFounderProfileBusy(false); }
+  };
+
+  const saveFounderProfile = async (event) => {
+    event?.preventDefault?.();
+    if (!supabase) return;
+    setFounderProfileBusy(true);
+    setFounderProfileMessage("");
+    try {
+      const { data, error: authError } = await supabase.auth.getUser();
+      if (authError || !data?.user?.id) throw new Error(authError?.message || "Founder session is unavailable.");
+      const { error } = await supabase.from("we4all_profiles").upsert({
+        user_id: data.user.id, full_name: founderProfile.full_name.trim(), business_name: founderProfile.business_name.trim(),
+        area: founderProfile.area.trim(), phone: founderProfile.phone || data.user.phone || "", updated_at: new Date().toISOString()
+      }, { onConflict: "user_id" });
+      if (error) throw error;
+      await supabase.auth.updateUser({ data: { ...data.user.user_metadata, full_name: founderProfile.full_name.trim(), business_name: founderProfile.business_name.trim() } });
+      setFounderProfileMessage("Founder details saved to your account.");
+    } catch (error) { setFounderProfileMessage(error?.message || "Could not save Founder details."); }
+    finally { setFounderProfileBusy(false); }
+  };
+
+  const refreshManagedUsers = async () => {
+    if (!supabase) return;
+    setUsersBusy(true);
+    setUsersMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "users_list" } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not load portal accounts.");
+      setManagedUsers(Array.isArray(data.users) ? data.users : []);
+      setUsersMessage(`${(data.users || []).length} registered accounts loaded from Supabase.`);
+    } catch (error) { setUsersMessage(error?.message || "Could not load portal accounts."); }
+    finally { setUsersBusy(false); }
+  };
+
+  const changeManagedRole = async (account, roleKey, status) => {
+    setUsersBusy(true);
+    setUsersMessage("");
+    const profile = account.profile || {};
+    const roles = (account.roles || []).filter((item) => item.role !== roleKey).map((item) => ({ role: item.role, status: item.status }));
+    roles.push({ role: roleKey, status });
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile, roles } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not update portal access.");
+      await refreshManagedUsers();
+      setUsersMessage(`${roleKey.replaceAll("_", " ")} access updated.`);
+    } catch (error) { setUsersMessage(error?.message || "Could not update portal access."); setUsersBusy(false); }
+  };
+
+  const removeManagedUserAccess = async (account) => {
+    if (!window.confirm("Remove this account from WE4ALL? This blocks sign-in and deactivates its listings while retaining order, KYC and audit history.")) return;
+    setUsersBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "account_remove", user_id: account.user_id } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not remove account.");
+      await Promise.all([refreshManagedUsers(), refreshManagedListings()]);
+      setUsersMessage("Account removed from active use; order, KYC and audit history retained.");
+    } catch (error) { setUsersMessage(error?.message || "Could not remove account."); setUsersBusy(false); }
+  };
+
+  const refreshManagedListings = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "listings_list" } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not load listings.");
+      setManagedListings(Array.isArray(data.listings) ? data.listings : []);
+    } catch (error) { setUsersMessage(error?.message || "Could not load listings."); }
+  };
+
+  const removeManagedListing = async (listing) => {
+    if (!window.confirm(`Remove "${listing.title}" from the marketplace? Existing order records will be kept.`)) return;
+    setUsersBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "listing_remove", listing_id: listing.id } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not remove listing.");
+      await refreshManagedListings();
+      setUsersMessage("Listing removed from the marketplace; order history retained.");
+    } catch (error) { setUsersMessage(error?.message || "Could not remove listing."); setUsersBusy(false); }
+  };
+
+  const refreshGeoManagers = async () => {
+    if (!supabase) return;
+    setManagerBusy(true);
+    setManagerMessage("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "managers_list" } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not load Geo Managers.");
+      setGeoManagers(Array.isArray(data.managers) ? data.managers : []);
+      setGeoMarkets(Array.isArray(data.markets) ? data.markets : []);
+      setManagerMessage(`${(data.managers || []).length} Geo Managers · ${(data.markets || []).length} active local markets.`);
+    } catch (error) { setManagerMessage(error?.message || "Could not load Geo Managers."); }
+    finally { setManagerBusy(false); }
+  };
+
+  const inviteGeoManager = async (event) => {
+    event?.preventDefault?.();
+    setManagerBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_invite", ...managerInvite } });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not invite Geo Manager.");
+      setManagerInvite({ full_name: "", email: "", market_id: "" });
+      setManagerMessage(`Invitation sent to ${data.manager.email}. Geo Manager access is limited to the selected market.`);
+      await refreshGeoManagers();
+    } catch (error) { setManagerMessage(error?.message || "Could not invite Geo Manager."); setManagerBusy(false); }
+  };
+  const [serverKycChecklist, setServerKycChecklist] = useState({});
+  const [serverReviewReasons, setServerReviewReasons] = useState({});
 
   const refreshServerPartnerApplications = async () => {
     if (!supabase) {
@@ -250,13 +439,38 @@ export default function FounderAdminSuite({
     }
   };
 
-  const reviewServerPartnerApplication = async (applicationId, decision) => {
+  const reviewServerPartnerApplication = async (application, decision) => {
+    const applicationId = application?.id;
     if (!supabase || !applicationId) return;
+    const checklist = serverKycChecklist[applicationId] || {};
+    const allChecksComplete = ["identity", "role_proof", "payout_proof", "terms", "signature"].every((key) => checklist[key] === true);
+    const reason = String(serverReviewReasons[applicationId] || "").trim();
+    if (decision === "approved") {
+      if (!allChecksComplete) {
+        setServerPartnerApplicationsError("Complete all five evidence checks before approving this application.");
+        return;
+      }
+      if (!String(application.application_payload?.kyc?.terms?.version || "").startsWith("final-")) {
+        setServerPartnerApplicationsError("Approval is paused until the Founder publishes the final partner terms. This applicant accepted the trial declaration only.");
+        return;
+      }
+      if (application.trial_phone_verification && (!application.trial_approval_override_allowed || !trialPhoneOverrideByApplication[applicationId])) {
+        setServerPartnerApplicationsError("This trial OTP does not prove phone ownership. Only the Founder can explicitly approve a trial account during preview testing.");
+        return;
+      }
+    }
+    if (decision !== "approved" && reason.length < 4) {
+      setServerPartnerApplicationsError("Enter a short reason before rejecting or suspending this application.");
+      return;
+    }
     setServerReviewBusyId(applicationId);
     setServerPartnerApplicationsError("");
     try {
       const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "review", application_id: applicationId, decision }
+        body: {
+          action: "review", application_id: applicationId, decision, reason, checklist,
+          allow_trial_phone_override: Boolean(application.trial_phone_verification && trialPhoneOverrideByApplication[applicationId])
+        }
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error || "Partner application review failed.");
@@ -279,6 +493,11 @@ export default function FounderAdminSuite({
 
   useEffect(() => {
     if (founderTab === "approvals") refreshServerPartnerApplications();
+    if (founderTab === "monetization") refreshFeePolicies();
+    if (founderTab === "security_server") refreshRegistrationRoles();
+    if (founderTab === "founder_profile") loadFounderProfile();
+    if (founderTab === "portal_users") refreshManagedUsers();
+    if (founderTab === "geo_managers") refreshGeoManagers();
   }, [founderTab]);
 
   const [otaForm, setOtaForm] = useState({
@@ -517,81 +736,20 @@ export default function FounderAdminSuite({
     { id: "approvals", label: "1. All-Sector Approvals & KYC", badge: `${totalPendingCount} Pending` },
     { id: "database", label: "2. 8-Table Master Database CRUD", badge: "Edit All Data" },
     { id: "categories", label: "3. Categories, Sub-Pills & Stock", badge: `${safeCategories.length} Cats` },
-    { id: "modules", label: "4. Dynamic Modules & Publishing", badge: `${dynamicModules.length} Modules` },
-    { id: "security_server", label: "4. Admin Credentials & Data Server", badge: "PIN + Cloud" },
-    { id: "live_locator", label: "5. Live GPS Locator & Inspector", badge: `${unifiedDirectory.length}` },
-    { id: "telemetry", label: "6. Telemetry, Kill-Switches & Push", badge: "God-Mode" },
-    { id: "geo_ads", label: "7. 3-Tier Geo / State / Brand Ads", badge: `${safeGeoAds.length} Ads` },
-    { id: "monetization", label: "8. Commissions & Monetization", badge: `${merchantCommissionPct}%` },
-    { id: "testing", label: "9. Multi-Phone Sandbox & Flow QA", badge: `${safeSplitScreens.length} Phones` }
+    { id: "founder_profile", label: "4. Founder Profile", badge: "My Details" },
+    { id: "portal_users", label: "5. Portal Accounts", badge: `${managedUsers.filter((user) => user.portal_status === "active").length} Active` },
+    { id: "geo_managers", label: "6. Geo Managers & Markets", badge: `${geoManagers.length} Managers` },
+    { id: "security_server", label: "7. Admin Credentials & Data Server", badge: "PIN + Cloud" },
+    { id: "live_locator", label: "8. Live GPS Locator & Inspector", badge: `${unifiedDirectory.length}` },
+    { id: "telemetry", label: "9. Telemetry, Kill-Switches & Push", badge: "God-Mode" },
+    { id: "geo_ads", label: "10. 3-Tier Geo / State / Brand Ads", badge: `${safeGeoAds.length} Ads` },
+    { id: "monetization", label: "11. Commissions & Monetization", badge: `${merchantCommissionPct}%` },
+    { id: "testing", label: "12. Multi-Phone Sandbox & Flow QA", badge: `${safeSplitScreens.length} Phones` }
   ];
   const visibleAdminTabs = adminAccess?.role === "city_manager" ? ADMIN_TABS.filter((tab) => tab.id === "approvals") : ADMIN_TABS;
   useEffect(() => {
     if (adminAccess?.role === "city_manager" && founderTab !== "approvals") setFounderTab("approvals");
   }, [adminAccess?.role, founderTab]);
-
-  const refreshDynamicModules = async () => {
-    setDynamicModulesLoading(true);
-    setDynamicModulesError("");
-    try {
-      const rows = await listFounderDynamicModules();
-      setDynamicModules(rows);
-    } catch (error) {
-      setDynamicModulesError(error?.message || "Could not load Founder module registry.");
-    } finally {
-      setDynamicModulesLoading(false);
-    }
-  };
-
-  const handleSaveDynamicModuleDraft = async () => {
-    let moduleConfig;
-    try {
-      moduleConfig = JSON.parse(dynamicModuleForm.moduleConfig || "{}");
-    } catch {
-      setDynamicModulesError("Module configuration must be valid JSON.");
-      return;
-    }
-    setDynamicModuleBusy(true);
-    setDynamicModulesError("");
-    try {
-      await saveFounderDynamicModule({
-        moduleKey: dynamicModuleForm.moduleKey,
-        title: dynamicModuleForm.title,
-        description: dynamicModuleForm.description,
-        icon: dynamicModuleForm.icon,
-        categoryKey: dynamicModuleForm.categoryKey,
-        portalTarget: dynamicModuleForm.portalTarget,
-        zoneCodes: dynamicModuleForm.zoneCodes.split(",").map((value) => value.trim()).filter(Boolean),
-        visibilityRoles: dynamicModuleForm.visibilityRoles.split(",").map((value) => value.trim()).filter(Boolean),
-        isPublic: true,
-        moduleConfig
-      });
-      onTriggerToast("Dynamic module saved as a versioned draft. It is not public until you publish it.");
-      await refreshDynamicModules();
-    } catch (error) {
-      setDynamicModulesError(error?.message || "Could not save module draft.");
-    } finally {
-      setDynamicModuleBusy(false);
-    }
-  };
-
-  const handleDynamicModuleStatus = async (moduleId, action) => {
-    setDynamicModuleBusy(true);
-    setDynamicModulesError("");
-    try {
-      await setFounderDynamicModuleStatus(moduleId, action);
-      onTriggerToast(action === "publish" ? "Dynamic module published to eligible customers." : "Dynamic module disabled.");
-      await refreshDynamicModules();
-    } catch (error) {
-      setDynamicModulesError(error?.message || "Could not update module status.");
-    } finally {
-      setDynamicModuleBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (founderTab === "modules") refreshDynamicModules();
-  }, [founderTab]);
 
   const renderPartnerApprovalCard = (partner, partnerType) => {
     if (!partner) return null;
@@ -887,6 +1045,17 @@ export default function FounderAdminSuite({
               serverPartnerApplications.map((application) => {
                 const profile = application.profile || {};
                 const payload = application.application_payload || {};
+                const kyc = payload.kyc || {};
+                const documentKeys = Object.keys(kyc.files || {});
+                const checklist = serverKycChecklist[application.id] || {};
+                const allChecksComplete = ["identity", "role_proof", "payout_proof", "terms", "signature"].every((key) => checklist[key] === true);
+                const reviewItems = [
+                  ["identity", "Identity document matches applicant"],
+                  ["role_proof", "Role, trade, skill, or vehicle proof checked"],
+                  ["payout_proof", "Payout identity proof checked"],
+                  ["terms", "Terms version and acceptance checked"],
+                  ["signature", "Signature/name checked"]
+                ];
                 const name = profile.full_name || payload.full_name || "Partner applicant";
                 const phone = profile.phone || payload.phone || "Phone not recorded";
                 const area = profile.area || payload.area || "Area not recorded";
@@ -897,31 +1066,73 @@ export default function FounderAdminSuite({
                       <div>
                         <strong className="text-white">{name}</strong>
                         <p className="text-[10px] text-slate-300">
-                          {application.requested_role.replaceAll("_", " ")} · {business || phone} · {area}
+                          {(application.requested_role || "partner").replaceAll("_", " ")} · {business || phone} · {area}
                         </p>
                         <p className="text-[9px] text-slate-500">
                           Application {application.id} · {new Date(application.created_at).toLocaleString()}
                         </p>
                       </div>
-                      <span className="text-amber-300 text-[9px] font-black">PENDING SERVER REVIEW</span>
+                      <span className="text-amber-300 text-[9px] font-black">{kyc.status === "submitted" ? "DOCUMENTS READY TO REVIEW" : "WAITING FOR APPLICANT DOCUMENTS"}</span>
                     </div>
-                    <div className="flex gap-2">
+                    {kyc.status === "submitted" ? (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {documentKeys.map((key) => (
+                            <a key={key} href={application.kyc_document_urls?.[key] || undefined} target="_blank" rel="noreferrer" className={`rounded-lg border p-2 text-[10px] font-bold ${application.kyc_document_urls?.[key] ? "border-sky-700 bg-sky-950/40 text-sky-200 hover:bg-sky-900/50" : "border-slate-700 bg-slate-950 text-slate-500 pointer-events-none"}`}>
+                              {application.kyc_document_urls?.[key] ? `Open ${key.replaceAll("_", " ")} ↗` : `${key.replaceAll("_", " ")} · unavailable`}
+                            </a>
+                          ))}
+                          {application.kyc_document_urls?.signature && <a href={application.kyc_document_urls.signature} target="_blank" rel="noreferrer" className="rounded-lg border border-sky-700 bg-sky-950/40 p-2 text-[10px] font-bold text-sky-200">Open uploaded signature ↗</a>}
+                          {!application.kyc_document_urls?.signature && kyc.signature?.signer_name && <p className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-300">Typed signer: {kyc.signature.signer_name} · method: {kyc.signature.method || "typed name"}</p>}
+                        </div>
+                        <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2">
+                          <p className="text-[10px] text-slate-300">Documents are private. Review each file before checking its box. Links refresh with the queue and expire after one hour.</p>
+              {Object.entries(application.kyc_document_errors || {}).map(([key, message]) => <p key={key} className="rounded bg-rose-950/40 p-2 text-[10px] text-rose-200">{key.replaceAll("_", " ")} could not open: {message}</p>)}
+                          {application.trial_phone_verification && (
+                            <label className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-950/30 p-2 text-[10px] text-amber-100">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(trialPhoneOverrideByApplication[application.id])}
+                                disabled={!application.trial_approval_override_allowed}
+                                onChange={() => setTrialPhoneOverrideByApplication((current) => ({ ...current, [application.id]: !current[application.id] }))}
+                                className="mt-0.5 accent-amber-400"
+                              />
+                              <span>{application.trial_approval_override_allowed ? "Founder test override: I understand the generated trial code did not verify phone ownership, and approve this test account only after checking its documents." : "Trial code did not verify phone ownership. Preview approval override is available to the Founder only."}</span>
+                            </label>
+                          )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {reviewItems.map(([key, label]) => (
+                              <label key={key} className="flex items-start gap-2 rounded-lg bg-slate-900 p-2 text-[10px] text-slate-200">
+                                <input type="checkbox" checked={Boolean(checklist[key])} onChange={() => setServerKycChecklist((current) => ({ ...current, [application.id]: { ...(current[application.id] || {}), [key]: !current[application.id]?.[key] } }))} className="mt-0.5 accent-emerald-400" />
+                                <span>{label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-amber-200">Accepted terms: {kyc.terms?.version || "not recorded"}. Final terms required to activate this partner.</p>
+                        </div>
+                      </>
+                    ) : <p className="rounded-lg bg-slate-950 p-3 text-[10px] text-slate-400">The applicant still needs to upload the documents listed for this role and complete the trial declaration before review can begin.</p>}
+                    <div className="space-y-2">
+                      <input value={serverReviewReasons[application.id] || ""} onChange={(event) => setServerReviewReasons((current) => ({ ...current, [application.id]: event.target.value }))} placeholder="Reason required for rejection or suspension" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] text-white" />
+                      <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id}
-                        onClick={() => reviewServerPartnerApplication(application.id, "approved")}
+                        disabled={serverReviewBusyId === application.id || kyc.status !== "submitted" || !allChecksComplete || !String(kyc.terms?.version || "").startsWith("final-") || (application.trial_phone_verification && (!application.trial_approval_override_allowed || !trialPhoneOverrideByApplication[application.id]))}
+                        onClick={() => reviewServerPartnerApplication(application, "approved")}
+                        title={!String(kyc.terms?.version || "").startsWith("final-") ? "Publish final partner terms before activation" : "Complete all five checks first"}
                         className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
-                        Approve {application.requested_role.replaceAll("_", " ")}
+                        Approve {(application.requested_role || "partner").replaceAll("_", " ")}
                       </button>
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id}
-                        onClick={() => reviewServerPartnerApplication(application.id, "rejected")}
+                        disabled={serverReviewBusyId === application.id || reason.length < 4}
+                        onClick={() => reviewServerPartnerApplication(application, "rejected")}
                         className="bg-rose-700 disabled:bg-slate-700 text-white disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
-                        Reject
+                        Reject with reason
                       </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -1819,67 +2030,6 @@ export default function FounderAdminSuite({
               <p>The Founder role must be assigned to the founder's Auth account in trusted <code>app_metadata.we4all_role</code>. City Managers use trusted <code>app_metadata.we4all_role=city_manager</code> plus a single <code>app_metadata.we4all_zone_id</code>.</p>
               <p>Do not use user metadata, browser PINs, shared passwords, or local storage to grant roles. City Manager actions remain zone-filtered on the server.</p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Admin Username</label>
-                <input
-                  type="text"
-                  value={adminCredsForm.username}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, username: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-bold"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Admin Password</label>
-                <input
-                  type={showCredsPass ? "text" : "password"}
-                  value={adminCredsForm.password}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, password: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">
-                  4-Digit Founder PIN
-                </label>
-                <input
-                  type={showCredsPass ? "text" : "password"}
-                  maxLength={6}
-                  value={adminCredsForm.pin}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, pin: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-emerald-300 font-mono text-center"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Recovery Mobile</label>
-                <input
-                  type="tel"
-                  value={adminCredsForm.recoveryPhone}
-                  onChange={(e) =>
-                    setAdminCredsForm({ ...adminCredsForm, recoveryPhone: e.target.value })
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-white"
-                />
-              </div>
-            </div>
-
-            <div className="bg-amber-950/50 border border-amber-500/50 rounded-xl p-3 text-[11px] text-amber-100">
-              Founder credentials are not editable in the browser. Configure the founder identity through the secured server-side authentication process; local PIN/password storage and cross-device credential syncing are disabled.
-            </div>
-            <button
-              type="button"
-              disabled
-              className="w-full bg-slate-700 text-slate-400 font-black py-2.5 rounded-xl cursor-not-allowed shadow"
-            >
-              Server-side founder authentication required
-            </button>
           </div>
 
           <div className="bg-slate-900 border border-indigo-400/40 rounded-2xl p-4 space-y-3">
@@ -2580,22 +2730,7 @@ export default function FounderAdminSuite({
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/30 bg-slate-900 p-4"><div><h3 className="text-sm font-black text-indigo-200">Portal account access</h3><p className="mt-1 text-[10px] text-slate-300">Active counts only approved roles. Pending applicants stay in the approval queue and Pending filter. Removing an account blocks sign-in and active listings while preserving transaction, KYC and audit history.</p></div><div className="flex gap-2"><button type="button" disabled={usersBusy} onClick={refreshManagedUsers} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">{usersBusy ? "Loading…" : "Refresh users"}</button><button type="button" disabled={usersBusy} onClick={refreshManagedListings} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-black text-white">Refresh listings</button></div></div>
           <label className="flex items-center gap-2 text-[10px] text-slate-300">Show accounts<select aria-label="Filter portal accounts" value={managedUserFilter} onChange={(event) => setManagedUserFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="active">Active portal users</option><option value="pending">Pending applicants</option><option value="suspended">Suspended / removed</option><option value="all">All accounts</option></select><span>{managedUsers.filter((account) => managedUserFilter === "all" || account.portal_status === managedUserFilter).length} shown</span></label>
           {usersMessage && <p role="status" className="rounded-xl bg-slate-950 p-2 text-[10px] text-amber-200">{usersMessage}</p>}
-          <label className="flex items-center gap-2 text-xs text-slate-300">
-            Portal role
-            <select aria-label="Filter accounts by portal role" value={managedRoleFilter}
-              onChange={(event) => setManagedRoleFilter(event.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white">
-              <option value="all">All roles</option>
-              <option value="customer">Customer</option>
-              <option value="merchant">Merchant</option>
-              <option value="service_provider">Service provider</option>
-              <option value="decorator">Decorator</option>
-              <option value="rider">Rider</option>
-              <option value="labour">Labour</option>
-            </select>
-          </label>
-          {!matchingPortalAccounts.length && <p className="text-xs text-slate-400">No accounts match these filters.</p>}
-          {matchingPortalAccounts.map((account) => {
+          {managedUsers.filter((account) => managedUserFilter === "all" || account.portal_status === managedUserFilter).map((account) => {
             const profile = account.profile || {};
             return <article key={account.user_id} className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black text-white">{profile.full_name || "Unnamed account"} <span className={account.portal_status === "active" ? "text-emerald-300" : "text-amber-300"}>· {account.portal_status || "pending"}</span></p><p className="font-mono text-[9px] text-slate-500">{account.user_id}</p></div><button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => removeManagedUserAccess(account)} className="rounded-lg border border-rose-700 bg-rose-950 px-3 py-1.5 text-[9px] font-black text-rose-200 disabled:opacity-40">Remove from platform</button></div>
@@ -2605,16 +2740,6 @@ export default function FounderAdminSuite({
               <div className="flex flex-wrap gap-2"><select aria-label="Add portal role" id={`new-role-${account.user_id}`} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[9px] text-white"><option value="merchant">Product Merchant</option><option value="service_provider">Service Provider</option><option value="decorator">Decorator / Hall</option><option value="rider">Delivery Captain</option><option value="labour">Labour / Mistri</option></select><button type="button" disabled={usersBusy} onClick={(event) => { const select = event.currentTarget.parentElement.querySelector("select"); changeManagedRole(account, select.value, "pending"); }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[9px] font-black text-white">Add pending portal</button></div>
             </article>;
           })}
-          <section className="space-y-2 rounded-2xl border border-emerald-500/30 bg-slate-900 p-3">
-            <h4 className="text-xs font-black text-emerald-200">Private trial registration</h4>
-            <p className="text-xs text-slate-300">Issue one pass per tester. Share the pass and test login privately. The tester chooses a PIN and submits any required partner documents.</p>
-            <button type="button" disabled={issuingTestPass} onClick={issueTestPass} className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950">{issuingTestPass ? "Creating…" : "Create one-time test pass"}</button>
-            {testPass && <div className="space-y-2">
-              <label className="block text-xs text-white">Test login<input readOnly value={testPass.login} className="block w-full rounded bg-slate-950 p-2 font-mono" /></label>
-              <label className="block text-xs text-white">One-time pass<input readOnly value={testPass.code} className="block w-full rounded bg-slate-950 p-2 font-mono" /></label>
-              <button type="button" onClick={() => setTestPass(null)} className="text-xs text-emerald-200 underline">Hide pass</button>
-            </div>}
-          </section>
           <section className="space-y-2 rounded-2xl border border-rose-500/30 bg-slate-900 p-3"><div><h4 className="text-xs font-black text-rose-200">Products & services</h4><p className="text-[10px] text-slate-400">Remove a selected listing from customer discovery while retaining previous order records.</p></div>{managedListings.map((listing) => <div key={listing.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-950 p-2"><span className="text-[10px] text-white">{listing.title} · {listing.item_type} · {listing.approval_status}{listing.is_active ? " · active" : " · removed"}</span>{listing.is_active && <button type="button" disabled={usersBusy} onClick={() => removeManagedListing(listing)} className="rounded-lg bg-rose-900 px-3 py-1.5 text-[9px] font-black text-white">Remove listing</button>}</div>)}{managedListings.length === 0 && <p className="text-[10px] text-slate-500">Select Refresh listings to load products and services.</p>}</section>
         </div>
       )}

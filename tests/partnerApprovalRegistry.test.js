@@ -13,7 +13,7 @@ test("Founder approval atomically creates approved partner registry record",()=>
 test("partner review RPC is service-role only",()=>{
  assert.match(migration,/revoke all on function[\s\S]*from public,anon,authenticated/);
  assert.match(migration,/grant execute[\s\S]*to service_role/);
- assert.match(edge,/appMetadata\.we4all_role !== "founder"/);
+ assert.match(edge,/adminRole !== "founder"/);
 });
 test("partner login fetches the approved partner id rather than assuming auth user id is partner id",()=>{
  assert.match(account,/from\("we4all_partners"\)/);

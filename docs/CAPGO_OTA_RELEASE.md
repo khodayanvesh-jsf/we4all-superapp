@@ -29,9 +29,9 @@ Use separate Capgo API keys and encryption key pairs for staging and production 
 
 ## Publish a staging update
 
-1. Merge the OTA implementation into the tested development branch and create a native test build containing the Capgo plugin and public key.
-2. Install that native build on dedicated QA devices. Confirm the app ID is `com.we4all.superapp`, the Capgo channel is `staging`, and the current bundle loads and calls `notifyAppReady()`.
-3. In GitHub Actions, run **WE4ALL Capgo OTA Release** from branch `fix/payment-safety-guest-default`, select `staging`, and enter a unique SemVer bundle version.
+1. Build and install a native test app containing the Capgo plugin and the exact public key paired with the staging private key. Install it on dedicated QA devices and confirm the app ID is `com.we4all.superapp`, the Capgo channel is `staging`, and the current bundle loads and calls `notifyAppReady()`.
+2. The reviewed WE4ALL development branch `codex/we4all-partner-registration-kyc-20261107` automatically starts a uniquely versioned staging upload on each push. The job verifies that the committed Android shell config contains the same Capgo public key before publishing. A push fails closed until that native shell config and the `capgo-staging` GitHub Environment secrets are ready.
+3. Manual staging releases remain available from `fix/payment-safety-guest-default` or the reviewed WE4ALL development branch through **WE4ALL Capgo OTA Release**. Select `staging` and enter a unique SemVer bundle version.
 
 ## Publish a production update
 
@@ -44,7 +44,7 @@ Use separate Capgo API keys and encryption key pairs for staging and production 
 
 - The OTA workflow publishes a bundle; it does not install the Capgo native plugin into an app already on customers' phones. The plugin, public encryption key and matching native configuration require a new signed Android/iOS release first.
 - The first production Capgo-enabled native release must be built, signed with the app owner's existing release key, upgraded over the currently distributed app, and tested on physical Android devices before production OTA can be enabled.
-- The workflow is intentionally branch-gated: staging uploads only from `fix/payment-safety-guest-default`; production uploads only from `main`.
+- The workflow is intentionally branch-gated: automatic staging uploads only from `codex/we4all-partner-registration-kyc-20261107`; manual staging uploads only from `fix/payment-safety-guest-default` or that development branch; production uploads only from `main`.
 - The workflow requires the Capgo secrets and the committed `publicKey` in `capacitor.config.json`; it fails closed when these are absent.
 - Keep payments, escrow, wage release, KYC approval and dispatch server-authorized. OTA cannot make a simulated or client-only business operation production-safe.
 

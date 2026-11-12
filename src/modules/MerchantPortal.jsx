@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
 import { cancelMarketplaceOrder, confirmMarketplaceOrder, listMarketplaceOrders, supabase } from "../supabaseClient";
+import { listSubcategories } from "./workflows/subcategoryKeys";
 
 export default function MerchantPortal({
   footerTab,
@@ -527,7 +528,7 @@ export default function MerchantPortal({
                     mrp_inr: mrp,
                     stock_quantity: 0,
                     unit_label: newProdForm.unitLabel || "unit",
-                    metadata: { image_url: newProdForm.image || "" }
+                    metadata: { image_url: newProdForm.image || "", subcategory_key: newProdForm.subcategoryKey || null }
                   })
                   .select("id,partner_id,title,sku,category_key,price_inr,mrp_inr,stock_quantity,unit_label,approval_status,is_active,created_at")
                   .single();
@@ -539,6 +540,7 @@ export default function MerchantPortal({
                   merchantId,
                   partnerId: created.partner_id,
                   categoryId: created.category_key,
+                  subcategoryKey: newProdForm.subcategoryKey || "",
                   subCategoryBrand: created.title,
                   shopName: merchantName,
                   sku: created.sku,

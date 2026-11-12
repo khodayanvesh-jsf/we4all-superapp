@@ -1,6 +1,9 @@
 name: WE4ALL Capgo OTA Release
 
 on:
+  push:
+    branches:
+      - codex/we4all-partner-registration-kyc-20261107
   workflow_dispatch:
     inputs:
       channel:
@@ -19,24 +22,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: we4all-capgo-${{ inputs.channel }}
+  group: we4all-capgo-${{ github.event_name == 'push' && 'staging' || inputs.channel }}
   cancel-in-progress: false
 
 jobs:
   upload-ota:
     name: Verify and publish encrypted OTA bundle
     if: >-
-      (inputs.channel == 'staging' && github.ref == 'refs/heads/fix/payment-safety-guest-default') ||
-      (inputs.channel == 'production' && github.ref == 'refs/heads/main')
+      (github.event_name == 'push' && github.ref == 'refs/heads/codex/we4all-partner-registration-kyc-20261107') ||
+      (github.event_name == 'workflow_dispatch' && inputs.channel == 'staging' && (github.ref == 'refs/heads/fix/payment-safety-guest-default' || github.ref == 'refs/heads/codex/we4all-partner-registration-kyc-20261107')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.channel == 'production' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-22.04
-    environment: capgo-${{ inputs.channel }}
+    environment: capgo-${{ github.event_name == 'push' && 'staging' || inputs.channel }}
     timeout-minutes: 30
     env:
       CAPGO_API_KEY: ${{ secrets.CAPGO_API_KEY }}
       CAPGO_PRIVATE_KEY: ${{ secrets.CAPGO_PRIVATE_KEY }}
       CAPGO_PUBLIC_KEY: ${{ secrets.CAPGO_PUBLIC_KEY }}
-      CAPGO_CHANNEL: ${{ inputs.channel }}
-      OTA_BUNDLE_VERSION: ${{ inputs.bundle_version }}
+      CAPGO_CHANNEL: ${{ github.event_name == 'push' && 'staging' || inputs.channel }}
+      OTA_BUNDLE_VERSION: ${{ github.event_name == 'push' && format('3.3.{0}', github.run_number) || inputs.bundle_version }}
       CAPGO_APP_ID: com.we4all.superapp
     steps:
       - name: Checkout reviewed source
@@ -63,19 +67,26 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Embed Capgo public key and sync native config
-        run: |
-          npx --yes @capgo/cli@latest key save --key-data "$CAPGO_PUBLIC_KEY"
-          npx cap sync
-          grep -q '"publicKey"' capacitor.config.json
-
       - name: Run application tests
         run: npm test
 
       - name: Build production web bundle
         run: npm run build
 
-      - name: Publish encrypted, checksum-verified Capgo bundle
+      - name: Embed Capgo public key and sync native config
+        run: |
+          npx --yes @capgo/cli@latest key save --key-data "$CAPGO_PUBLIC_KEY"
+          npx cap sync
+          grep -q '"publicKey"' capacitor.config.json
+
+      - name: Verify synced Android native config has the matching Capgo public key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f android/app/src/main/assets/capacitor.config.json
+          node --input-type=module -e 'import fs from "node:fs";const c=JSON.parse(fs.readFileSync("android/app/src/main/assets/capacitor.config.json","utf8"));if(c.plugins?.CapacitorUpdater?.publicKey!==process.env.CAPGO_PUBLIC_KEY)process.exit(1)'
+
+      - name: Publish encrypted full Capgo bundle
         shell: bash
         run: |
           set -euo pipefail
@@ -83,6 +94,6 @@ jobs:
             --path ./dist \
             --channel "$CAPGO_CHANNEL" \
             --bundle "$OTA_BUNDLE_VERSION" \
-            --delta \
+            --no-delta \
             --key-data-v2 "$CAPGO_PRIVATE_KEY" \
             --apikey "$CAPGO_API_KEY"

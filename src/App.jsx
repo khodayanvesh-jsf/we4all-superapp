@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
 import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
+import { marketCellId } from "./modules/workflows/marketLocation.js";
 import {
   INITIAL_APP_UPDATE_INFO,
   INITIAL_GEO_ADS,
@@ -45,6 +47,7 @@ import {
   checkLiveCloudOtaManifest,
   performZeroLossOtaUpdate,
   createMarketplaceOrder,
+  getMarketplaceFeeQuote,
   supabase,
   activateSupabaseAccount,
   clearActiveSupabaseAccount
@@ -405,19 +408,39 @@ function AppContent() {
     }
   };
 
-  // The native updater owns automatic download, activation, and rollback.
-  // This launch check only refreshes the About App display.
+  // Check once on each native app launch. Queue signed Capgo bundles for the
+  // next safe background/relaunch; the native updater handles activation and
+  // notifyAppReady() rolls back a bundle that cannot start successfully.
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || otaLaunchCheckStarted.current) return undefined;
     otaLaunchCheckStarted.current = true;
     let active = true;
-    void checkLiveCloudOtaManifest(({ appUpdateInfo }) => {
-      if (active) setAppUpdateInfo(appUpdateInfo);
-    });
-    return () => {
-      active = false;
-      otaLaunchCheckStarted.current = false;
+    const checkAndQueueLaunchUpdate = async () => {
+      try {
+        setCheckingUpdate(true);
+        const latest = await checkLiveCloudOtaManifest((payload) => {
+          if (active && payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+        });
+        if (!active || latest?.error || !latest?.updateAvailable) return;
+        setOtaProgress({ pct: 5, msg: "A verified app update was found. Downloading it in the background…" });
+        const queued = await performZeroLossOtaUpdate(
+          latest.latestAvailableVersion,
+          latest.releaseNotes,
+          (stage) => { if (active) setOtaProgress(stage); },
+          (info) => { if (active) setAppUpdateInfo(info); }
+        );
+        if (active) setAppUpdateInfo(queued);
+      } catch (error) {
+        console.warn("WE4ALL automatic Capgo update check failed:", error?.message || error);
+      } finally {
+        if (active) {
+          setCheckingUpdate(false);
+          setOtaProgress(null);
+        }
+      }
     };
+    void checkAndQueueLaunchUpdate();
+    return () => { active = false; };
   }, []);
 
   const [accountSecurity, setAccountSecurity] = useState(
@@ -499,6 +522,14 @@ function AppContent() {
       const preferredRole = currentSnapshot?.authUserId === user.id ? currentSnapshot.role : "customer";
       const roleRecord = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
       const resolvedRole = roleRecord?.role || "customer";
+      let activePartner = null;
+      if (resolvedRole !== "customer") {
+        const { data: partner, error: partnerError } = await supabase.from("we4all_partners")
+          .select("id,market_id,zone_id,approval_status")
+          .eq("owner_user_id", user.id).eq("partner_type", resolvedRole).eq("approval_status", "approved").maybeSingle();
+        if (partnerError) throw partnerError;
+        activePartner = partner;
+      }
       const signedInUser = {
         id: user.id,
         authUserId: user.id,
@@ -506,6 +537,8 @@ function AppContent() {
         fullName: profile?.full_name || user.user_metadata?.full_name || "",
         businessName: profile?.business_name || "",
         area: profile?.area || "",
+        partnerId: activePartner?.id || null,
+        marketId: activePartner?.market_id || activePartner?.zone_id || "",
         role: resolvedRole,
         status: "Approved",
         isGuest: false
@@ -550,7 +583,11 @@ function AppContent() {
   }, []);
 
 
-  const [selectedZoneFilter, setSelectedZoneFilter] = useState("ALL_INDIA");
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState(savedCloud?.selectedZoneFilter && savedCloud.selectedZoneFilter !== "ALL_INDIA" ? savedCloud.selectedZoneFilter : "");
+  const [geoMarkets, setGeoMarkets] = useState([]);
+  const [marketCatalogProducts, setMarketCatalogProducts] = useState([]);
+  const [geoLocationBusy, setGeoLocationBusy] = useState(false);
+  const [geoLocationMessage, setGeoLocationMessage] = useState("");
   const [killedCategoriesByZone] = useState({});
   const [geoAds, setGeoAds] = useState(savedCloud?.geoAds || INITIAL_GEO_ADS);
   const [categories, setCategories] = useState(() =>
@@ -684,6 +721,7 @@ function AppContent() {
 
   const [merchantCart, setMerchantCart] = useState(savedCloud?.merchantCart || []);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [checkoutQuote, setCheckoutQuote] = useState(null);
   const checkoutAttemptRef = useRef(null);
   const [serviceCart, setServiceCart] = useState(savedCloud?.serviceCart || []);
   const [decorCart, setDecorCart] = useState(savedCloud?.decorCart || []);
@@ -1105,6 +1143,11 @@ function AppContent() {
       triggerToast("Sign in to a WE4ALL customer account before placing a server order.");
       return;
     }
+    const checkoutMarketId = activeAddressObj.marketId || activeAddressObj.zoneId || selectedZoneFilter;
+    if (!checkoutMarketId || checkoutMarketId === "ALL_INDIA") {
+      triggerToast("Choose your local market or use your device location before placing an order.");
+      return;
+    }
 
     const catalogIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const partnerIds = [...new Set(merchantCart.map((item) => String(item.partnerId || "")))];
@@ -1117,11 +1160,25 @@ function AppContent() {
       return;
     }
 
-    const checkoutFingerprint = JSON.stringify(merchantCart.map((item) => ({
-      catalogItemId: String(item.catalogItemId || item.productId),
-      partnerId: String(item.partnerId),
-      quantity: Number(item.qty)
-    })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+    const checkoutFingerprint = checkoutFingerprintFor(merchantCart);
+    if (checkoutQuote?.fingerprint !== checkoutFingerprint) {
+      setCheckoutSubmitting(true);
+      try {
+        const quote = await getMarketplaceFeeQuote({
+          items: merchantCart.map((item) => ({
+            catalogItemId: String(item.catalogItemId || item.productId),
+            quantity: Number(item.qty)
+          })),
+          zoneId: checkoutMarketId
+        });
+        setCheckoutQuote({ ...quote, fingerprint: checkoutFingerprint });
+      } catch (error) {
+        triggerToast(error?.message || "Could not verify the current order total. No order was placed.");
+      } finally {
+        setCheckoutSubmitting(false);
+      }
+      return;
+    }
     const attemptStorageKey = `we4all_checkout_attempt_${currentUser.authUserId}`;
     let attempt = checkoutAttemptRef.current;
     if (!attempt || attempt.fingerprint !== checkoutFingerprint || attempt.userId !== currentUser.authUserId) {
@@ -1161,13 +1218,14 @@ function AppContent() {
           catalogItemId: String(item.catalogItemId || item.productId),
           quantity: Number(item.qty)
         })),
-        zoneId: activeAddressObj.zoneId || "adilabad_master",
+        zoneId: checkoutMarketId,
         deliveryAddress: {
           label: activeAddressObj.label || "Primary",
           fullAddress: activeAddressObj.fullAddress || "",
           area: activeAddressObj.area || ""
         },
-        idempotencyKey: attempt.idempotencyKey
+        idempotencyKey: attempt.idempotencyKey,
+        feePolicyVersions: checkoutQuote.policy_versions || {}
       });
       const placedAt = new Date().toISOString();
       const serverOrder = {
@@ -1182,7 +1240,9 @@ function AppContent() {
         items: merchantCart,
         itemsTotal: Number(created.subtotal_inr || created.total_inr || 0),
         deliveryFee: Number(created.delivery_fee_inr || 0),
+        platformFee: Number(created.customer_platform_fee_inr || 0),
         gst: Number(created.tax_inr || 0),
+        feeBreakdown: created.fee_breakdown || [],
         grandTotal: Number(created.total_inr || 0),
         status: created.status || "awaiting_payment",
         paymentStatus: String(created.payment_status || "pending").toUpperCase(),
@@ -1193,11 +1253,13 @@ function AppContent() {
       setOrders((currentOrders) => [serverOrder, ...(currentOrders || []).filter((order) => order.serverOrderId !== created.order_id)]);
       setActiveOrderId(serverOrder.id);
       setMerchantCart([]);
+      setCheckoutQuote(null);
       checkoutAttemptRef.current = null;
       try { sessionStorage.removeItem(attemptStorageKey); } catch {}
       setFooterTab("orders");
       triggerToast("Order created on the WE4ALL server. Merchant confirmation and payment status will appear in Orders.");
     } catch (error) {
+      if (/FEE_POLICY_CHANGED/.test(String(error?.message || ""))) setCheckoutQuote(null);
       triggerToast(error?.message || "Server checkout failed. Your cart was kept; retrying will reuse the same order request.");
     } finally {
       setCheckoutSubmitting(false);
@@ -1234,8 +1296,11 @@ function AppContent() {
       const visibleCategories = categories.filter(
         (c) => !(killedCategoriesByZone[selectedZoneFilter] || []).includes(c.id)
       );
-      const filteredProducts = products.filter((p) => {
+      const catalogIds = new Set(marketCatalogProducts.map((item) => String(item.id)));
+      const candidateProducts = [...marketCatalogProducts, ...products.filter((item) => !catalogIds.has(String(item.id)))];
+      const filteredProducts = candidateProducts.filter((p) => {
         if (!isCustomerVisibleListing(p)) return false;
+        if (!selectedZoneFilter || String(p.marketId || p.zoneId || "") !== selectedZoneFilter) return false;
         const matchCat = selectedCategory === "all" || p.categoryId === selectedCategory;
         const matchSearch =
           !searchQuery.trim() ||
@@ -1904,7 +1969,9 @@ function AppContent() {
                         onClick={handlePlaceOrderForCheckout}
                         className="w-full bg-emerald-600 disabled:bg-slate-400 text-white font-black py-2.5 rounded-xl cursor-pointer"
                       >
-                        {checkoutSubmitting ? "Creating secure order…" : "Place Secure Order"}
+                        {checkoutSubmitting
+                          ? (visibleCheckoutQuote ? "Creating secure order…" : "Checking current price and fees…")
+                          : (visibleCheckoutQuote ? "Confirm total & place secure order" : "Review total before placing order")}
                       </button>
                     </>
                   )}
@@ -2323,73 +2390,13 @@ function AppContent() {
 
       {viewMode === "founder_web" ? (
         !isAdminAuthenticated ? (
-          <div className="max-w-md mx-auto mt-12 bg-slate-900 border border-amber-400/50 rounded-3xl p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="font-black text-amber-400 text-base">WE4ALL Founder / Author Secure Login</h2>
-              <button type="button" onClick={() => setViewMode("mobile_app")}
-                className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer">Back to App</button>
-            </div>
-            {adminLoginError && (
-              <p className="text-rose-400 text-xs font-bold">{adminLoginError}</p>
-            )}
-            {adminAuthStep === 1 ? (
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={adminLoginForm.username}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, username: e.target.value })
-                  }
-                  placeholder="Founder username (server authentication required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <input
-                  type="password"
-                  value={adminLoginForm.password}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, password: e.target.value })
-                  }
-                  placeholder="Founder password (server authentication required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    setAdminAuthStep(1);
-                    setAdminLoginError(
-                      "Founder login is disabled until server-side founder authentication and step-up verification are configured. No browser-stored fallback credentials are accepted."
-                    );
-                  }}
-                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Founder authentication unavailable
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <input
-                  type="password"
-                  value={adminPinInput}
-                  onChange={(e) => setAdminPinInput(e.target.value)}
-                  placeholder="Founder PIN (server verification required)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-center font-black tracking-widest text-amber-300"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    setAdminLoginError(
-                      "Founder PIN verification is unavailable until a server-validated founder session is implemented."
-                    );
-                  }}
-                  className="w-full bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Server verification required
-                </button>
-              </div>
-            )}
-          </div>
+          <AdminSecurityGate
+            onBackToApp={() => setViewMode("mobile_app")}
+            onAuthorized={(access) => {
+              setAdminAccess(access);
+              setIsAdminAuthenticated(true);
+            }}
+          />
         ) : (
           <div className="p-4 space-y-4">
             <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-900 p-3 rounded-2xl border border-amber-400/40">
