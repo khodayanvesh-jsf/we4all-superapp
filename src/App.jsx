@@ -37,7 +37,6 @@ import FounderAdminSuite from "./modules/FounderAdminSuite";
 import AdminSecurityGate from "./modules/AdminSecurityGate";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
-import DynamicModuleRenderer from "./modules/DynamicModuleRenderer";
 import {
   saveCloudAndLocalState,
   loadCloudAndLocalState,
@@ -45,20 +44,10 @@ import {
   subscribeToRealtimeUpdates,
   checkLiveCloudOtaManifest,
   performZeroLossOtaUpdate,
+  createMarketplaceOrder,
   supabase,
   activateSupabaseAccount,
-  clearActiveSupabaseAccount,
-  loadMarketplaceCatalog,
-  loadMarketplaceOrders,
-  loadPublicServiceProviders,
-  loadPublicLabourProviders,
-  loadPublishedDynamicModules,
-  createMarketplaceOrder,
-  loadServerOperations,
-  createServerBooking,
-  createServerRideBooking,
-  createServerP2PDelivery,
-  issueDeliveryTestOtp
+  clearActiveSupabaseAccount
 } from "./supabaseClient";
 
 function FounderLogoBadge({ logoUrl }) {
@@ -695,7 +684,6 @@ function AppContent() {
 
   const [merchantCart, setMerchantCart] = useState(savedCloud?.merchantCart || []);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
-  const [checkoutQuote, setCheckoutQuote] = useState(null);
   const checkoutAttemptRef = useRef(null);
   const [serviceCart, setServiceCart] = useState(savedCloud?.serviceCart || []);
   const [decorCart, setDecorCart] = useState(savedCloud?.decorCart || []);
@@ -1093,7 +1081,8 @@ function AppContent() {
           ...merchantCart,
           {
             productId: product.id,
-            catalogItemId: product.catalogItemId || product.id,
+            catalogItemId: activeOffer.catalogItemId || product.catalogItemId || product.id,
+            partnerId: activeOffer.partnerId || product.partnerId || "",
             categoryId: product.categoryId,
             subcategoryKey: product.subcategoryKey || product.metadata?.subcategory_key || "",
             variantId: variant.id,
@@ -1110,73 +1099,108 @@ function AppContent() {
   };
 
   const handlePlaceOrderForCheckout = async () => {
-    if ((merchantCart || []).length === 0) return;
+    if (checkoutSubmitting || (merchantCart || []).length === 0) return;
     if (!currentUser?.authUserId || currentUser?.isGuest) {
-      triggerToast("Sign in and verify your customer account before placing a real order.");
-      setActivePortal("customer");
       setFooterTab("account");
+      triggerToast("Sign in to a WE4ALL customer account before placing a server order.");
       return;
     }
 
-    const partnerIds = [...new Set(merchantCart.map((item) => String(item.merchantId || "")))];
-    if (partnerIds.length !== 1 || !partnerIds[0]) {
-      triggerToast("Please place separate orders for each merchant. A checkout can contain one merchant only.");
-      return;
-    }
-    if (merchantCart.some((item) => !item.catalogItemId || !/^[0-9a-f-]{36}$/i.test(String(item.catalogItemId)))) {
-      triggerToast("One or more cart items are not from the live WE4ALL catalogue. Refresh the store and add them again.");
+    const catalogIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const partnerIds = [...new Set(merchantCart.map((item) => String(item.partnerId || "")))];
+    if (
+      merchantCart.some((item) => !catalogIdPattern.test(String(item.catalogItemId || item.productId || "")) ||
+        !Number.isInteger(Number(item.qty)) || Number(item.qty) < 1 || Number(item.qty) > 100) ||
+      partnerIds.length !== 1 || !catalogIdPattern.test(partnerIds[0])
+    ) {
+      triggerToast("This cart contains items that are not linked to one approved live merchant catalogue. No order was placed.");
       return;
     }
 
-    if (!checkoutIdempotencyKeyRef.current) {
-      checkoutIdempotencyKeyRef.current = globalThis.crypto?.randomUUID?.() ||
-        ("we4-" + currentUser.authUserId + "-" + Date.now());
+    const checkoutFingerprint = JSON.stringify(merchantCart.map((item) => ({
+      catalogItemId: String(item.catalogItemId || item.productId),
+      partnerId: String(item.partnerId),
+      quantity: Number(item.qty)
+    })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+    const attemptStorageKey = `we4all_checkout_attempt_${currentUser.authUserId}`;
+    let attempt = checkoutAttemptRef.current;
+    if (!attempt || attempt.fingerprint !== checkoutFingerprint || attempt.userId !== currentUser.authUserId) {
+      try {
+        const savedAttempt = JSON.parse(sessionStorage.getItem(attemptStorageKey) || "null");
+        attempt = savedAttempt?.fingerprint === checkoutFingerprint &&
+          savedAttempt?.userId === currentUser.authUserId &&
+          typeof savedAttempt?.idempotencyKey === "string" &&
+          savedAttempt.idempotencyKey.length >= 8 &&
+          savedAttempt.idempotencyKey.length <= 160
+          ? savedAttempt
+          : null;
+      } catch {
+        attempt = null;
+      }
+      if (!attempt) {
+        const idempotencyKey = globalThis.crypto?.randomUUID?.();
+        if (!idempotencyKey) {
+          triggerToast("Secure checkout identifiers are unavailable on this device. Your cart was not submitted.");
+          return;
+        }
+        attempt = {
+          fingerprint: checkoutFingerprint,
+          userId: currentUser.authUserId,
+          idempotencyKey
+        };
+      }
+      checkoutAttemptRef.current = attempt;
+      try { sessionStorage.setItem(attemptStorageKey, JSON.stringify(attempt)); } catch {}
     }
 
+    setCheckoutSubmitting(true);
     try {
-      const result = await createMarketplaceOrder({
+      const created = await createMarketplaceOrder({
         partnerId: partnerIds[0],
         items: merchantCart.map((item) => ({
-          catalogItemId: item.catalogItemId,
-          quantity: Number(item.qty || 1)
+          catalogItemId: String(item.catalogItemId || item.productId),
+          quantity: Number(item.qty)
         })),
-        zoneId: activeAddressObj?.zoneId || "adilabad_master",
+        zoneId: activeAddressObj.zoneId || "adilabad_master",
         deliveryAddress: {
-          full_address: activeAddressObj?.fullAddress || "Adilabad Town",
-          label: activeAddressObj?.label || "Primary",
-          zone_id: activeAddressObj?.zoneId || "adilabad_master"
+          label: activeAddressObj.label || "Primary",
+          fullAddress: activeAddressObj.fullAddress || "",
+          area: activeAddressObj.area || ""
         },
-        idempotencyKey: checkoutIdempotencyKeyRef.current
+        idempotencyKey: attempt.idempotencyKey
       });
-
+      const placedAt = new Date().toISOString();
       const serverOrder = {
-        id: result.order_id,
-        orderNumber: result.order_number,
+        id: created.order_number || created.order_id,
+        serverOrderId: created.order_id,
+        isServerManaged: true,
         customerId: currentUser.authUserId,
-        merchantId: partnerIds[0],
-        merchantOwnerId: null,
-        merchantName: merchantCart[0]?.merchantName || "WE4ALL Merchant",
+        customerName: currentUser.fullName || "Customer",
+        partnerId: partnerIds[0],
         shopName: merchantCart[0]?.merchantName || "WE4ALL Merchant",
-        customerName: currentUser.fullName || "WE4ALL Customer",
-        address: activeAddressObj?.fullAddress || "Adilabad Town",
+        address: activeAddressObj.fullAddress || "Address on order",
         items: merchantCart,
-        itemsTotal: Number(result.subtotal_inr ?? result.total_inr ?? 0),
-        deliveryFee: Number(result.delivery_fee_inr || 0),
-        gst: Number(result.tax_inr || 0),
-        grandTotal: Number(result.total_inr || 0),
-        status: result.status || "awaiting_payment",
-        paymentStatus: result.payment_status || "pending",
-        createdAt: new Date().toISOString(),
-        dateStr: new Date().toISOString().slice(0, 10)
+        itemsTotal: Number(created.subtotal_inr || created.total_inr || 0),
+        deliveryFee: Number(created.delivery_fee_inr || 0),
+        gst: Number(created.tax_inr || 0),
+        grandTotal: Number(created.total_inr || 0),
+        status: created.status || "awaiting_payment",
+        paymentStatus: String(created.payment_status || "pending").toUpperCase(),
+        createdAt: placedAt,
+        dateStr: placedAt.slice(0, 10),
+        periodTag: "TODAY"
       };
-      setOrders((current) => [serverOrder, ...(current || []).filter((order) => order.id !== serverOrder.id)]);
+      setOrders((currentOrders) => [serverOrder, ...(currentOrders || []).filter((order) => order.serverOrderId !== created.order_id)]);
       setActiveOrderId(serverOrder.id);
-      setPendingUpiPayment(null);
       setMerchantCart([]);
-      checkoutIdempotencyKeyRef.current = null;
-      triggerToast("Order " + result.order_number + " saved to WE4ALL online database. Payment is PENDING; no payment has been collected.");
+      checkoutAttemptRef.current = null;
+      try { sessionStorage.removeItem(attemptStorageKey); } catch {}
+      setFooterTab("orders");
+      triggerToast("Order created on the WE4ALL server. Merchant confirmation and payment status will appear in Orders.");
     } catch (error) {
-      triggerToast(error?.message || "WE4ALL could not save this order. Your cart has been kept.");
+      triggerToast(error?.message || "Server checkout failed. Your cart was kept; retrying will reuse the same order request.");
+    } finally {
+      setCheckoutSubmitting(false);
     }
   };
 
@@ -1340,39 +1364,6 @@ function AppContent() {
                   ))}
               </div>
 
-              {publishedDynamicModules.length > 0 && (
-                <section className="bg-slate-900/80 border border-cyan-500/40 rounded-xl p-2 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-[10px] font-black text-cyan-200">New WE4ALL Modules</h3>
-                    <span className="text-[8px] text-slate-400">Founder published</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {publishedDynamicModules.map((module) => (
-                      <button key={module.id} type="button" onClick={() => setSelectedDynamicModule(module)}
-                        className={"min-h-[58px] rounded-lg border px-1.5 py-2 flex flex-col items-center justify-center gap-1 " + (selectedDynamicModule?.id === module.id ? "bg-cyan-900 border-cyan-400 text-white" : "bg-slate-950 border-slate-700 text-slate-100")}>
-                        <span className="text-base">{module.icon || "▦"}</span>
-                        <span className="text-[8px] leading-tight text-center font-bold">{module.title}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {selectedDynamicModule && (
-                    <DynamicModuleRenderer
-                      module={selectedDynamicModule}
-                      onClose={() => setSelectedDynamicModule(null)}
-                      onNavigate={(destination) => {
-                        if (destination?.type === "category" && destination.categoryId) {
-                          setSelectedCategory(destination.categoryId);
-                          setCustomerHomeSubTab("stores");
-                        }
-                        if (destination?.type === "tab" && ["services","taxi","parcel","events","labour","stores"].includes(destination.tab)) {
-                          setCustomerHomeSubTab(destination.tab);
-                        }
-                        setSelectedDynamicModule(null);
-                      }}
-                    />
-                  )}
-                </section>
-              )}
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
                   <section className="w4-shop-hero" aria-label="Your local market">
@@ -1582,46 +1573,21 @@ function AppContent() {
                         <button
                           type="button"
                           disabled={!slotIsAvailable}
-                          disabled={!slotIsAvailable || serviceBookingBusyId === sp.id}
-                          onClick={async () => {
-                            if (!currentUser?.authUserId || currentUser?.isGuest) {
-                              triggerToast("Sign in to request a service visit. Browsing remains free.");
-                              setFooterTab("account");
-                              return;
-                            }
-                            setServiceBookingBusyId(sp.id);
-                            try {
-                              const result = await createServerBooking({
-                                partnerId: sp.partnerId || sp.id,
-                                bookingType: "service",
-                                date: serviceFilterDate,
-                                slot: serviceFilterSlot,
-                                note: `Service request: ${sp.specialization || sp.providerName || "Doorstep service"}`,
-                                metadata: {
-                                  serviceCategoryId: sp.serviceCategoryId || null,
-                                  serviceName: sp.specialization || sp.serviceCategory || "",
-                                  requestedVisitingFeeInr: Number(sp.visitingFee || 0),
-                                  paymentMode: "unpaid_test_mode"
-                                },
-                                idempotencyKey: `svc-${currentUser.authUserId}-${sp.id}-${serviceFilterDate}-${serviceFilterSlot.replace(/[^a-z0-9]/gi, "")}`
-                              });
-                              setServiceBookings((current) => [{
-                                id: result.booking_id, serverBookingId: result.booking_id,
-                                providerId: sp.partnerId || sp.id, status: result.status || "requested",
-                                paymentStatus: result.payment_status || "pending",
-                                bookedDate: serviceFilterDate, bookedSlot: serviceFilterSlot,
-                                customerName: currentUser.fullName || "WE4ALL Customer"
-                              }, ...current]);
-                              triggerToast(`Service request ${result.booking_id} saved. No payment was collected.`);
-                            } catch (error) {
-                              triggerToast(error?.message || "Service request failed. No booking was recorded.");
-                            } finally {
-                              setServiceBookingBusyId("");
-                            }
+                          onClick={() => {
+                            setServiceCart([
+                              ...serviceCart,
+                              {
+                                ...sp,
+                                providerId: sp.id,
+                                bookingDate: serviceFilterDate,
+                                bookingSlot: serviceFilterSlot
+                              }
+                            ]);
+                            triggerToast("Added an available provider slot to the service cart. It is not booked or paid yet.");
                           }}
                           className="bg-amber-400 disabled:bg-slate-300 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                         >
-                          {serviceBookingBusyId === sp.id ? "Submitting…" : slotIsAvailable ? "Request this slot" : "Slot unavailable"}
+                          {slotIsAvailable ? "Add available slot" : "Slot unavailable"}
                         </button>
                       </div>
                     )})
@@ -1938,7 +1904,7 @@ function AppContent() {
                         onClick={handlePlaceOrderForCheckout}
                         className="w-full bg-emerald-600 disabled:bg-slate-400 text-white font-black py-2.5 rounded-xl cursor-pointer"
                       >
-                        Place Order (Payment Pending)
+                        {checkoutSubmitting ? "Creating secure order…" : "Place Secure Order"}
                       </button>
                     </>
                   )}
@@ -2242,11 +2208,7 @@ function AppContent() {
           rejectedItems={rejectedItems}
           orders={orders}
           setOrders={setOrders}
-          onSwitchToPersonalShop={() => {
-            setPersonalShoppingFromPartner("merchant");
-            setActivePortal("customer");
-            setFooterTab("home");
-          }}
+          onSwitchToPersonalShop={() => openPersonalShop("merchant")}
           onTriggerToast={triggerToast}
           renderAccountTab={renderPartnerAccountTab}
         />
@@ -2265,11 +2227,7 @@ function AppContent() {
           pendingServiceProviders={pendingServiceProviders}
           serviceBookings={serviceBookings}
           setServiceBookings={setServiceBookings}
-          onSwitchToPersonalShop={() => {
-            setPersonalShoppingFromPartner("service_provider");
-            setActivePortal("customer");
-            setFooterTab("home");
-          }}
+          onSwitchToPersonalShop={() => openPersonalShop("service_provider")}
           onTriggerToast={triggerToast}
           renderAccountTab={renderPartnerAccountTab}
         />
@@ -2288,11 +2246,7 @@ function AppContent() {
           setDecorators={setDecorators}
           decorBids={decorBids}
           setDecorBids={setDecorBids}
-          onSwitchToPersonalShop={() => {
-            setPersonalShoppingFromPartner("decorator");
-            setActivePortal("customer");
-            setFooterTab("home");
-          }}
+          onSwitchToPersonalShop={() => openPersonalShop("decorator")}
           onTriggerToast={triggerToast}
           renderAccountTab={renderPartnerAccountTab}
         />
@@ -2311,11 +2265,7 @@ function AppContent() {
           captainRadarJobs={captainRadarJobs}
           setCaptainRadarJobs={setCaptainRadarJobs}
           pendingRiders={pendingRiders}
-          onSwitchToPersonalShop={() => {
-            setPersonalShoppingFromPartner("rider");
-            setActivePortal("customer");
-            setFooterTab("home");
-          }}
+          onSwitchToPersonalShop={() => openPersonalShop("rider")}
           onTriggerToast={triggerToast}
           onReportError={(title, detail) => triggerToast(title + ": " + detail)}
           renderAccountTab={renderPartnerAccountTab}
@@ -2379,26 +2329,66 @@ function AppContent() {
               <button type="button" onClick={() => setViewMode("mobile_app")}
                 className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer">Back to App</button>
             </div>
-            <p className="text-[10px] text-slate-400">Use username admin or the dedicated Founder email with the current Founder password. The server checks the trusted Founder role; customer and partner accounts cannot open this console.</p>
-            {adminLoginError && <p role="alert" className="text-rose-300 text-xs font-bold">{adminLoginError}</p>}
-            <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); handleFounderAdminLogin(); }}>
-              <label className="block text-[10px] text-slate-300 font-bold">Founder username
-                <input type="text" autoComplete="username" required value={adminLoginForm.username}
-                  onChange={(e) => setAdminLoginForm({ ...adminLoginForm, username: e.target.value })}
-                  placeholder="admin"
-                  className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white" />
-              </label>
-              <label className="block text-[10px] text-slate-300 font-bold">Founder password
-                <input type="password" autoComplete="current-password" required value={adminLoginForm.password}
-                  onChange={(e) => setAdminLoginForm({ ...adminLoginForm, password: e.target.value })}
-                  placeholder="Supabase Auth password"
-                  className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white" />
-              </label>
-              <button type="submit" className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-3 rounded-xl cursor-pointer">
-                Verify Founder account & open console
-              </button>
-            </form>
-            <p className="text-[9px] text-slate-500">No browser-stored credentials, hard-coded passwords or local PIN bypasses are used.</p>
+            {adminLoginError && (
+              <p className="text-rose-400 text-xs font-bold">{adminLoginError}</p>
+            )}
+            {adminAuthStep === 1 ? (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={adminLoginForm.username}
+                  onChange={(e) =>
+                    setAdminLoginForm({ ...adminLoginForm, username: e.target.value })
+                  }
+                  placeholder="Founder username (server authentication required)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
+                />
+                <input
+                  type="password"
+                  value={adminLoginForm.password}
+                  onChange={(e) =>
+                    setAdminLoginForm({ ...adminLoginForm, password: e.target.value })
+                  }
+                  placeholder="Founder password (server authentication required)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAdminAuthenticated(false);
+                    setAdminAuthStep(1);
+                    setAdminLoginError(
+                      "Founder login is disabled until server-side founder authentication and step-up verification are configured. No browser-stored fallback credentials are accepted."
+                    );
+                  }}
+                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
+                >
+                  Founder authentication unavailable
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <input
+                  type="password"
+                  value={adminPinInput}
+                  onChange={(e) => setAdminPinInput(e.target.value)}
+                  placeholder="Founder PIN (server verification required)"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-center font-black tracking-widest text-amber-300"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAdminAuthenticated(false);
+                    setAdminLoginError(
+                      "Founder PIN verification is unavailable until a server-validated founder session is implemented."
+                    );
+                  }}
+                  className="w-full bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
+                >
+                  Server verification required
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-4 space-y-4">

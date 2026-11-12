@@ -14,11 +14,8 @@ const [app, supabase, checkout, founder] = await Promise.all([
 
 test("founder admin gate has no hard-coded username, password or PIN bypass", () => {
   assert.doesNotMatch(app, /we4all2026|22061969s!|adminPinInput === "1234"/);
-  assert.match(app, /handleFounderAdminLogin/);
-  assert.match(app, /signInWithPassword/);
-  assert.match(app, /we4all-admin-review/);
-  assert.match(app, /app_metadata/);
-  assert.doesNotMatch(app, /Founder authentication unavailable/);
+  assert.match(app, /server-side founder authentication and step-up verification/);
+  assert.match(app, /Founder PIN verification is unavailable/);
 });
 
 test("founder credentials are not returned from or written to browser storage", () => {

@@ -2,3 +2,29 @@ project_id = "bdmbziwazpuzbukazmug"
 
 [functions.we4all-create-order]
 verify_jwt = true
+
+[functions.we4all-merchant-confirm-order]
+verify_jwt = true
+
+[functions.we4all-cancel-order]
+verify_jwt = true
+
+# The webhook authenticates the exact raw body with HMAC inside the handler.
+[functions.we4all-payment-webhook]
+verify_jwt = false
+
+# @supabase/server validates the customer JWT inside this UPI intent handler.
+[functions.we4all-create-upi-intent]
+verify_jwt = false
+
+# @supabase/server validates user JWTs inside the Cashfree order/session endpoints.
+[functions.we4all-create-cashfree-order]
+verify_jwt = false
+
+[functions.we4all-verify-cashfree-payment]
+verify_jwt = false
+
+# Cashfree authenticates this endpoint with its timestamp + raw-body signature.
+[functions.we4all-cashfree-webhook]
+verify_jwt = false
+

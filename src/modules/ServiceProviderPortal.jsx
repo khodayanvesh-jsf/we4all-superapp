@@ -41,14 +41,10 @@ export default function ServiceProviderPortal({
   const activeProProfile =
     (serviceProviders || []).find(
       (sp) =>
-        (sp.id && sp.id === currentUser?.partnerId) ||
-        (sp.partnerId && sp.partnerId === currentUser?.partnerId) ||
         (sp.userId && sp.userId === currentUser?.id) ||
         (sp.phone && sp.phone === currentUser?.phone)
     ) || {
-      id: currentUser?.partnerId || null,
-      status: currentUser?.status === "Approved" ? "Approved" : "Pending Admin Approval",
-      availabilityRules: {},
+      id: null,
       serviceCategoryId: "srv_plumbing",
       providerName: currentUser?.fullName || "Service Provider",
       specialization: "",
@@ -97,7 +93,7 @@ export default function ServiceProviderPortal({
     (booking.providerUserId && booking.providerUserId === currentUser?.id)
   );
 
-  const handleToggleSlotAvailability = async (slotLabel) => {
+  const handleToggleSlotAvailability = (slotLabel) => {
     if (!isPublishedLive || !activeProProfile.id) {
       onTriggerToast("Slot management is locked until your own service-provider account is approved.");
       return;
@@ -149,7 +145,7 @@ export default function ServiceProviderPortal({
     }
   };
 
-  const handleSaveMasterRateCard = async () => {
+  const handleSaveMasterRateCard = () => {
     if (!isPublishedLive || !activeProProfile.id) {
       onTriggerToast("Rate-card updates are locked until your own service-provider account is approved.");
       return;
@@ -198,7 +194,7 @@ export default function ServiceProviderPortal({
     }
   };
 
-  const handleAddRateCardTask = async () => {
+  const handleAddRateCardTask = () => {
     if (!isPublishedLive || !activeProProfile.id) {
       onTriggerToast("Rate-card editing is locked until your own service-provider account is approved.");
       return;
@@ -214,20 +210,13 @@ export default function ServiceProviderPortal({
       unit: newTaskItem.unit
     };
     const nextItems = [...(activeProProfile.rateCardItems || []), itemObj];
-    const availabilityRules = {
-      ...(activeProProfile.availabilityRules || {}),
-      availableSlots: activeProProfile.availableSlots || [],
-      serviceCatalog: nextItems
-    };
-    try {
-      await setServerPartnerAvailability({ partnerId: activeProProfile.id, availabilityRules });
-      setServiceProviders((serviceProviders || []).map((sp) => sp.id === activeProProfile.id
-        ? { ...sp, rateCardItems: nextItems, availabilityRules } : sp));
-      setNewTaskItem({ title: "", price: "", unit: "Fixed Job" });
-      onTriggerToast(`"${itemObj.title}" saved to the server-side service catalog.`);
-    } catch (error) {
-      onTriggerToast(error?.message || "Service item was not saved to the server.");
-    }
+    setServiceProviders(
+      serviceProviders.map((sp) =>
+        sp.id === activeProProfile.id ? { ...sp, rateCardItems: nextItems } : sp
+      )
+    );
+    setNewTaskItem({ title: "", price: "", unit: "Fixed Job" });
+    onTriggerToast(`"${itemObj.title}" added to your local rate-card draft. Customer visibility is pending server sync and approval.`);
   };
 
   // Printable / Downloadable PDF Escrow & Final Tax Invoice
@@ -610,16 +599,16 @@ export default function ServiceProviderPortal({
               <button
                 type="button"
                 disabled={!isPublishedLive || !activeProProfile.id}
-                onClick={async () => {
+                onClick={() => {
                   if (!isPublishedLive || !activeProProfile.id) return;
-                  try {
-                    const availabilityRules = { ...(activeProProfile.availabilityRules || {}), availableSlots: [...MASTER_ONE_HOUR_SLOTS], oneHourSlots: MASTER_ONE_HOUR_SLOTS, oneHourSlotDate: selectedSlotDate };
-                    await setServerPartnerAvailability({ partnerId: activeProProfile.id, availabilityRules });
-                    setServiceProviders((serviceProviders || []).map((sp) => sp.id === activeProProfile.id ? { ...sp, availableSlots: [...MASTER_ONE_HOUR_SLOTS], availabilityRules } : sp));
-                    onTriggerToast("All 11 one-hour slots saved to the WE4ALL server.");
-                  } catch (error) {
-                    onTriggerToast(error?.message || "Could not save the complete slot calendar.");
-                  }
+                  setServiceProviders(
+                    serviceProviders.map((sp) =>
+                      sp.id === activeProProfile.id
+                        ? { ...sp, availableSlots: [...MASTER_ONE_HOUR_SLOTS] }
+                        : sp
+                    )
+                  );
+                  onTriggerToast("All 11 one-hour slots updated in the device's saved state. Server availability sync is not confirmed.");
                 }}
                 className="flex-1 bg-emerald-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
               >
@@ -628,16 +617,14 @@ export default function ServiceProviderPortal({
               <button
                 type="button"
                 disabled={!isPublishedLive || !activeProProfile.id}
-                onClick={async () => {
+                onClick={() => {
                   if (!isPublishedLive || !activeProProfile.id) return;
-                  try {
-                    const availabilityRules = { ...(activeProProfile.availabilityRules || {}), availableSlots: [], oneHourSlots: MASTER_ONE_HOUR_SLOTS, oneHourSlotDate: selectedSlotDate };
-                    await setServerPartnerAvailability({ partnerId: activeProProfile.id, availabilityRules });
-                    setServiceProviders((serviceProviders || []).map((sp) => sp.id === activeProProfile.id ? { ...sp, availableSlots: [], availabilityRules } : sp));
-                    onTriggerToast("All service slots blocked on the WE4ALL server.");
-                  } catch (error) {
-                    onTriggerToast(error?.message || "Could not block service slots on the server.");
-                  }
+                  setServiceProviders(
+                    serviceProviders.map((sp) =>
+                      sp.id === activeProProfile.id ? { ...sp, availableSlots: [] } : sp
+                    )
+                  );
+                  onTriggerToast("All slots blocked in the device's saved state. Server availability sync is not confirmed.");
                 }}
                 className="bg-slate-800 text-rose-300 font-bold px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
               >

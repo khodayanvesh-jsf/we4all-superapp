@@ -30,7 +30,7 @@ jobs:
           zip -qr "$RUNNER_TEMP/WE4ALL-offline-source.zip" . \
             -x ".git/*" "node_modules/*" "dist/*" "android/.gradle/*" \
                "android/app/build/*" "coverage/*" ".vercel/*" \
-               ".env" ".env.local" ".env.production" ".env.development" ".env.test" "**/.env" "**/.env.local" "**/.env.production" "**/.env.development" "**/.env.test" \
+               ".env" ".env.*" "!.env.example" "**/.env" "**/.env.*" \
                "**/node_modules/*" "**/dist/*" "**/build/*" "**/.DS_Store"
 
       - name: Upload full source archive

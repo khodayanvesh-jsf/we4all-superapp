@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
-import { supabase, adjustMarketplaceStock } from "../supabaseClient";
+import { cancelMarketplaceOrder, confirmMarketplaceOrder, listMarketplaceOrders, supabase } from "../supabaseClient";
 
 export default function MerchantPortal({
   footerTab,
@@ -21,11 +21,23 @@ export default function MerchantPortal({
   const [autoStockWindowActive] = useState(false);
   const merchantId = currentUser?.id || "";
   const merchantName = currentUser?.businessName || currentUser?.fullName || "";
+  const [marketplaceOrders, setMarketplaceOrders] = useState([]);
+  const [confirmingOrderId, setConfirmingOrderId] = useState("");
+  const [cancellingOrderId, setCancellingOrderId] = useState("");
+  const [ordersLoadError, setOrdersLoadError] = useState("");
   const merchantProducts = (products || []).filter((product) =>
     product.ownerUserId === merchantId ||
     (merchantName && product.shopName === merchantName)
   );
-  const merchantOrders = (orders || []).filter((order) => isMerchantOrderOwned(order, currentUser));
+  const localMerchantOrders = (orders || []).filter((order) => isMerchantOrderOwned(order, currentUser));
+  const localOrderIds = new Set(localMerchantOrders.map((order) => String(order.id)));
+  const activeMarketplaceOrders = marketplaceOrders.filter((order) =>
+    !["delivered", "cancelled", "disputed", "refunded"].includes(String(order.status).toLowerCase())
+  );
+  const merchantOrders = [
+    ...activeMarketplaceOrders.filter((order) => !localOrderIds.has(String(order.id))),
+    ...localMerchantOrders
+  ];
   const [heavyLaborFees, setHeavyLaborFees] = useState({});
   const [productSubmitting, setProductSubmitting] = useState(false);
   const [newProdForm, setNewProdForm] = useState({
@@ -168,7 +180,7 @@ export default function MerchantPortal({
       )
     );
     if (onTriggerToast) {
-      onTriggerToast(`Bill of ₹${grandTotal} prepared for customer review. Payment is not confirmed.`);
+          onTriggerToast(`Draft bill of ₹${grandTotal} updated in this app session. It has not been sent to the customer or saved as a server order.`);
     }
   };
 
@@ -201,7 +213,7 @@ export default function MerchantPortal({
                 Stock Reservation Window
               </p>
               <p className="text-[9px] text-slate-400">
-                Stock changes sync to the WE4ALL inventory ledger. Orders are reserved by the server at checkout.
+                Live marketplace orders reserve available stock on the server. This manual timed toggle is not connected.
               </p>
             </div>
             <button
@@ -217,6 +229,11 @@ export default function MerchantPortal({
             </button>
           </div>
 
+          {ordersLoadError && (
+            <p role="status" className="text-amber-200 bg-amber-950/50 border border-amber-700/60 rounded-xl p-2 text-[10px]">
+              Live orders are temporarily unavailable. {ordersLoadError}
+            </p>
+          )}
           {merchantOrders.length === 0 ? (
             <p className="text-slate-400 text-center py-6 bg-slate-900 rounded-2xl border border-slate-800">
               No active store orders in queue. Place an order from the Customer App to test!
@@ -340,14 +357,14 @@ export default function MerchantPortal({
                           onTriggerToast("Packing is locked until payment is verified by the server.");
                           return;
                         }
-                        setOrders(
-                          orders.map((o) =>
+                        setOrders((currentOrders) =>
+                          currentOrders.map((o) =>
                             o.id === ord.id
                               ? { ...o, status: "PACKED_PENDING_SERVER_DISPATCH" }
                               : o
                           )
                         );
-                        onTriggerToast(`Order #${ord.id} marked packed locally. Dispatch still requires server confirmation.`);
+                        onTriggerToast(`Order #${ord.id} marked packed in this app session. Dispatch still requires server confirmation.`);
                       }}
                       className="bg-amber-400 disabled:bg-slate-700 disabled:text-slate-300 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
                     >
@@ -409,7 +426,13 @@ export default function MerchantPortal({
               </div>
               <button
                 type="button"
-                onClick={() => handleToggleLiveStock(prod)}
+                onClick={() => {
+                  setProducts((products || []).map((item) =>
+                    item.id === prod.id && item.ownerUserId === merchantId
+                      ? { ...item, inStock: !item.inStock, updatedAt: new Date().toISOString() }
+                      : item
+                  ));
+                }}
                 className={`px-3 py-1.5 rounded-xl font-black text-[10px] cursor-pointer ${
                   prod.inStock !== false
                     ? "bg-emerald-500 text-slate-950"

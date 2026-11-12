@@ -71,6 +71,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
   // If logged in, default to account details; if guest, show login/register gate
   const [subTab, setSubTab] = useState(() => (isLoggedIn ? "account_details" : "kyc_gate"));
   const [authMode, setAuthMode] = useState("login"); // login | register
+  const [loginMethod, setLoginMethod] = useState("otp"); // OTP is the only enabled login method
   const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
   const [registrationRoleOptions, setRegistrationRoleOptions] = useState(ROLE_OPTIONS);
   const [showPinText, setShowPinText] = useState(false);
@@ -82,7 +83,9 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const privateTestSession = useRef(null);
   const trialOtpModeEnabled = !privateTestMode && import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true";
 
-  const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
+  const [loginForm, setLoginForm] = useState({
+    identifier: "", // phone or username
+  });
 
   const [regForm, setRegForm] = useState({
     fullName: "",
@@ -96,7 +99,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
   });
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
-  const [authState, setAuthState] = useState({ busy: false });
+  const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
   const [connectionHealth, setConnectionHealth] = useState({
     checking: true,
     configured: false,
@@ -143,7 +146,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (resolvedRole !== "customer") {
         const { data, error: partnerError } = await supabase
           .from("we4all_partners")
-          .select("id,partner_type,approval_status,vehicle_class")
+          .select("id,partner_type,approval_status")
           .eq("owner_user_id", user.id)
           .eq("partner_type", resolvedRole)
           .eq("approval_status", "approved")
@@ -161,7 +164,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
         area: profile?.area || "",
         role: resolvedRole,
         partnerId: partnerRecord?.id || null,
-        vehicleCode: partnerRecord?.vehicle_class === "4W" ? "4W_HEAVY" : (partnerRecord?.vehicle_class || "UNVERIFIED"),
         status: "Approved",
         isGuest: false
       };
@@ -211,137 +213,218 @@ export default function OwnerAccountProfile(rawProps = {}) {
     return fallbackPhone ? `${fallbackPhone}@ybl` : "";
   };
 
-  const handleLoginSubmit = async () => {
-    const email = String(loginForm.identifier || "").trim().toLowerCase();
-    const password = String(loginForm.password || "");
-    if (!email.includes("@") || password.length < 8) {
-      setFormFeedback({ type: "error", message: "Enter your registered email address and password (minimum 8 characters)." });
+  const sendPhoneOtp = async () => {
+    const phoneDigits = cleanPhoneDigits(authMode === "register" ? regForm.phone : loginForm.identifier);
+    if (phoneDigits.length !== 10) {
+      setFormFeedback({ type: "error", message: "Enter a valid 10-digit Indian mobile number." });
       return;
     }
     if (!supabase) {
-      setFormFeedback({ type: "error", message: "WE4ALL database is not configured. The connection checker is separate from sign-in; SMS is not required." });
+      setFormFeedback({ type: "error", message: "Supabase client is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY." });
       return;
     }
-    setAuthState((state) => ({ ...state, busy: true }));
+    setOtpState({ sent: false, phone: "", token: "", busy: true });
+    const phone = `+91${phoneDigits}`;
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const isRegistration = authMode === "register";
+      if (isRegistration) {
+        if (!regForm.fullName.trim()) throw new Error("Enter your full name before requesting OTP.");
+        if (!isConsumerSelected && !regForm.businessName.trim()) throw new Error("Enter your business or partner name.");
+        const { error } = await supabase.auth.signInWithOtp({
+          phone,
+          options: {
+            shouldCreateUser: true,
+            data: {
+              full_name: regForm.fullName.trim(),
+              business_name: regForm.businessName.trim(),
+              area: regForm.area || ""
+            }
+          }
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithOtp({
+          phone,
+          options: { shouldCreateUser: false }
+        });
+        if (error) throw error;
+      }
+      setOtpState({ sent: true, phone, token: "", busy: false });
+      setFormFeedback({ type: "success", message: `SMS verification code sent to +91 ${phoneDigits}. Enter it below to continue.` });
+    } catch (error) {
+      setOtpState({ sent: false, phone: "", token: "", busy: false });
+      setFormFeedback({
+        type: "error",
+        message: error?.message || "Could not send SMS OTP. Check that Phone Auth and an SMS provider are enabled in Supabase."
+      });
+    }
+  };
+
+  const handleLoginSubmit = async () => {
+    if (loginMethod !== "otp") {
+      setFormFeedback({ type: "error", message: "Only server-verified SMS OTP sign-in is enabled. PIN and biometric login are not active." });
+      return;
+    }
+    if (!otpState.sent || otpState.token.trim().length < 6) {
+      setFormFeedback({ type: "error", message: "Request an SMS OTP and enter the six-digit code." });
+      return;
+    }
+    setOtpState((s) => ({ ...s, busy: true }));
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: otpState.phone,
+        token: otpState.token.trim(),
+        type: "sms"
+      });
       if (error) throw error;
       const user = data?.user;
-      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a signed-in session.");
+      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified user session.");
+
       const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
         supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
       ]);
       if (profileError) throw profileError;
       if (rolesError) throw rolesError;
+
       const activation = await activateSupabaseAccount(user.id);
       if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
-      if (activation.changed && typeof window !== "undefined") { window.location.reload(); return; }
-      const customerRole = (roles || []).find((role) => role.role === "customer" && role.status === "approved");
-      if (!customerRole) throw new Error("Customer role is not yet provisioned. Please contact WE4ALL support.");
+      if (activation.changed && typeof window !== "undefined") {
+        window.location.reload();
+        return;
+      }
+
+      const customerRole = (roles || []).find((r) => r.role === "customer" && r.status === "approved");
       const baseUser = {
-        id: user.id, authUserId: user.id, email: user.email || email,
-        phone: user.phone || profile?.phone || "",
+        id: user.id,
+        authUserId: user.id,
+        phone: user.phone || profile?.phone || otpState.phone.replace("+91", ""),
         fullName: profile?.full_name || user.user_metadata?.full_name || "",
         businessName: profile?.business_name || user.user_metadata?.business_name || "",
-        area: profile?.area || user.user_metadata?.area || "", isGuest: false
+        area: profile?.area || user.user_metadata?.area || "",
+        isGuest: false
       };
-      if (selectedRoleKey !== "customer") {
-        const approved = (roles || []).find((role) => role.role === selectedRoleKey && role.status === "approved");
+      if (!customerRole) throw new Error("Customer profile is not yet provisioned. Contact WE4ALL support.");
+
+      const requestedRole = selectedRoleKey;
+      if (requestedRole !== "customer") {
+        const approved = (roles || []).find((r) => r.role === requestedRole && r.status === "approved");
         if (!approved) {
-          const customer = { ...baseUser, role: "customer", status: "Approved" };
-          setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
-          setFormFeedback({ type: "error", message: `Your customer account is active. The ${selectedRoleKey.replace("_", " ")} portal is pending Founder approval.` });
-          setSubTab("account_details"); return;
+          const partnerUser = { ...baseUser, role: "customer", status: "Approved" };
+          setLocalUser(partnerUser);
+          setCurrentUser?.(partnerUser);
+          setActivePortal?.("customer");
+          onSelectRole?.("customer");
+          setFormFeedback({ type: "error", message: `Your customer account is active. The ${requestedRole.replace("_", " ")} portal is still pending Founder approval.` });
+          setSubTab("account_details");
+          return;
         }
-        const { data: partner, error: partnerError } = await supabase.from("we4all_partners")
-          .select("id,partner_type,approval_status,vehicle_class").eq("owner_user_id", user.id)
-          .eq("partner_type", selectedRoleKey).eq("approval_status", "approved").maybeSingle();
+        const { data: partnerRecord, error: partnerError } = await supabase
+          .from("we4all_partners")
+          .select("id,partner_type,approval_status")
+          .eq("owner_user_id", user.id)
+          .eq("partner_type", requestedRole)
+          .eq("approval_status", "approved")
+          .maybeSingle();
         if (partnerError) throw partnerError;
-        if (!partner) throw new Error("Your approved portal has no active partner profile.");
-        const partnerUser = { ...baseUser, role: selectedRoleKey, partnerId: partner.id, vehicleCode: partner.vehicle_class === "4W" ? "4W_HEAVY" : (partner.vehicle_class || "UNVERIFIED"), status: "Approved" };
-        setLocalUser(partnerUser); setCurrentUser?.(partnerUser);
-        onPartnerAuthenticated?.(selectedRoleKey, partnerUser);
-        setFormFeedback({ type: "success", message: `${selectedRoleKey.replace("_", " ")} portal access verified.` });
-      } else {
-        const customer = { ...baseUser, role: "customer", status: "Approved" };
-        setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
-        setFormFeedback({ type: "success", message: "Signed in. Your WE4ALL account is connected to Supabase." });
+        if (!partnerRecord) throw new Error("Founder-approved role has no active WE4ALL partner profile yet.");
+        const partnerUser = { ...baseUser, role: requestedRole, partnerId: partnerRecord.id, status: "Approved" };
+        setLocalUser(partnerUser);
+        setCurrentUser?.(partnerUser);
+        onPartnerAuthenticated?.(requestedRole, partnerUser);
+        setFormFeedback({ type: "success", message: `${requestedRole.replace("_", " ")} portal access verified.` });
+        setSubTab("account_details");
+        return;
       }
+
+      const customer = { ...baseUser, role: "customer", status: "Approved" };
+      setLocalUser(customer);
+      setCurrentUser?.(customer);
+      setActivePortal?.("customer");
+      onSelectRole?.("customer");
+      setFormFeedback({ type: "success", message: "Phone verified. Your WE4ALL customer account is connected to Supabase." });
       setSubTab("account_details");
     } catch (error) {
-      setFormFeedback({ type: "error", message: error?.message || "Email/password sign-in failed." });
+      setFormFeedback({ type: "error", message: error?.message || "OTP verification failed." });
     } finally {
-      setAuthState((state) => ({ ...state, busy: false }));
+      setOtpState((s) => ({ ...s, busy: false }));
     }
   };
 
   const handleRegistrationSubmit = async () => {
-    const email = String(regForm.email || "").trim().toLowerCase();
-    const password = String(regForm.password || "");
-    if (!regForm.fullName.trim()) { setFormFeedback({ type: "error", message: "Enter your full name." }); return; }
-    if (!email.includes("@")) { setFormFeedback({ type: "error", message: "Enter a valid email address." }); return; }
-    if (password.length < 8) { setFormFeedback({ type: "error", message: "Choose a password with at least 8 characters." }); return; }
-    if (!isConsumerSelected && !regForm.businessName.trim()) { setFormFeedback({ type: "error", message: "Enter your business or partner name." }); return; }
-    if (!supabase) { setFormFeedback({ type: "error", message: "WE4ALL database is not configured. SMS is not required for the database connection." }); return; }
-    setOtpState((state) => ({ ...state, busy: true }));
+    if (!otpState.sent || otpState.token.trim().length < 6) {
+      setFormFeedback({ type: "error", message: "Request an SMS OTP and enter the six-digit code." });
+      return;
+    }
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email, password,
-        options: { data: {
-          full_name: regForm.fullName.trim(),
-          business_name: regForm.businessName.trim(),
-          phone: cleanPhoneDigits(regForm.phone),
-          area: regForm.area || ""
-        } }
+      setOtpState((s) => ({ ...s, busy: true }));
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: otpState.phone,
+        token: otpState.token.trim(),
+        type: "sms"
       });
       if (error) throw error;
       const user = data?.user;
-      if (!user?.id) throw new Error("Supabase did not create an account.");
-      if (!data.session) {
-        setFormFeedback({
-          type: "success",
-          message: "Account registration started. Check your email for Supabase's free verification link, then return here and sign in. No SMS was sent."
-        });
-        setAuthMode("login");
-        setLoginForm({ identifier: email, password: "" });
-        setAuthState({ busy: false });
-        return;
-      }
+      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified account.");
       const profilePayload = {
-        user_id: user.id, full_name: regForm.fullName.trim(),
+        user_id: user.id,
+        full_name: regForm.fullName.trim(),
         business_name: regForm.businessName.trim(),
-        phone: cleanPhoneDigits(regForm.phone), area: regForm.area || "",
+        phone: user.phone || otpState.phone,
+        area: regForm.area || "",
         updated_at: new Date().toISOString()
       };
       const { error: profileError } = await supabase.from("we4all_profiles").upsert(profilePayload, { onConflict: "user_id" });
       if (profileError) throw profileError;
+
+      const customer = {
+        id: user.id, authUserId: user.id,
+        phone: user.phone || otpState.phone.replace("+91", ""),
+        fullName: regForm.fullName.trim(),
+        businessName: regForm.businessName.trim(),
+        area: regForm.area || "",
+        role: "customer", status: "Approved", isGuest: false
+      };
+
       if (selectedRoleKey !== "customer") {
         const { error: applicationError } = await supabase.from("we4all_partner_applications").insert({
-          user_id: user.id, requested_role: selectedRoleKey,
-          application_payload: { full_name: profilePayload.full_name, business_name: profilePayload.business_name, phone: profilePayload.phone, area: profilePayload.area }
+          user_id: user.id,
+          requested_role: selectedRoleKey,
+          application_payload: {
+            full_name: regForm.fullName.trim(),
+            business_name: regForm.businessName.trim(),
+            phone: profilePayload.phone,
+            area: profilePayload.area
+          }
         });
         if (applicationError) throw applicationError;
       }
+
       const activation = await activateSupabaseAccount(user.id);
-      if (!activation.ok) throw new Error(activation.reason || "Could not activate your WE4ALL account.");
-      const customer = {
-        id: user.id, authUserId: user.id, email,
-        phone: profilePayload.phone, fullName: profilePayload.full_name,
-        businessName: profilePayload.business_name, area: profilePayload.area,
-        role: "customer", status: "Approved", isGuest: false
-      };
-      setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
+      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
+      if (activation.changed && typeof window !== "undefined") {
+        window.location.reload();
+        return;
+      }
+
+      setLocalUser(customer);
+      setCurrentUser?.(customer);
+      setActivePortal?.("customer");
+      onSelectRole?.("customer");
       setSubTab("account_details");
-      setFormFeedback({ type: "success", message: selectedRoleKey === "customer"
-        ? "Customer account created and connected to WE4ALL."
-        : "Customer account created. Your partner application is awaiting Founder approval." });
+      setFormFeedback({
+        type: "success",
+        message: selectedRoleKey === "customer"
+          ? "Customer account created and verified. Your account is now connected to Supabase."
+          : "Customer account created. Your partner application was submitted as pending Founder approval."
+      });
     } catch (error) {
       setFormFeedback({ type: "error", message: error?.message || "Could not complete registration." });
     } finally {
-      setOtpState((state) => ({ ...state, busy: false }));
+      setOtpState((s) => ({ ...s, busy: false }));
     }
   };
+
 
   const handleLogout = async () => {
     try {
@@ -387,6 +470,26 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 ? "CONNECTED · ACCOUNT SYNC VERIFIED"
                 : connectionHealth.backendReachable
                   ? "API CONNECTED"
+                  : connectionHealth.configured
+                    ? "API UNREACHABLE"
+                    : "NOT CONFIGURED"}
+          </span>
+        </div>
+        <p className="text-slate-400">{connectionHealth.message}</p>
+      </div>
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-black text-slate-200">Supabase cloud connection</span>
+          <span className={connectionHealth.syncReady ? "text-emerald-300 font-black" : connectionHealth.backendReachable ? "text-amber-300 font-black" : "text-rose-300 font-black"}>
+            {connectionHealth.checking
+              ? "CHECKING"
+              : connectionHealth.syncReady
+                ? "CONNECTED · ACCOUNT SYNC VERIFIED"
+                : connectionHealth.backendReachable
+                  ? connectionHealth.authenticated
+                    ? "API CONNECTED · ACCOUNT LINK PENDING"
+                    : "API CONNECTED · SIGN IN TO SYNC"
                   : connectionHealth.configured
                     ? "API UNREACHABLE"
                     : "NOT CONFIGURED"}
@@ -497,17 +600,96 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   placeholder="name@example.com"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold" />
               </div>
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold block mb-1">Password *</label>
-                <input type="password" autoComplete="current-password" value={loginForm.password}
-                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                  placeholder="At least 8 characters"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
+
+              <div className="flex gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                {[
+                  { id: "otp", label: "Mobile OTP" }
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setLoginMethod(m.id)}
+                    className={`flex-1 py-1.5 rounded-lg text-[10px] font-black cursor-pointer ${
+                      loginMethod === m.id ? "bg-amber-400 text-slate-950" : "text-slate-400"
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
               </div>
-              <p className="text-[10px] text-emerald-300">Free sign-in: SMS OTP is temporarily paused. Database connection is checked separately and never requires a text message.</p>
-              <button type="button" onClick={handleLoginSubmit} disabled={authState.busy}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs">
-                {otpState.busy ? "Signing in…" : "Sign in securely →"}
+
+              {false && loginMethod === "pin" && (
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[10px] text-slate-400 font-bold">4-Digit Security PIN *</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowPinText(!showPinText)}
+                      className="text-[10px] text-emerald-400 font-bold cursor-pointer"
+                    >
+                      {showPinText ? "Hide PIN" : "Show PIN"}
+                    </button>
+                  </div>
+                  <input
+                    type={showPinText ? "text" : "password"}
+                    maxLength={4}
+                    value={loginForm.pin}
+                    onChange={(e) => setLoginForm({ ...loginForm, pin: cleanPinDigits(e.target.value) })}
+                    placeholder="••••"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-emerald-300 font-mono text-center tracking-widest text-sm font-black"
+                  />
+                </div>
+              )}
+
+              {loginMethod === "otp" && (
+                <div className="space-y-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    disabled={otpState.busy}
+                    onClick={sendPhoneOtp}
+                    className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black rounded-xl px-3 py-2"
+                  >
+                    {otpState.busy ? "Working…" : otpState.sent ? "Resend SMS OTP" : "Send SMS OTP"}
+                  </button>
+                  {otpState.sent && (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={otpState.token}
+                      onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+                      placeholder="Enter 6-digit SMS code"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center font-black tracking-widest"
+                    />
+                  )}
+                  <p className="text-[10px] text-slate-400">Codes are issued and verified by Supabase Auth. WE4ALL does not generate or display OTPs.</p>
+                </div>
+              )}
+
+              {false && loginMethod === "biometric" && (
+                <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/40 text-center space-y-2">
+                  <p className="text-emerald-300 font-bold text-xs">Touch Fingerprint Sensor or FaceID</p>
+                  <button
+                    type="button"
+                    onClick={() => setFormFeedback({
+                      type: "error",
+                      message: "Biometric/passkey sign-in is not configured yet. WE4ALL needs server-side passkey enrollment and verification before this can be enabled."
+                    })}
+                    className="bg-emerald-400 text-slate-950 font-black px-4 py-2 rounded-xl cursor-pointer text-xs"
+                  >
+                    Authenticate with Device Biometrics 👆
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleLoginSubmit}
+                disabled={otpState.busy || !otpState.sent || otpState.token.length !== 6}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs"
+              >
+                Verify OTP &amp; Sign In →
               </button>
             </div>
           ) : (
@@ -567,11 +749,36 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
               />
 
-              <p className="text-[10px] text-emerald-300">No paid SMS is used. Supabase may send a free email confirmation link depending on your Auth settings. Your database connection is tested separately.</p>
-              <button type="button" disabled={otpState.busy} onClick={handleRegistrationSubmit}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl shadow text-xs">
-                {otpState.busy ? "Creating account…" : "Create free WE4ALL account →"}
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={otpState.busy}
+                  onClick={sendPhoneOtp}
+                  className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
+                >
+                  {otpState.sent ? "Resend Registration OTP" : "Send Registration OTP"}
+                </button>
+                {otpState.sent && (
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={otpState.token}
+                    onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+                    placeholder="Enter 6-digit SMS code"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-center font-mono tracking-widest"
+                  />
+                )}
+                <button
+                  type="button"
+                  disabled={otpState.busy || !otpState.sent || otpState.token.length !== 6}
+                  onClick={handleRegistrationSubmit}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl shadow text-xs"
+                >
+                  Verify OTP &amp; Create Account →
+                </button>
+              </div>
             </div>
           )}
         </div>

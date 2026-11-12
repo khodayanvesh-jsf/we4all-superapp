@@ -80,55 +80,6 @@ export default function RiderCaptainPortal({
     (!myPendingCaptain || myPendingCaptain.status === "Approved")
   );
 
-  const refreshRiderDispatch = async () => {
-    if (!isPublishedLive) return;
-    setDispatchLoading(true);
-    setDispatchError("");
-    try {
-      const [result, assigned] = await Promise.all([
-        invokeWe4AllOperations("list_rider_jobs"),
-        invokeWe4AllOperations("list_my_operations")
-      ]);
-      const assignedJobs = [
-        ...(assigned.dispatchJobs || []).filter((job) => ["accepted","at_pickup","picked_up","at_dropoff"].includes(job.status)).map((job) => ({ ...job, serviceType: "M2C", id: job.id, orderId: job.order_id, pickupPin: job.pickup_location?.address || "Merchant pickup", dropPin: job.dropoff_location?.address || "Customer delivery", status: ["accepted","at_pickup"].includes(job.status) ? "ACCEPTED_BY_CAPTAIN" : "PICKED_UP_EN_ROUTE", requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class, serverDispatchVerified: true })),
-        ...(assigned.p2pDeliveries || []).filter((job) => ["assigned","picked_up"].includes(job.status)).map((job) => ({ ...job, serviceType: "P2P", id: job.id, pickupPin: job.pickup_location?.address || "Personal pickup", dropPin: job.dropoff_location?.address || "Personal delivery", status: job.status === "assigned" ? "ACCEPTED_BY_CAPTAIN" : "PICKED_UP_EN_ROUTE", requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class, serverDispatchVerified: true })),
-        ...(assigned.taxiRides || []).filter((job) => ["assigned","in_progress"].includes(job.status)).map((job) => ({ ...job, serviceType: "TAXI", id: job.id, pickupPin: job.pickup_location?.address || "Passenger pickup", dropPin: job.dropoff_location?.address || "Passenger destination", status: job.status === "assigned" ? "ACCEPTED_BY_CAPTAIN" : "PICKED_UP_EN_ROUTE", requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class, serverDispatchVerified: true }))
-      ];
-      setAssignedServiceJobs(assignedJobs);
-      const jobs = (result.jobs || []).map((job) => {
-        const serviceType = job.service_type || "M2C";
-        const pickup = job.pickup_location || {};
-        const dropoff = job.dropoff_location || {};
-        return {
-          ...job, id: job.id, orderId: job.order_id, serviceType,
-          requiredVehicleCode: job.vehicle_class === "4W" ? "4W_HEAVY" : job.vehicle_class,
-          vehicleLabel: job.vehicle_class === "4W" ? "4W Cab / Utility" : job.vehicle_class,
-          weightKg: Number(job.parcel_details?.weightKg || job.we4all_orders?.total_weight_kg || 0),
-          badge: serviceType === "TAXI" ? "Rapido passenger ride" : serviceType === "P2P" ? "Personal parcel delivery" : "Merchant to Customer delivery",
-          bookedBy: serviceType === "TAXI" ? "Passenger pickup" : serviceType === "P2P" ? (job.parcel_details?.type || "Personal parcel") : `Order ${job.we4all_orders?.order_number || job.order_id}`,
-          pickupPin: pickup.address || pickup.full_address || pickup.name || "Pickup address",
-          dropPin: dropoff.address || dropoff.full_address || dropoff.name || "Destination address",
-          distanceKm: null,
-          captainPayout: serviceType === "M2C" ? Number(job.we4all_orders?.delivery_fee_inr || 0) : null,
-          quotedFare: serviceType === "TAXI" ? Number(job.quoted_total_inr || 0) : Number(job.quoted_fee_inr || 0),
-          serverDispatchVerified: true, status: "OPEN_ON_RADAR"
-        };
-      });
-      setCaptainRadarJobs(jobs);
-    } catch (error) {
-      setDispatchError(error?.message || "Could not load verified dispatch jobs.");
-      onReportError?.("Dispatch queue unavailable", error?.message || "Could not load server dispatch jobs.", "Check that the Rider role and vehicle class have been Founder-approved.");
-    } finally {
-      setDispatchLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!isPublishedLive) return undefined;
-    refreshRiderDispatch();
-    return undefined;
-  }, [isPublishedLive, currentUser?.authUserId, currentUser?.partnerId, myVehicleCode]);
-
   // Merge store orders from Merchant Portal into Radar if not already in captainRadarJobs
   const radarJobIds = new Set((captainRadarJobs || []).map((j) => j.id));
   const storeOrdersForRadar = (orders || [])
@@ -242,23 +193,12 @@ export default function RiderCaptainPortal({
   const allMyVehicleBookings = Array.from(bookingsMap.values());
 
   // COMPLETE OTP VERIFICATION HANDLER (Updates BOTH captainRadarJobs AND orders)
-  const handleVerifyTripOtpAndComplete = async (trip) => {
-    const code = String(dropOtpInputs[trip.id] || "").trim();
-    if (!/^\d{6}$/.test(code)) {
-      onTriggerToast?.("Enter the six-digit optional test code shared by the customer.");
-      return;
-    }
-    try {
-      const result = await verifyDeliveryTestOtp({
-        deliveryType: trip.serviceType || "M2C",
-        deliveryId: trip.id,
-        code
-      });
-      setOtpVerifiedBanner({ tripId: trip.id, message: result.message || "Optional test code verified." });
-      onTriggerToast?.("Test code verified. Delivery status and rider payout remain unchanged.");
-    } catch (error) {
-      onTriggerToast?.(error?.message || "Test code verification failed.");
-    }
+  const handleVerifyTripOtpAndComplete = () => {
+    onReportError(
+      "Delivery verification unavailable",
+      "The backend has not issued a customer-bound, expiring delivery OTP. No delivery status or payout was changed.",
+      "Complete the secure OTP endpoint and provider-side verification before enabling delivery completion."
+    );
   };
 
   const handleDownloadCaptainStatementPdf = () => {
@@ -393,10 +333,14 @@ export default function RiderCaptainPortal({
               if (isOnlineForDriving) {
                 setIsOnlineForDriving(false);
                 setLocationConsent(false);
-                onTriggerToast?.("Rider marked offline on this device. Server duty status is not yet available.");
                 return;
               }
-              onTriggerToast?.("Live duty is temporarily unavailable: WE4ALL must first save your availability and location heartbeat on the server. Dispatch job refresh and acceptance remain available.");
+              const accepted = window.confirm(
+                "Share this device's location while you are online as a WE4ALL captain? Location tracking remains on this device only until the secure server tracking service is configured."
+              );
+              if (!accepted) return;
+              setLocationConsent(true);
+              setIsOnlineForDriving(true);
             }}
             className={`px-2.5 py-1 rounded-lg font-black text-[9px] cursor-pointer ${
               isOnlineForDriving
@@ -490,25 +434,10 @@ export default function RiderCaptainPortal({
               {job.status === "OPEN_ON_RADAR" ? (
                 <button
                   type="button"
-                  disabled={claimingDispatchId === job.id || !isPublishedLive}
-                  onClick={async () => {
-                    setClaimingDispatchId(job.id);
-                    try {
-                      const claimAction = job.serviceType === "TAXI" ? "claim_taxi_ride" : job.serviceType === "P2P" ? "claim_p2p_delivery" : "claim_dispatch";
-                      const claimPayload = job.serviceType === "TAXI" ? { rideBookingId: job.id } : job.serviceType === "P2P" ? { deliveryId: job.id } : { dispatchId: job.id };
-                      await invokeWe4AllOperations(claimAction, claimPayload);
-                      await refreshRiderDispatch();
-                      setSelectedRadarJob(null);
-                      onTriggerToast?.(`${job.serviceType === "TAXI" ? "Passenger ride" : job.serviceType === "P2P" ? "P2P parcel" : "Merchant delivery"} accepted by WE4ALL. Open the route tab for navigation.`);
-                    } catch (error) {
-                      onTriggerToast?.(error?.message || "Dispatch claim failed. No local assignment was created.");
-                    } finally {
-                      setClaimingDispatchId("");
-                    }
-                  }}
-                  className="w-full bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black py-2 rounded-xl"
+                  disabled
+                  className="w-full bg-slate-700 text-slate-300 font-black py-2 rounded-xl cursor-not-allowed"
                 >
-                  {claimingDispatchId === job.id ? "Accepting…" : "Accept delivery"}
+                  Dispatch allocation service required
                 </button>
               ) : (
                 <button
@@ -600,7 +529,7 @@ export default function RiderCaptainPortal({
             </div>
           ) : (
             activeAcceptedTrips.map((trip) => {
-              const otpCode = "OPTIONAL TEST";
+              const otpCode = "";
               return (
                 <div
                   key={trip.id}
@@ -617,24 +546,23 @@ export default function RiderCaptainPortal({
                   <LiveRouteMap
                     pickupLabel={trip.pickupPin || trip.shopName}
                     dropLabel={trip.dropPin || trip.address}
-                    riderName={currentUser?.fullName || "Rider"}
+                    riderName={currentUser?.fullName || "Raju Local Rider"}
                     vehicle={`${myVehicleRule.shortLabel} (${currentUser?.rcPlate || "Vehicle pending"})`}
                     distanceKm={trip.distanceKm || null}
-                    trackingEnabled={routeGpsEnabled}
+                    trackingEnabled={isOnlineForDriving && locationConsent}
                   />
                   <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 flex justify-between items-center text-[10px]">
                     <span className="text-slate-300">
                       Customer / Merchant code:{" "}
                       <strong className="text-amber-300 font-mono text-xs">{otpCode}</strong>
                     </span>
-                    <span className="text-[10px] text-amber-200">Optional test only · no SMS · not required to complete the trip.</span>
+                    <span className="text-[10px] text-amber-200">Server-issued delivery OTP required. Completion remains locked.</span>
                   </div>
                   <div className="flex gap-1.5">
                     <input
                       type="text"
-                      inputMode="numeric"
-                       maxLength={6}
-                      placeholder="Optional 6-digit test code"
+                      maxLength={4}
+                      placeholder="Server-issued delivery OTP (not configured)"
                       value={dropOtpInputs[trip.id] ?? ""}
                       onChange={(e) =>
                         setDropOtpInputs({
@@ -646,11 +574,11 @@ export default function RiderCaptainPortal({
                     />
                     <button
                       type="button"
-                      disabled={String(dropOtpInputs[trip.id] || "").length !== 6}
+                      disabled
                       onClick={() => handleVerifyTripOtpAndComplete(trip)}
-                      className="flex-1 bg-cyan-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black rounded-xl text-[10px] shadow"
+                      className="flex-1 bg-slate-700 text-slate-300 font-black rounded-xl text-[10px] cursor-not-allowed shadow"
                     >
-                      Verify test code (optional)
+                      Server verification required
                     </button>
                   </div>
                   {otpVerifiedBanner?.tripId === trip.id && <p className="text-[9px] text-emerald-300">{otpVerifiedBanner.message} Trip completion and payout remain unchanged.</p>}
@@ -758,7 +686,7 @@ export default function RiderCaptainPortal({
                   4. {myVehicleRule.shortLabel} Earnings &amp; 09:00 AM Default Online Duty
                 </h4>
                 <p className="text-[10px] text-slate-400">
-                  Auto-duty is paused. Server-side availability and location heartbeat are not yet connected; no automatic duty starts.
+                  09:00 AM auto-duty requires a server scheduler and explicit consent. Manual online mode is used until then.
                 </p>
               </div>
               <button

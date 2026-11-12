@@ -8,16 +8,16 @@ const [ownerAccountSource, appSource] = await Promise.all([
   read("../src/App.jsx")
 ]);
 
-test("free email/password sign-in replaces paid SMS as the active login path", () => {
-  assert.match(ownerAccountSource, /supabase\.auth\.signInWithPassword/);
-  assert.match(ownerAccountSource, /supabase\.auth\.signUp/);
-  assert.doesNotMatch(ownerAccountSource, /supabase\.auth\.verifyOtp/);
-  assert.doesNotMatch(ownerAccountSource, /supabase\.auth\.signInWithOtp/);
-  assert.doesNotMatch(ownerAccountSource, /Send SMS OTP|Send Registration OTP/);
-  assert.match(ownerAccountSource, /No SMS was sent/);
+test("phone sign-in sends and verifies a Supabase-issued SMS OTP", () => {
+  assert.match(ownerAccountSource, /supabase\.auth\.signInWithOtp/);
+  assert.match(ownerAccountSource, /supabase\.auth\.verifyOtp/);
+  assert.match(ownerAccountSource, /type: "sms"/);
+  assert.match(ownerAccountSource, /SMS verification code sent/);
+  assert.doesNotMatch(ownerAccountSource, /generatedOtp/);
+  assert.doesNotMatch(ownerAccountSource, /Instant OTP Generated/);
 });
 
-test("registration creates a customer profile and submits partner applications as pending", () => {
+test("registration creates a verified customer and submits partner applications as pending", () => {
   assert.match(ownerAccountSource, /we4all_profiles/);
   assert.match(ownerAccountSource, /we4all_partner_applications/);
   assert.match(ownerAccountSource, /requested_role: selectedRoleKey/);
@@ -37,7 +37,7 @@ test("partner access still requires server-verified approved role", () => {
 });
 
 test("browser-side PIN and biometric shortcuts are not available as login choices", () => {
-  assert.doesNotMatch(ownerAccountSource, /\{ id: "otp", label: "Mobile OTP" \}/);
+  assert.match(ownerAccountSource, /\{ id: "otp", label: "Mobile OTP" \}/);
   assert.doesNotMatch(ownerAccountSource, /Biometric Passkey Verified/);
   assert.doesNotMatch(ownerAccountSource, /setTimeout\(handleLoginSubmit/);
 });

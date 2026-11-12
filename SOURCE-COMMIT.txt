@@ -1,4 +1,5 @@
 Repository: khodayanvesh-jsf/we4all-superapp
-Branch: codex/we4all-real-trial
-Commit: fe127eeabc258d429c08f3aed69b748f3d1b6e09
-Exported: 2026-11-12T04:27:06Z
+Branch: fix/payment-safety-guest-default
+Commit: 9158eb471ccee150fe5d7f365b9a4e9f1fef8492
+App: 3.3.0 (build 330)
+Exported: 2026-11-06

@@ -11,10 +11,7 @@ import {
   isLiveSupabaseConfigured,
   getActiveSupabaseUserId,
   probeSupabaseConnection,
-  syncCurrentUserStateNow,
-  listFounderDynamicModules,
-  saveFounderDynamicModule,
-  setFounderDynamicModuleStatus
+  syncCurrentUserStateNow
 } from "../supabaseClient";
 
 const REGISTRATION_ROLE_LABELS = {
@@ -111,6 +108,9 @@ export default function FounderAdminSuite({
   const safeDecorators = Array.isArray(decorators) ? decorators : [];
   const safeRiders = Array.isArray(riders) ? riders : [];
   const safeLabourWorkers = Array.isArray(labourWorkers) ? labourWorkers : [];
+  const safePendingProductApprovals = safeProducts.filter((product) => product.status === "PENDING_ADMIN_APPROVAL");
+  const safePendingHallApprovals = safeHalls.filter((hall) => hall.status === "PENDING_ADMIN_APPROVAL");
+  const safePendingLabourApprovals = safeLabourWorkers.filter((worker) => worker.status === "PENDING_ADMIN_APPROVAL");
   const safeUsers = Array.isArray(registeredUsers) ? registeredUsers : [];
   const safeProducts = Array.isArray(products) ? products : [];
   const safeHalls = Array.isArray(functionHalls) ? functionHalls : [];
@@ -221,11 +221,6 @@ export default function FounderAdminSuite({
     isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
   );
 
-  const [serverPendingCatalogItems, setServerPendingCatalogItems] = useState([]);
-  const [serverPendingCatalogLoading, setServerPendingCatalogLoading] = useState(false);
-  const [serverPendingCatalogError, setServerPendingCatalogError] = useState("");
-  const [serverCatalogReviewBusyId, setServerCatalogReviewBusyId] = useState("");
-
   const [serverPartnerApplications, setServerPartnerApplications] = useState([]);
   const [serverPartnerApplicationsLoading, setServerPartnerApplicationsLoading] = useState(false);
   const [serverPartnerApplicationsError, setServerPartnerApplicationsError] = useState("");
@@ -252,48 +247,6 @@ export default function FounderAdminSuite({
       );
     } finally {
       setServerPartnerApplicationsLoading(false);
-    }
-  };
-
-  const refreshServerPendingCatalog = async () => {
-    if (!supabase) {
-      setServerPendingCatalogError("Supabase client is not configured.");
-      return;
-    }
-    setServerPendingCatalogLoading(true);
-    setServerPendingCatalogError("");
-    try {
-      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "list_products" }
-      });
-      if (error) throw error;
-      if (data?.ok !== true) throw new Error(data?.error || "Founder catalogue authorization was denied.");
-      setServerPendingCatalogItems(Array.isArray(data.products) ? data.products : []);
-    } catch (error) {
-      setServerPendingCatalogError(error?.message || "Could not load pending live catalogue items.");
-    } finally {
-      setServerPendingCatalogLoading(false);
-    }
-  };
-
-  const reviewServerCatalogItem = async (catalogItemId, decision) => {
-    if (!catalogItemId) return;
-    setServerCatalogReviewBusyId(catalogItemId);
-    setServerPendingCatalogError("");
-    try {
-      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "review_product", catalog_item_id: catalogItemId, decision }
-      });
-      if (error) throw error;
-      if (data?.ok !== true) throw new Error(data?.error || "Catalogue review failed.");
-      setServerPendingCatalogItems((current) => current.filter((item) => item.id !== catalogItemId));
-      onTriggerToast(decision === "approved"
-        ? "Product approved in Supabase. It is visible only when stock is available."
-        : "Product rejected in Supabase; it remains hidden from customers.");
-    } catch (error) {
-      setServerPendingCatalogError(error?.message || "Could not save catalogue review.");
-    } finally {
-      setServerCatalogReviewBusyId("");
     }
   };
 
@@ -325,10 +278,7 @@ export default function FounderAdminSuite({
   };
 
   useEffect(() => {
-    if (founderTab === "approvals") {
-      refreshServerPartnerApplications();
-      refreshServerPendingCatalog();
-    }
+    if (founderTab === "approvals") refreshServerPartnerApplications();
   }, [founderTab]);
 
   const [otaForm, setOtaForm] = useState({
@@ -1117,47 +1067,6 @@ export default function FounderAdminSuite({
               ))}
 
             {approvalQueueSubTab === "product_approvals" && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] text-slate-300">Live Supabase catalogue queue</p>
-                  <button type="button" onClick={refreshServerPendingCatalog} disabled={serverPendingCatalogLoading}
-                    className="bg-slate-800 text-white px-2 py-1 rounded-lg text-[10px] font-bold disabled:opacity-50">
-                    {serverPendingCatalogLoading ? "Refreshing…" : "Refresh"}
-                  </button>
-                </div>
-                {serverPendingCatalogError && <p className="text-rose-300 text-[10px]">{serverPendingCatalogError}</p>}
-                {serverPendingCatalogItems.length === 0 && !serverPendingCatalogLoading ? (
-                  <p className="text-slate-400 text-center py-3">No live Supabase products awaiting approval.</p>
-                ) : serverPendingCatalogItems.map((product) => {
-                  const partner = product.we4all_partners || {};
-                  return (
-                    <div key={product.id} className="bg-slate-950 border border-emerald-500/30 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
-                      <div>
-                        <strong className="text-white">{product.title}</strong>
-                        <p className="text-[10px] text-slate-400">Merchant: {partner.display_name || product.partner_id} · SKU: {product.sku || "—"} · Category: {product.category_key} · ₹{product.price_inr} · Stock: {product.stock_quantity ?? "unlimited"}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button type="button" disabled={serverCatalogReviewBusyId === product.id}
-                          onClick={() => reviewServerCatalogItem(product.id, "approved")}
-                          className="bg-emerald-500 disabled:opacity-50 text-slate-950 px-3 py-1.5 rounded-lg font-black text-[10px]">
-                          Approve live
-                        </button>
-                        <button type="button" disabled={serverCatalogReviewBusyId === product.id}
-                          onClick={() => reviewServerCatalogItem(product.id, "rejected")}
-                          className="bg-rose-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg font-black text-[10px]">
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className="border-t border-slate-800 pt-3">
-                  <p className="text-[10px] text-slate-400 mb-2">Legacy local-only product approvals (not available for online selling): {safePendingProductApprovals.length}</p>
-                </div>
-              </div>
-            )}
-            {/*
-            {approvalQueueSubTab === "product_approvals" && (
               safePendingProductApprovals.length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No new products are waiting for approval.</p>
               ) : (
@@ -1186,7 +1095,6 @@ export default function FounderAdminSuite({
               )
             )}
 
-            */}
             {approvalQueueSubTab === "function_halls" && (
               safePendingHallApprovals.length === 0 ? (
                 <p className="text-slate-400 text-center py-4">No function halls are waiting for approval.</p>
