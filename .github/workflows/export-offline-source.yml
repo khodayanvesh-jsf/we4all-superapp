@@ -1,0 +1,26 @@
+name: Export WE4ALL offline source package
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  export-source:
+    name: export-source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Package offline source archive
+        run: |
+          mkdir -p artifacts
+          tar --exclude='./node_modules' --exclude='./.git' --exclude='./android/build' --exclude='./android/app/build' -czf artifacts/WE4ALL-offline-source.tar.gz .
+
+      - name: Upload offline source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: WE4ALL-Offline-Source-Package
+          path: artifacts/WE4ALL-offline-source.tar.gz
