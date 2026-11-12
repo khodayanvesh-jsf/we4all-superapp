@@ -4,7 +4,7 @@ import { CapacitorUpdater } from "@capgo/capacitor-updater";
 import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
 import { quoteMarketplaceFees } from "./modules/workflows/feePolicies.js";
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "3.3.0";
+const CURRENT_SCHEMA_VERSION = "3.3.2";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
 const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
 const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";

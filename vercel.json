@@ -1,16 +1,11 @@
 {
-  "rewrites": [
-    { "source": "/admin", "destination": "/index.html?admin=true" },
-    { "source": "/admin/(.*)", "destination": "/index.html?admin=true" },
-    { "source": "/((?!ota-manifest\\.json|WE4ALL\\.apk|sw\\.js).*)", "destination": "/index.html" }
-  ],
   "headers": [
     {
       "source": "/ota-manifest.json",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
-        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
+        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, proxy-revalidate" }
       ]
     },
     {
@@ -19,5 +14,9 @@
         { "key": "Access-Control-Allow-Origin", "value": "*" }
       ]
     }
+  ],
+  "rewrites": [
+    { "source": "/admin", "destination": "/index.html?admin=true" },
+    { "source": "/((?!api/|ota-manifest\\.json|WE4ALL.*\\.apk).*)", "destination": "/index.html" }
   ]
 }

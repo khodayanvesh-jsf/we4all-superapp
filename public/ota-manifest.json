@@ -1,9 +1,9 @@
 {
-  "currentVersion": "3.2.7",
-  "latestAvailableVersion": "3.2.7",
-  "updateAvailable": false,
-  "publishedAt": "2026-11-05T17:51:26Z",
-  "liveServerUrl": "https://we-4-all-super-app.vercel.app",
-  "apkDownloadUrl": "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.2.7",
-  "releaseNotes": "WE4ALL v3.2.7 - First-Install Permissions Gateway, Consumer OTP vs Partner Admin Approval, Auto-Hide Login after Auth, Top Logout, Hidden OTP Account Deletion & Strict Portal Role Isolation."
+    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.3.2",
+    "currentVersion":  "3.3.1",
+    "liveServerUrl":  "https://we-4-all-super-app.vercel.app",
+    "latestAvailableVersion":  "3.3.2",
+    "publishedAt":  "2026-11-12T10:26:39Z",
+    "updateAvailable":  true,
+    "releaseNotes":  "WE4ALL v3.3.2: Unified all 7 branches into main with live Cloud OTA auto-update."
 }
