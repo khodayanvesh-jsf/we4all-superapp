@@ -1110,3 +1110,208 @@ export async function listMarketplaceOrders({ partnerId = "" } = {}) {
     };
   });
 }
+
+export async function invokeWe4AllOperations(action, fields = {}) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth?.user?.id) throw new Error("Sign in with your WE4ALL account first.");
+  const { data, error } = await supabase.functions.invoke("we4all-operations", {
+    body: { ...fields, action }
+  });
+  if (error) {
+    const details = await error.context?.clone?.().json().catch(() => null);
+    throw new Error(details?.error || error.message || "WE4ALL could not reach the server.");
+  }
+  if (!data || data.ok !== true) throw new Error(data?.error || "WE4ALL server did not confirm this action.");
+  return data;
+}
+
+function makeOperationsIdempotencyKey(prefix) {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`.slice(0, 160);
+}
+
+function bookingTimeToIso(date, clock) {
+  const match = String(clock || "").match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match || !date) throw new Error("Choose a valid booking date and time.");
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const meridiem = match[3].toUpperCase();
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) throw new Error("Invalid booking time.");
+  if (meridiem === "PM" && hour !== 12) hour += 12;
+  if (meridiem === "AM" && hour === 12) hour = 0;
+  const value = new Date(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+05:30`);
+  if (!Number.isFinite(value.getTime())) throw new Error("Invalid booking date.");
+  return value.toISOString();
+}
+
+export async function loadServerOperations() {
+  return invokeWe4AllOperations("list_my_operations");
+}
+
+export async function createServerBooking({
+  partnerId, bookingType = "service", date, slot, note = "", metadata = {}, idempotencyKey
+}) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("This provider does not have a verified WE4ALL partner record yet.");
+  if (!["service", "decorator", "function_hall"].includes(bookingType)) throw new Error("Unsupported booking type.");
+  const parts = [...String(slot || "").matchAll(/(\d{1,2}:\d{2}\s*(?:AM|PM))/ig)];
+  if (parts.length < 2) throw new Error("Choose a valid one-hour booking slot.");
+  const requestedStartAt = bookingTimeToIso(date, parts[0][1]);
+  const requestedEndAt = bookingTimeToIso(date, parts[1][1]);
+  const data = await invokeWe4AllOperations("create_booking", {
+    partnerId, bookingType, requestedStartAt, requestedEndAt, note,
+    metadata: metadata && typeof metadata === "object" ? metadata : {},
+    idempotencyKey: String(idempotencyKey || makeOperationsIdempotencyKey("booking"))
+  });
+  if (!data.booking_id) throw new Error("The server did not return a booking reference.");
+  return data;
+}
+
+export async function quoteServerServiceBooking({ bookingId, partnerId, quotedTotalInr }) {
+  const amount = Number(quotedTotalInr);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 10000000) {
+    throw new Error("Enter a valid service quote.");
+  }
+  return invokeWe4AllOperations("quote_booking", {
+    bookingId, partnerId, quotedTotalInr: amount, advanceRequiredInr: 0
+  });
+}
+
+export async function setServerPartnerAvailability({ partnerId, availabilityRules }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("A verified WE4ALL partner record is required.");
+  if (!availabilityRules || typeof availabilityRules !== "object" || Array.isArray(availabilityRules)) {
+    throw new Error("Availability settings must be a JSON object.");
+  }
+  return invokeWe4AllOperations("set_availability", { partnerId, availabilityRules });
+}
+
+/** Public, column-limited partner directory for the customer service catalogue. */
+export async function loadPublicServiceProviders() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase
+    .from("we4all_partners")
+    .select("id,partner_type,display_name,zone_id,approval_status,availability_rules")
+    .eq("partner_type", "service_provider")
+    .eq("approval_status", "approved")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((partner) => {
+    const rules = partner.availability_rules || {};
+    const rate = rules.serviceRateCard || {};
+    return {
+      id: partner.id,
+      partnerId: partner.id,
+      partnerType: partner.partner_type,
+      providerName: partner.display_name || "WE4ALL Service Provider",
+      displayName: partner.display_name || "WE4ALL Service Provider",
+      zoneId: partner.zone_id,
+      status: "Approved",
+      isPublished: true,
+      availabilityRules: rules,
+      availableSlots: Array.isArray(rules.availableSlots) ? rules.availableSlots : [],
+      serviceCategoryId: rate.serviceCategoryId || "",
+      serviceCategory: rate.serviceCategory || "",
+      specialization: rate.specialization || "",
+      visitingFee: Number(rate.visitingFeeInr || 0),
+      hourlyRate: Number(rate.hourlyRateInr || 0),
+      emergencyFee: Number(rate.emergencyFeeInr || 0),
+      rateCardItems: Array.isArray(rules.serviceCatalog) ? rules.serviceCatalog : (Array.isArray(rate.rateCardItems) ? rate.rateCardItems : [])
+    };
+  });
+}
+
+export async function loadPublicLabourProviders() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase
+    .from("we4all_partners")
+    .select("id,partner_type,display_name,zone_id,approval_status,availability_rules")
+    .eq("partner_type", "labour")
+    .eq("approval_status", "approved")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((partner) => {
+    const profile = partner.availability_rules?.labourProfile || {};
+    return {
+      id: partner.id,
+      partnerId: partner.id,
+      partnerType: partner.partner_type,
+      ownerUserId: null,
+      name: String(profile.name || partner.display_name || "Approved Labour Partner"),
+      tradeId: String(profile.tradeId || "lab_mason"),
+      tradeName: String(profile.tradeName || profile.tradeId || "Labour / Mistri"),
+      mode: profile.mode === "TOLI_GROUP" ? "TOLI_GROUP" : "INDIVIDUAL",
+      toliSize: Math.max(1, Number(profile.toliSize || 1)),
+      fullDayWage: Math.max(0, Number(profile.fullDayWage || 0)),
+      toolsIncluded: String(profile.toolsIncluded || ""),
+      status: "Approved",
+      zoneId: partner.zone_id,
+      availabilityRules: partner.availability_rules || {}
+    };
+  });
+}
+
+/** Save the approved Labour partner's public Adda listing in its server-owned profile. */
+export async function saveServerLabourProfile({ partnerId, profile }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) {
+    throw new Error("Your Labour/Mistri role must be Founder-approved before publishing a worker profile.");
+  }
+  const name = String(profile?.name || "").trim();
+  const wage = Number(profile?.fullDayWage);
+  const toliSize = Number(profile?.toliSize || 1);
+  if (!name || !Number.isFinite(wage) || wage < 0 || wage > 100000 || !Number.isInteger(toliSize) || toliSize < 1 || toliSize > 100) {
+    throw new Error("Enter a valid worker/group name, wage and group size.");
+  }
+  return setServerPartnerAvailability({
+    partnerId,
+    availabilityRules: {
+      labourProfile: {
+        name: name.slice(0, 100),
+        tradeId: String(profile.tradeId || "lab_mason").slice(0, 80),
+        tradeName: String(profile.tradeName || "").slice(0, 100),
+        mode: profile.mode === "TOLI_GROUP" ? "TOLI_GROUP" : "INDIVIDUAL",
+        toliSize,
+        fullDayWage: wage,
+        toolsIncluded: String(profile.toolsIncluded || "").slice(0, 500),
+        updatedAt: new Date().toISOString()
+      }
+    }
+  });
+}
+
+/** Create a Labour/Mistri request in the trusted booking ledger; no wages or payments are collected. */
+export async function createServerLabourEngagement({
+  partnerId, tradeKey, workerCount = 1, worksiteAddress, workDate, shift = "FULL_DAY", idempotencyKey
+}) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("This Labour partner is not linked to an approved WE4ALL account.");
+  if (!String(worksiteAddress || "").trim()) throw new Error("Enter the worksite address.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(workDate || ""))) throw new Error("Choose a valid future work date.");
+  const start = new Date(`${workDate}T09:00:00+05:30`);
+  if (!Number.isFinite(start.getTime()) || start.getTime() < Date.now() - 60000) throw new Error("Choose a future work date.");
+  const durationHours = shift === "HALF_DAY" ? 4.25 : 8.5;
+  if (!["FULL_DAY", "HALF_DAY"].includes(shift)) throw new Error("Choose full-day or half-day work.");
+  const count = Number(workerCount);
+  if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("Worker/group size must be between 1 and 100.");
+  const key = String(idempotencyKey || makeOperationsIdempotencyKey("labour"));
+  return invokeWe4AllOperations("create_labour", {
+    partnerId,
+    tradeKey: String(tradeKey || "").slice(0, 80),
+    workerCount: count,
+    requestedStartAt: start.toISOString(),
+    durationHours,
+    worksiteAddress: { address: String(worksiteAddress).trim().slice(0, 500) },
+    idempotencyKey: key
+  });
+}
+
+/** Partner accepts a Labour request with a quote or declines it; this does not release wages. */
+export async function quoteServerLabourEngagement({ engagementId, decision, agreedTotalInr = null }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(engagementId || ""))) throw new Error("Invalid Labour request reference.");
+  if (!["accept", "decline"].includes(decision)) throw new Error("Choose accept or decline.");
+  const total = decision === "accept" ? Number(agreedTotalInr) : null;
+  if (decision === "accept" && (!Number.isFinite(total) || total <= 0 || total > 10000000)) {
+    throw new Error("Enter a valid Labour quote.");
+  }
+  return invokeWe4AllOperations("quote_labour", {
+    engagementId, decision, agreedTotalInr: total
+  });
+}

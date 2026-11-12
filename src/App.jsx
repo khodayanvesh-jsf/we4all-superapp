@@ -48,6 +48,10 @@ import {
   checkLiveCloudOtaManifest,
   performZeroLossOtaUpdate,
   createMarketplaceOrder,
+  createServerBooking,
+  loadServerOperations,
+  loadPublicLabourProviders,
+  loadPublicServiceProviders,
   getMarketplaceFeeQuote,
   supabase,
   activateSupabaseAccount,
@@ -719,6 +723,115 @@ function AppContent() {
   const [liveOrderDrawerOpen, setLiveOrderDrawerOpen] = useState(false);
   const [serviceBookings, setServiceBookings] = useState(savedCloud?.serviceBookings || []);
   const [labourBookings, setLabourBookings] = useState(savedCloud?.labourBookings || []);
+  const [serviceBookingBusy, setServiceBookingBusy] = useState(false);
+  const serviceRequestKeys = useRef(new Map());
+
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    let refreshing = false;
+    const userId = currentUser?.authUserId;
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const [services, workers, operations] = await Promise.allSettled([
+          loadPublicServiceProviders(), loadPublicLabourProviders(),
+          userId ? loadServerOperations() : Promise.resolve(null)
+        ]);
+        if (!active) return;
+        if (services.status === "fulfilled") {
+          setServiceProviders((previous) => [
+            ...services.value,
+            ...previous.filter((item) => !item.partnerId && !services.value.some((provider) => provider.id === item.id))
+          ]);
+        }
+        if (workers.status === "fulfilled") setLabourWorkers(workers.value);
+        if (operations.status !== "fulfilled" || !operations.value) return;
+        const date = (value) => new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
+        }).format(new Date(value));
+        const time = (value) => new Intl.DateTimeFormat("en-US", {
+          timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
+        }).format(new Date(value)).replace(/\s+/g, " ");
+        const serviceRows = new Map((operations.value.bookings || [])
+          .filter((row) => row.booking_type === "service" && row.requested_start_at && row.requested_end_at)
+          .map((row) => [row.id, {
+            id: row.id, serverBookingId: row.id, providerId: row.partner_id, customerId: row.customer_user_id,
+            bookedDate: date(row.requested_start_at), bookedSlot: `${time(row.requested_start_at)} - ${time(row.requested_end_at)}`,
+            status: row.status, paymentStatus: row.payment_status, address: row.metadata?.address || "",
+            quotedTotal: row.quoted_total_inr, providerName: services.status === "fulfilled"
+              ? services.value.find((provider) => provider.id === row.partner_id)?.providerName : undefined
+          }]));
+        const labourRows = new Map((operations.value.labourEngagements || []).filter((row) => row.requested_start_at)
+          .map((row) => [row.id, {
+            id: row.id, workerId: row.labour_partner_id, customerId: row.customer_user_id,
+            workerName: workers.status === "fulfilled" ? workers.value.find((worker) => worker.id === row.labour_partner_id)?.name : undefined,
+            tradeId: row.trade_key, siteAddress: row.worksite_address?.address || "",
+            workDate: date(row.requested_start_at), shift: Number(row.requested_duration_hours) >= 8 ? "FULL_DAY" : "HALF_DAY",
+            workerCount: row.worker_count, totalWage: row.agreed_total_inr, status: row.status,
+            paymentStatus: row.payment_status, requestedAt: row.created_at, serverRecord: true
+          }]));
+        setServiceBookings((previous) => [...serviceRows.values(), ...previous.filter((row) => !row.serverBookingId && !serviceRows.has(row.id))]);
+        setLabourBookings((previous) => [...labourRows.values(), ...previous.filter((row) => !row.serverRecord && !labourRows.has(row.id))]);
+      } finally {
+        refreshing = false;
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 20000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [currentUser?.authUserId, currentUser?.role]);
+
+  const submitServiceCart = async () => {
+    if (serviceBookingBusy) return;
+    const userId = currentUser?.authUserId;
+    if (!userId || currentUser.isGuest) {
+      triggerToast("Sign in before sending service requests. Your cart is saved.");
+      setFooterTab("account");
+      return;
+    }
+    if (!addressBook.length || !activeAddressObj.fullAddress?.trim()) {
+      triggerToast("Add a service address to your account first.");
+      return;
+    }
+    const requestIdentity = (item) => JSON.stringify([userId, item.providerId, item.bookingDate, item.bookingSlot]);
+    const submitted = new Set();
+    let firstError = "";
+    setServiceBookingBusy(true);
+    try {
+      for (const item of serviceCart) {
+        const key = requestIdentity(item);
+        if (submitted.has(key)) continue;
+        if (!serviceRequestKeys.current.has(key)) serviceRequestKeys.current.set(key, crypto.randomUUID());
+        try {
+          const result = await createServerBooking({
+            partnerId: item.partnerId, date: item.bookingDate, slot: item.bookingSlot,
+            metadata: { address: activeAddressObj.fullAddress.trim().slice(0, 500) },
+            idempotencyKey: serviceRequestKeys.current.get(key)
+          });
+          submitted.add(key);
+          serviceRequestKeys.current.delete(key);
+          setServiceBookings((previous) => [{
+            id: result.booking_id, serverBookingId: result.booking_id, providerId: item.partnerId,
+            providerName: item.providerName, customerId: userId,
+            bookedDate: item.bookingDate, bookedSlot: item.bookingSlot,
+            status: result.status || "requested", paymentStatus: result.payment_status || "pending",
+            address: activeAddressObj.fullAddress
+          }, ...previous.filter((row) => row.id !== result.booking_id)]);
+        } catch (error) {
+          firstError ||= error.message;
+        }
+      }
+      setServiceCart((previous) => previous.filter((item) => !submitted.has(requestIdentity(item))));
+      triggerToast(firstError
+        ? `${submitted.size} request(s) sent. Remaining items are in your cart. ${firstError}`
+        : `${submitted.size} request(s) sent. Awaiting provider quote.`);
+    } finally {
+      setServiceBookingBusy(false);
+    }
+  };
+
   const [decorBids, setDecorBids] = useState(savedCloud?.decorBids || []);
   const [captainRadarJobs, setCaptainRadarJobs] = useState(savedCloud?.captainRadarJobs || []);
   const [pendingServiceProviders, setPendingServiceProviders] = useState(savedCloud?.pendingServiceProviders || []);
@@ -1379,7 +1492,7 @@ function AppContent() {
                     </select>
                   </div>
 
-                  {(serviceProviders || []).filter((provider) => provider.status === "Approved" && provider.isPublished !== false).length === 0 ? (
+                  {(serviceProviders || []).filter((provider) => provider.partnerId && provider.status === "Approved" && provider.isPublished !== false).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
                       <p className="font-black text-xs">No Active 1-Hr Service Providers Yet</p>
                       <button
@@ -1394,15 +1507,16 @@ function AppContent() {
                       </button>
                     </div>
                   ) : (
-                    serviceProviders.filter((provider) => provider.status === "Approved" && provider.isPublished !== false).map((sp) => {
+                    serviceProviders.filter((provider) => provider.partnerId && provider.status === "Approved" && provider.isPublished !== false).map((sp) => {
                       const slotIsAvailable =
                         Array.isArray(sp.availableSlots) &&
+                        (!sp.availabilityRules?.oneHourSlotDate || sp.availabilityRules.oneHourSlotDate === serviceFilterDate) &&
                         sp.availableSlots.includes(serviceFilterSlot) &&
                         !(serviceBookings || []).some((booking) =>
                           booking.providerId === sp.id &&
                           booking.bookedDate === serviceFilterDate &&
                           booking.bookedSlot === serviceFilterSlot &&
-                          !["CANCELLED", "REJECTED", "COMPLETED"].includes(booking.status)
+                          !["cancelled", "rejected", "completed"].includes(String(booking.status).toLowerCase())
                         );
                       return (
                       <div
@@ -1413,7 +1527,7 @@ function AppContent() {
                           <h4 className="font-black text-xs">{sp.providerName}</h4>
                           <p className="text-[10px] text-slate-600">{sp.specialization}</p>
                           <p className="text-[10px] font-black text-emerald-700">
-                            Visiting Escrow Fee: Rs.{sp.visitingFee}
+                            Estimated visit fee: ₹{sp.visitingFee}
                           </p>
                         </div>
                         <button
@@ -1646,77 +1760,11 @@ function AppContent() {
                       ))}
                       <button
                         type="button"
-                        onClick={() => {
-                          if (!currentUser || currentUser.isGuest || !currentUser.authUserId) {
-                            triggerToast("Secure customer sign-in is required before requesting a service booking. Your cart is unchanged.");
-                            setFooterTab("account");
-                            return;
-                          }
-                          const total = serviceCart.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0);
-                          if (!Number.isFinite(total) || total <= 0) {
-                            triggerToast("The service cart has an invalid visiting-fee total.");
-                            return;
-                          }
-                          const grouped = new Map();
-                          for (const item of serviceCart) {
-                            const providerId = item.providerId || item.id || item.providerName;
-                            if (!providerId) continue;
-                            const current = grouped.get(providerId) || [];
-                            current.push(item);
-                            grouped.set(providerId, current);
-                          }
-                          if (!grouped.size) {
-                            triggerToast("The service cart does not contain a provider identity. No booking request was created.");
-                            return;
-                          }
-                          const pendingBookings = [];
-                          for (const [providerId, items] of grouped.entries()) {
-                            const bookingKey = JSON.stringify(
-                              items.map((item) => ({
-                                providerId,
-                                providerName: item.providerName || "",
-                                bookingDate: item.bookingDate || serviceFilterDate,
-                                bookingSlot: item.bookingSlot || "",
-                                visitingFee: Number(item.visitingFee || 0)
-                              })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
-                            );
-                            const existing = (serviceBookings || []).find((booking) =>
-                              booking.customerId === currentUser.id &&
-                              booking.bookingKey === bookingKey &&
-                              ["AWAITING_VERIFIED_PAYMENT", "PAYMENT_SETUP_REQUIRED"].includes(booking.status)
-                            );
-                            pendingBookings.push(existing || {
-                              id: "SRV-" + (globalThis.crypto?.randomUUID?.() || Date.now() + "-" + providerId),
-                              bookingKey,
-                              customerId: currentUser.id,
-                              customerName: currentUser.fullName || currentUser.name || "Customer",
-                              bookingItems: items,
-                              providerId,
-                              providerName: items[0]?.providerName || "Service provider",
-                              bookedDate: items[0]?.bookingDate || serviceFilterDate,
-                              bookedSlot: items.map((item) => item.bookingSlot).join(", "),
-                              visitingFee: items.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0),
-                              escrowVisitingAmount: items.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0),
-                              escrowStatus: "NOT_FUNDED",
-                              paymentStatus: "PENDING",
-                              happyCodeStatus: "NOT_ISSUED",
-                              status: "AWAITING_VERIFIED_PAYMENT",
-                              createdAt: new Date().toISOString()
-                            });
-                          }
-                          const knownIds = new Set((serviceBookings || []).map((booking) => booking.id));
-                          const newBookings = pendingBookings.filter((booking) => !knownIds.has(booking.id));
-                          if (newBookings.length) setServiceBookings([...newBookings, ...(serviceBookings || [])]);
-                          setPendingUpiPayment({
-                            type: "SERVICE_ESCROW",
-                            orderId: pendingBookings.map((booking) => booking.id).join(","),
-                            title: "Service visiting-fee payment",
-                            amount: total
-                          });
-                        }}
+                        disabled={serviceBookingBusy}
+                        onClick={submitServiceCart}
                         className="w-full bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
                       >
-                        Continue to secure visiting-fee payment
+                        {serviceBookingBusy ? "Sending requests…" : "Send service requests"}
                       </button>
                     </>
                   )}
@@ -1813,6 +1861,7 @@ function AppContent() {
               setOrders={setOrders}
               serviceBookings={serviceBookings || []}
               labourBookings={labourBookings}
+              customerId={currentUser?.authUserId}
               brightTheme={brightTheme}
               onOpenLiveMap={(ord) => {
                 setActiveOrderId(ord.id);
