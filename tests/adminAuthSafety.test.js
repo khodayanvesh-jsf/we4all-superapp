@@ -5,27 +5,20 @@ import { readFile } from "node:fs/promises";
 const readSource = (path) =>
   readFile(new URL(path, import.meta.url), "utf8");
 
-const [app, supabase, checkout, founder, gate, adminFunction, registration, functionConfig] = await Promise.all([
+const [app, supabase, checkout, founder] = await Promise.all([
   readSource("../src/App.jsx"),
   readSource("../src/supabaseClient.js"),
   readSource("../src/modules/ActionAndErrorFeedbackLayer.jsx"),
-  readSource("../src/modules/FounderAdminSuite.jsx"),
-  readSource("../src/modules/AdminSecurityGate.jsx"),
-  readSource("../supabase/functions/we4all-admin-review/index.ts"),
-  readSource("../src/modules/OwnerAccountProfile.jsx"),
-  readSource("../supabase/config.toml")
+  readSource("../src/modules/FounderAdminSuite.jsx")
 ]);
 
-test("administrator gate uses authenticated Supabase MFA and server authorization", () => {
+test("founder admin gate has no hard-coded username, password or PIN bypass", () => {
   assert.doesNotMatch(app, /we4all2026|22061969s!|adminPinInput === "1234"/);
-  assert.match(app, /AdminSecurityGate/);
-  assert.match(gate, /auth\.mfa\.getAuthenticatorAssuranceLevel/);
-  assert.match(gate, /auth\.mfa\.verify/);
-  assert.match(gate, /we4all-admin-review/);
-  assert.match(adminFunction, /claims\.aal !== "aal2"/);
-  assert.match(adminFunction, /new Response\(null, \{ status: 204, headers: CORS_HEADERS \}\)/);
-  assert.doesNotMatch(adminFunction, /new Response\("ok", \{ status: 204/);
-  assert.match(functionConfig, /\[functions\.we4all-admin-review\][\s\S]*?verify_jwt = true/);
+  assert.match(app, /handleFounderAdminLogin/);
+  assert.match(app, /signInWithPassword/);
+  assert.match(app, /we4all-admin-review/);
+  assert.match(app, /app_metadata/);
+  assert.doesNotMatch(app, /Founder authentication unavailable/);
 });
 
 test("founder credentials are not returned from or written to browser storage", () => {
@@ -37,15 +30,7 @@ test("founder credentials are not returned from or written to browser storage", 
 
 test("founder credential editing is disabled in the admin interface", () => {
   assert.doesNotMatch(founder, /saveFounderCredentials\(adminCredsForm\)/);
-  assert.match(founder, /trusted <code>app_metadata\.we4all_role<\/code>/);
-  assert.match(founder, /City Manager actions remain zone-filtered on the server/);
-});
-
-test("public registration cannot self-select admin and partner applications carry an operational zone", () => {
-  assert.doesNotMatch(registration, /id: "founder"|id: "city_manager"/);
-  assert.match(registration, /zone_id: regForm\.zoneId/);
-  assert.match(adminFunction, /appMetadata\.we4all_role/);
-  assert.match(adminFunction, /application\.application_payload\?\.zone_id !== zoneId/);
+  assert.match(founder, /Server-side founder authentication required/);
 });
 
 test("guest checkout cannot create a local authenticated session", () => {

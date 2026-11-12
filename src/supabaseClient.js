@@ -2,7 +2,6 @@ import { createClient } from "@supabase/supabase-js";
 import { Capacitor } from "@capacitor/core";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";
 import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
-import { quoteMarketplaceFees } from "./modules/workflows/feePolicies.js";
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
 const CURRENT_SCHEMA_VERSION = "3.3.0";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
@@ -26,9 +25,8 @@ export function normalizeSupabaseBaseUrl(rawUrl) {
 const SUPABASE_URL = normalizeSupabaseBaseUrl(
   import.meta.env.VITE_SUPABASE_URL || "https://bdmbziwazpuzbukazmug.supabase.co"
 );
-const localPublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
 const SUPABASE_PUBLISHABLE_KEY = String(
-  (localPublishableKey === "YOUR_SUPABASE_PUBLISHABLE_KEY" ? "" : localPublishableKey) ||
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   "sb_publishable_nNPwaseb81B8V05aVwmleg_JkBVNvzl"
 ).trim();
 
@@ -42,19 +40,6 @@ export const supabase = SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY
       }
     })
   : null;
-
-// Recovery sessions never replace the normal signed-in session on this device.
-export function createIsolatedSupabaseClient() {
-  if (!supabase) return null;
-  return createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-      storageKey: "we4all-isolated-auth"
-    }
-  });
-}
 
 export function getServerConfig() {
   return {
@@ -100,7 +85,7 @@ export const isLiveSupabaseConfigured = Boolean(supabase);
 
 let lastCloudSyncState = {
   status: "not-signed-in",
-  message: "Sign in to enable private cloud synchronization.",
+  message: "Supabase connection has not been checked yet.",
   lastSyncedAt: null
 };
 
@@ -148,10 +133,40 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: false,
+      dataApiReachable: false,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
       message: "Supabase Auth API responded with an unsuccessful status."
+    };
+  }
+
+  let dataApiReachable = false;
+  try {
+    const { error: dataApiError } = await supabase
+      .from("we4all_catalog_items")
+      .select("id", { head: true, count: "exact" });
+    dataApiReachable = !dataApiError;
+    if (dataApiError) {
+      return {
+        configured: true,
+        backendReachable: true,
+        dataApiReachable: false,
+        authenticated: false,
+        accountLinked: false,
+        syncReady: false,
+        message: dataApiError.message || "Supabase REST Data API cannot read the WE4ALL catalogue. Check Data API exposed schemas, grants and RLS."
+      };
+    }
+  } catch (error) {
+    return {
+      configured: true,
+      backendReachable: true,
+      dataApiReachable: false,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: error?.message || "Could not reach the Supabase Data API."
     };
   }
 
@@ -171,10 +186,11 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
-      message: "Supabase is reachable. Sign in with SMS OTP to enable private account sync."
+      message: "Supabase backend and WE4ALL catalogue API are reachable."
     };
   }
 
@@ -196,6 +212,7 @@ export async function probeSupabaseConnection() {
     const result = {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: true,
       accountLinked: true,
       syncReady: sync?.ok === true,
@@ -209,6 +226,7 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: true,
       accountLinked: true,
       syncReady: false,
@@ -267,7 +285,13 @@ export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploa
     } else {
       return "";
     }
-    const objectPath = `${user.id}/${folder}/${crypto.randomUUID()}.${extension}`;
+    const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    const sizeBytes = Number(file?.size || 0);
+    if (!allowedImageTypes.has(contentType) || !sizeBytes || sizeBytes > 5 * 1024 * 1024) {
+      throw new Error("Public WE4ALL media accepts JPEG, PNG or WebP images up to 5 MB. Do not upload KYC, identity or bank documents here.");
+    }
+    const safeFolder = String(folder || "uploads").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 50);
+    const objectPath = `${user.id}/${safeFolder}/${crypto.randomUUID()}.${extension}`;
     const { error } = await supabase.storage.from("we4all-media").upload(objectPath, file, {
       contentType,
       upsert: false
@@ -578,7 +602,7 @@ export async function checkLiveCloudOtaManifest(callback) {
     installedBuildNumber: APP_BUILD_NUMBER,
     currentVersion: APP_VERSION,
     currentBundleVersion: "BUILT-IN",
-    nativeUpdater: Capacitor.isNativePlatform() ? "WE4ALL" : "Not installed"
+    nativeUpdater: Capacitor.isNativePlatform() ? "Capgo" : "Not installed"
   };
 
   if (!Capacitor.isNativePlatform()) {
@@ -601,16 +625,16 @@ export async function checkLiveCloudOtaManifest(callback) {
     const currentBundleVersion = current?.bundle?.version || "BUILT-IN";
     const currentVersion = APP_VERSION;
     const latestVersion = latest?.version || currentBundleVersion;
-    const available = Boolean(latest?.url && latest?.version && latest?.checksum && latest?.sessionKey && latest.version !== currentBundleVersion);
+    const available = Boolean(latest?.url && latest?.version && latest.version !== currentBundleVersion);
     const info = {
       ...installedInfo,
       currentVersion,
       currentBundleVersion,
       latestAvailableVersion: latestVersion,
       updateAvailable: available,
-      releaseNotes: available ? latest?.comment || "" : "",
+      releaseNotes: latest?.message || "",
       downloadUrl: available ? latest.url : "",
-      nativeUpdater: "WE4ALL"
+      nativeUpdater: "Capgo"
     };
     if (callback) callback({ appUpdateInfo: info });
     return info;
@@ -619,7 +643,7 @@ export async function checkLiveCloudOtaManifest(callback) {
       ...installedInfo,
       latestAvailableVersion: APP_VERSION,
       updateAvailable: false,
-      error: error?.message || "Could not check the WE4ALL update channel."
+      error: error?.message || "Could not check the Capgo update channel."
     };
   }
 }
@@ -843,22 +867,20 @@ export async function performZeroLossOtaUpdate(targetVersion, releaseNotes, onPr
   }
 
   const latest = await CapacitorUpdater.getLatest();
-  if (!latest?.url || !latest?.version || !latest?.checksum || !latest?.sessionKey) {
-    throw new Error(latest?.message || "No verified WE4ALL update is available for this device.");
+  if (!latest?.url || !latest?.version) {
+    throw new Error(latest?.message || "No verified Capgo update is available for this device.");
   }
   if (targetVersion && latest.version !== targetVersion) {
     throw new Error("The available OTA version changed. Check for updates again before installing.");
   }
 
-  onProgress?.({ pct: 20, msg: "Downloading update from WE4ALL staging..." });
+  onProgress?.({ pct: 20, msg: "Downloading update from the configured Capgo channel..." });
   const bundle = await CapacitorUpdater.download({
     url: latest.url,
-    version: latest.version,
-    checksum: latest.checksum,
-    sessionKey: latest.sessionKey
+    version: latest.version
   });
   if (!bundle?.id) {
-    throw new Error("The updater did not return a valid downloaded bundle identifier.");
+    throw new Error("Capgo did not return a valid downloaded bundle identifier.");
   }
 
   onProgress?.({ pct: 80, msg: "Bundle downloaded. Queueing it for safe activation..." });
@@ -871,11 +893,124 @@ export async function performZeroLossOtaUpdate(targetVersion, releaseNotes, onPr
     updateAvailable: false,
     releaseNotes: releaseNotes || latest.message || "",
     status: "QUEUED_FOR_NEXT_BACKGROUND",
-    nativeUpdater: "WE4ALL"
+    nativeUpdater: "Capgo"
   };
   onProgress?.({ pct: 100, msg: "Update queued. It will activate on the next safe app background/relaunch." });
   onComplete?.(updatedInfo);
   return updatedInfo;
+}
+
+
+function mapMarketplaceCatalogRow(row) {
+  const partner = row.we4all_partners || row.partner || {};
+  const price = Number(row.price_inr || 0);
+  const mrp = Number(row.mrp_inr ?? row.price_inr ?? 0);
+  const isApproved = row.approval_status === "approved" && row.is_active === true;
+  return {
+    id: row.id,
+    catalogItemId: row.id,
+    partnerId: row.partner_id,
+    ownerUserId: row.owner_user_id || null,
+    merchantId: row.partner_id,
+    merchantName: partner.display_name || "WE4ALL Merchant",
+    shopName: partner.display_name || "WE4ALL Merchant",
+    categoryId: row.category_key,
+    subCategoryBrand: row.title,
+    sku: row.sku || "",
+    image: row.metadata?.image_url || "",
+    metadata: row.metadata || {},
+    variants: [{
+      id: row.id,
+      label: row.unit_label || "unit",
+      price,
+      mrp,
+      weightGrams: 1000
+    }],
+    merchantOffers: [{
+      merchantId: row.partner_id,
+      merchantName: partner.display_name || "WE4ALL Merchant",
+      price,
+      catalogItemId: row.id,
+      zoneId: partner.zone_id || "adilabad_master"
+    }],
+    stockQuantity: row.stock_quantity,
+    inStock: row.stock_quantity === null || Number(row.stock_quantity) > 0,
+    status: isApproved ? "Approved" : "PENDING_ADMIN_APPROVAL",
+    approvalStatus: row.approval_status,
+    createdAt: row.created_at
+  };
+}
+
+export async function loadMarketplaceCatalog() {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase
+    .from("we4all_catalog_items")
+    .select("id,partner_id,sku,title,description,category_key,item_type,price_inr,mrp_inr,stock_quantity,unit_label,approval_status,is_active,metadata,created_at,we4all_partners!inner(display_name,zone_id,approval_status)")
+    .eq("we4all_partners.approval_status", "approved")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  let ownerByPartnerId = new Map();
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData?.user?.id) {
+    const { data: ownPartners, error: ownPartnerError } = await supabase
+      .from("we4all_partners")
+      .select("id,owner_user_id")
+      .eq("owner_user_id", userData.user.id);
+    if (ownPartnerError) throw ownPartnerError;
+    ownerByPartnerId = new Map((ownPartners || []).map((partner) => [partner.id, partner.owner_user_id]));
+  }
+
+  return (data || []).map((row) => ({
+    ...mapMarketplaceCatalogRow(row),
+    ownerUserId: ownerByPartnerId.get(row.partner_id) || null
+  }));
+}
+
+export async function loadMarketplaceOrders(currentUser) {
+  if (!supabase || !currentUser?.authUserId) return [];
+  const { data, error } = await supabase
+    .from("we4all_orders")
+    .select("id,customer_user_id,partner_id,zone_id,order_number,status,payment_status,subtotal_inr,tax_inr,delivery_fee_inr,discount_inr,total_inr,delivery_address,customer_note,created_at,we4all_partners(display_name),we4all_order_items(id,catalog_item_id,item_title_snapshot,sku_snapshot,quantity,unit_price_inr,line_total_inr)")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return (data || []).map((row) => {
+    const partner = row.we4all_partners || {};
+    const items = row.we4all_order_items || [];
+    const mappedItems = items.map((item) => ({
+      catalogItemId: item.catalog_item_id,
+      productId: item.catalog_item_id,
+      name: item.item_title_snapshot,
+      qty: Number(item.quantity),
+      price: Number(item.unit_price_inr),
+      lineTotal: Number(item.line_total_inr),
+      merchantId: row.partner_id,
+      merchantName: partner.display_name || "WE4ALL Merchant"
+    }));
+    return {
+      id: row.id,
+      orderNumber: row.order_number,
+      customerId: row.customer_user_id,
+      merchantId: row.partner_id,
+      merchantOwnerId: currentUser.role === "customer" ? null : currentUser.authUserId,
+      merchantName: partner.display_name || "WE4ALL Merchant",
+      shopName: partner.display_name || "WE4ALL Merchant",
+      customerName: currentUser.fullName || "WE4ALL Customer",
+      address: row.delivery_address?.full_address || row.delivery_address?.address || "",
+      deliveryAddress: row.delivery_address || {},
+      items: mappedItems,
+      itemsTotal: Number(row.subtotal_inr),
+      deliveryFee: Number(row.delivery_fee_inr),
+      gst: Number(row.tax_inr),
+      grandTotal: Number(row.total_inr),
+      status: row.status,
+      paymentStatus: row.payment_status,
+      dateStr: String(row.created_at || "").slice(0, 10),
+      createdAt: row.created_at,
+      periodTag: "TODAY"
+    };
+  });
 }
 
 export async function createMarketplaceOrder({
@@ -883,8 +1018,7 @@ export async function createMarketplaceOrder({
   items,
   zoneId,
   deliveryAddress,
-  idempotencyKey,
-  feePolicyVersions = {}
+  idempotencyKey
 }) {
   if (!supabase) throw new Error("WE4ALL backend is not configured.");
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -911,8 +1045,7 @@ export async function createMarketplaceOrder({
       items: safeItems.map((item) => ({ catalogItemId: item.catalog_item_id, quantity: item.quantity })),
       zoneId,
       deliveryAddress,
-      idempotencyKey: String(idempotencyKey),
-      feePolicyVersions
+      idempotencyKey: String(idempotencyKey)
     }
   });
   if (error) throw new Error(error.message || "The server could not create your order.");
@@ -922,191 +1055,332 @@ export async function createMarketplaceOrder({
   return data;
 }
 
-export async function getMarketplaceFeeQuote({ items, zoneId }) {
+ 
+export async function adjustMarketplaceStock({ partnerId, catalogItemId, quantityDelta, idempotencyKey }) {
   if (!supabase) throw new Error("WE4ALL backend is not configured.");
   const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData?.user?.id) throw new Error("Sign in before reviewing checkout fees.");
-  if (!Array.isArray(items) || items.length < 1 || items.length > 50) throw new Error("A valid cart is required to review fees.");
-  const itemIds = items.map((item) => String(item.catalogItemId || ""));
-  if (itemIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) throw new Error("The cart contains an item that is not linked to the live catalogue.");
-
-  const [{ data: catalogue, error: catalogueError }, { data: policies, error: policyError }] = await Promise.all([
-    supabase.from("we4all_catalog_items").select("id,title,category_key,price_inr,metadata").in("id", itemIds),
-    supabase.from("we4all_fee_policies")
-      .select("id,fee_type,scope_type,scope_key,rate_percent,fixed_inr,fee_basis,display_name,disclosure_text,active,effective_at,ends_at,version")
-      .eq("fee_type", "customer_platform_fee")
-      .eq("active", true)
-      .lte("effective_at", new Date().toISOString())
-      .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
-  ]);
-  if (catalogueError) throw new Error("Could not verify live catalogue prices. No order was placed.");
-  if (policyError) throw new Error("Checkout fee details are unavailable. Retry once the server is connected.");
-  const byId = new Map((catalogue || []).map((item) => [item.id, item]));
-  if (itemIds.some((id) => !byId.has(id))) throw new Error("A cart item is no longer available in the live catalogue.");
-  const pricedItems = items.map((item) => ({
-    ...byId.get(String(item.catalogItemId)),
-    catalog_item_id: String(item.catalogItemId),
-    quantity: Number(item.quantity)
-  }));
-  return quoteMarketplaceFees(pricedItems, policies || [], zoneId);
-}
-
-export async function createUPIPaymentIntent(orderId) {
-  if (!supabase) throw new Error("WE4ALL backend is not configured.");
-  const safeOrderId = String(orderId || "");
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
-    throw new Error("A valid server order is required before payment.");
-  }
-  const { data, error } = await supabase.functions.invoke("we4all-create-upi-intent", {
-    body: { orderId: safeOrderId }
+  if (authError || !authData?.user?.id) throw new Error("Sign in with your approved merchant account.");
+  const { data, error } = await supabase.functions.invoke("we4all-adjust-stock", {
+    body: { partnerId, catalogItemId, quantityDelta, idempotencyKey }
   });
-  if (error) {
-    let serverCode = "";
-    try { serverCode = (await error.context?.json?.())?.error || ""; } catch {}
-    if (serverCode === "UPI_INTENT_NOT_ENABLED") {
-      throw new Error("UPI payments are not enabled yet. WE4ALL must first connect a trusted payment verification method.");
-    }
-    if (serverCode === "UPI_PAYEE_NOT_CONFIGURED") {
-      throw new Error("UPI payment is not configured yet. The WE4ALL payee UPI ID must be added on the server.");
-    }
-    throw new Error(error.message || "The server could not prepare UPI payment.");
-  }
-  if (!data?.ok || data.provider !== "upi_intent" || !data.intentUri ||
-      !Number.isSafeInteger(Number(data.amountPaise)) || Number(data.amountPaise) < 1 || data.currency !== "INR") {
-    throw new Error(data?.error || "The server did not return a valid UPI payment request.");
+  if (error) throw new Error(error.message || "Stock update could not reach the server.");
+  if (!data?.ok || !Number.isInteger(Number(data.stock_quantity))) {
+    throw new Error(data?.error || "Server did not confirm the stock update.");
   }
   return data;
 }
 
-export async function createCashfreeCheckoutOrder(orderId) {
+
+/** Invoke a role-gated WE4ALL server action using the current user's session. */
+export async function invokeWe4AllOperations(action, fields = {}) {
   if (!supabase) throw new Error("WE4ALL backend is not configured.");
-  const safeOrderId = String(orderId || "");
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
-    throw new Error("A valid server order is required before payment.");
-  }
-  const { data, error } = await supabase.functions.invoke("we4all-create-cashfree-order", {
-    body: { orderId: safeOrderId }
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth?.user?.id) throw new Error("Sign in with your WE4ALL account first.");
+  const { data, error } = await supabase.functions.invoke("we4all-operations", {
+    body: { action, ...fields }
   });
-  if (error) throw new Error(error.message || "The server could not prepare Cashfree checkout.");
-  if (!data?.ok || data.provider !== "cashfree" || !data.paymentSessionId ||
-      !["sandbox", "production"].includes(data.mode) || !Number.isSafeInteger(Number(data.amountPaise)) ||
-      Number(data.amountPaise) < 100 || data.currency !== "INR") {
-    throw new Error(data?.error || "The server did not return a valid Cashfree checkout session.");
-  }
+  if (error) throw error;
+  if (!data || data.ok !== true) throw new Error(data?.error || "WE4ALL server did not confirm this action.");
   return data;
 }
 
-export async function verifyCashfreeCheckoutPayment(orderId) {
-  if (!supabase) throw new Error("WE4ALL backend is not configured.");
-  const safeOrderId = String(orderId || "");
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
-    throw new Error("A valid server order is required for payment verification.");
+
+export async function createServerP2PDelivery({
+  pickupLocation, dropoffLocation, parcelDetails, vehicleClass, zoneId = "adilabad_master", idempotencyKey
+}) {
+  const allowedVehicles = new Set(["2W", "3W", "4W"]);
+  if (!allowedVehicles.has(String(vehicleClass))) throw new Error("Choose Bike, Auto or 4W parcel vehicle.");
+  const pickup = pickupLocation && typeof pickupLocation === "object" ? pickupLocation : {};
+  const dropoff = dropoffLocation && typeof dropoffLocation === "object" ? dropoffLocation : {};
+  const details = parcelDetails && typeof parcelDetails === "object" ? parcelDetails : {};
+  const weight = Number(details.weightKg);
+  const key = String(idempotencyKey || "");
+  if (!pickup.address || !dropoff.address) throw new Error("Enter both pickup and delivery addresses.");
+  const maxWeightByVehicle = { "2W": 45, "3W": 300, "4W": 2000 };
+  const maxWeight = maxWeightByVehicle[String(vehicleClass)] || 0;
+  if (!Number.isFinite(weight) || weight <= 0 || !maxWeight || weight > maxWeight) {
+    throw new Error(maxWeight ? `${vehicleClass} vehicle capacity is ${maxWeight} kg. Choose a larger vehicle for this parcel.` : "Choose a valid delivery vehicle.");
   }
-  const { data, error } = await supabase.functions.invoke("we4all-verify-cashfree-payment", {
-    body: { orderId: safeOrderId }
+  if (key.length < 8 || key.length > 160) throw new Error("A valid retry-safe request key is required.");
+  return invokeWe4AllOperations("create_p2p_delivery", {
+    pickupLocation: pickup, dropoffLocation: dropoff, parcelDetails: details,
+    vehicleClass, zoneId, idempotencyKey: key
   });
-  if (error) throw new Error(error.message || "WE4ALL could not verify Cashfree payment status.");
-  if (!data || typeof data.verified !== "boolean") {
-    throw new Error(data?.error || "The server returned no verified payment status.");
-  }
+}
+
+
+/** Issue an optional in-app test code for an already-assigned delivery. No SMS is sent. */
+export async function issueDeliveryTestOtp({ deliveryType, deliveryId }) {
+  if (!["M2C", "P2P", "TAXI"].includes(String(deliveryType))) throw new Error("Unsupported delivery type.");
+  if (!deliveryId) throw new Error("A delivery reference is required.");
+  return invokeWe4AllOperations("issue_delivery_test_otp", { deliveryType, deliveryId });
+}
+
+/** Assigned rider verifies the optional test code. This never completes a trip or pays out. */
+export async function verifyDeliveryTestOtp({ deliveryType, deliveryId, code }) {
+  if (!["M2C", "P2P", "TAXI"].includes(String(deliveryType))) throw new Error("Unsupported delivery type.");
+  if (!deliveryId || !/^\d{6}$/.test(String(code || ""))) throw new Error("Enter the six-digit customer test code.");
+  return invokeWe4AllOperations("verify_delivery_test_otp", { deliveryType, deliveryId, code: String(code) });
+}
+
+
+function makeOperationsIdempotencyKey(prefix) {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`.slice(0, 160);
+}
+
+function bookingTimeToIso(date, clock) {
+  const match = String(clock || "").match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match || !date) throw new Error("Choose a valid booking date and time.");
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const meridiem = match[3].toUpperCase();
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) throw new Error("Invalid booking time.");
+  if (meridiem === "PM" && hour !== 12) hour += 12;
+  if (meridiem === "AM" && hour === 12) hour = 0;
+  const value = new Date(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`);
+  if (!Number.isFinite(value.getTime())) throw new Error("Invalid booking date.");
+  return value.toISOString();
+}
+
+export async function loadServerOperations() {
+  return invokeWe4AllOperations("list_my_operations");
+}
+
+export async function createServerBooking({
+  partnerId, bookingType = "service", date, slot, note = "", metadata = {}, idempotencyKey
+}) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("This provider does not have a verified WE4ALL partner record yet.");
+  if (!["service", "decorator", "function_hall"].includes(bookingType)) throw new Error("Unsupported booking type.");
+  const parts = [...String(slot || "").matchAll(/(\d{1,2}:\d{2}\s*(?:AM|PM))/ig)];
+  if (parts.length < 2) throw new Error("Choose a valid one-hour booking slot.");
+  const requestedStartAt = bookingTimeToIso(date, parts[0][1]);
+  const requestedEndAt = bookingTimeToIso(date, parts[1][1]);
+  const data = await invokeWe4AllOperations("create_booking", {
+    partnerId, bookingType, requestedStartAt, requestedEndAt, note,
+    metadata: metadata && typeof metadata === "object" ? metadata : {},
+    idempotencyKey: String(idempotencyKey || makeOperationsIdempotencyKey("booking"))
+  });
+  if (!data.booking_id) throw new Error("The server did not return a booking reference.");
   return data;
 }
 
-export async function confirmMarketplaceOrder(orderId) {
-  if (!supabase) throw new Error("WE4ALL backend is not configured.");
-  const safeOrderId = String(orderId || "");
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
-    throw new Error("A valid server order is required before confirmation.");
-  }
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData?.user?.id) {
-    throw new Error("Sign in with the approved merchant account before confirming an order.");
-  }
-  const { data, error } = await supabase.functions.invoke("we4all-merchant-confirm-order", {
-    body: { orderId: safeOrderId }
+export async function createServerRideBooking({
+  vehicleClass, pickupAddress, dropoffAddress, zoneId = "adilabad_master",
+  note = "", idempotencyKey
+}) {
+  if (!["2W", "3W", "4W"].includes(String(vehicleClass))) throw new Error("Choose Bike (2W), Auto (3W) or Cab (4W).");
+  if (!String(pickupAddress || "").trim() || !String(dropoffAddress || "").trim()) throw new Error("Enter both pickup and destination.");
+  const data = await invokeWe4AllOperations("create_ride", {
+    vehicleClass,
+    pickupLocation: { address: String(pickupAddress).trim() },
+    dropoffLocation: { address: String(dropoffAddress).trim() },
+    zoneId, note, requestedStartAt: new Date().toISOString(),
+    idempotencyKey: String(idempotencyKey || makeOperationsIdempotencyKey("ride"))
   });
-  if (error) throw new Error(error.message || "The server could not confirm this order.");
-  if (!data?.ok || data.order_id !== safeOrderId || !["merchant_confirmed", "accepted"].includes(data.status)) {
-    throw new Error(data?.error || "The server did not return a valid order confirmation.");
-  }
+  if (!data.ride_booking_id) throw new Error("The server did not return a ride reference.");
   return data;
 }
 
-export async function cancelMarketplaceOrder(orderId) {
-  if (!supabase) throw new Error("WE4ALL backend is not configured.");
-  const safeOrderId = String(orderId || "");
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
-    throw new Error("A valid server order is required before cancellation.");
+export async function setServerPartnerAvailability({ partnerId, availabilityRules }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("A verified WE4ALL partner record is required.");
+  if (!availabilityRules || typeof availabilityRules !== "object" || Array.isArray(availabilityRules)) {
+    throw new Error("Availability settings must be a JSON object.");
   }
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData?.user?.id) {
-    throw new Error("Sign in to the customer or merchant account that owns this order.");
-  }
-  const { data, error } = await supabase.functions.invoke("we4all-cancel-order", {
-    body: { orderId: safeOrderId }
-  });
-  if (error) {
-    let serverCode = "";
-    try { serverCode = (await error.context?.json?.())?.error || ""; } catch {}
-    if (serverCode === "REFUND_PROVIDER_REQUIRED") {
-      throw new Error("This order is paid or payment-authorized. Cancellation is blocked until the provider can verify a refund or void.");
-    }
-    if (serverCode === "ORDER_NOT_CANCELLABLE") {
-      throw new Error("This order cannot be cancelled in its current status.");
-    }
-    if (serverCode === "ORDER_NOT_FOUND") {
-      throw new Error("This order was not found for the signed-in account.");
-    }
-    throw new Error(error.message || "The server could not cancel this order.");
-  }
-  if (!data?.ok || data.order_id !== safeOrderId || data.status !== "cancelled") {
-    throw new Error(data?.error || "The server did not return a valid cancellation.");
-  }
-  return data;
+  return invokeWe4AllOperations("set_availability", { partnerId, availabilityRules });
 }
 
-export async function listMarketplaceOrders({ partnerId = "" } = {}) {
-  if (!supabase) return [];
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  const authUser = authData?.user;
-  if (authError || !authUser?.id) return [];
-
-  let query = supabase
-    .from("we4all_orders")
-    .select("id,order_number,partner_id,status,payment_status,subtotal_inr,tax_inr,delivery_fee_inr,total_inr,delivery_address,created_at,items:we4all_order_items(item_title_snapshot,quantity,unit_price_inr)")
-    .order("created_at", { ascending: false })
-    .limit(100);
-  if (partnerId) query = query.eq("partner_id", String(partnerId));
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message || "Could not refresh server orders.");
-  return (data || []).map((order) => {
-    const address = order.delivery_address && typeof order.delivery_address === "object"
-      ? order.delivery_address
-      : {};
+/** Public, column-limited partner directory for the customer service catalogue. */
+export async function loadPublicServiceProviders() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase
+    .from("we4all_partners")
+    .select("id,partner_type,display_name,zone_id,approval_status,availability_rules")
+    .eq("partner_type", "service_provider")
+    .eq("approval_status", "approved")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((partner) => {
+    const rules = partner.availability_rules || {};
+    const rate = rules.serviceRateCard || {};
     return {
-      id: order.order_number || order.id,
-      serverOrderId: order.id,
-      isServerManaged: true,
-      merchantId: authUser.id,
-      merchantOwnerId: authUser.id,
-      partnerId: order.partner_id,
-      shopName: "Marketplace Order",
-      customerName: "WE4ALL Customer",
-      address: address.fullAddress || address.address || address.label || "Address on order",
-      status: order.status,
-      paymentStatus: String(order.payment_status || "pending").toUpperCase(),
-      itemsTotal: Number(order.subtotal_inr || 0),
-      deliveryFee: Number(order.delivery_fee_inr || 0),
-      gst: Number(order.tax_inr || 0),
-      grandTotal: Number(order.total_inr || 0),
-      dateStr: String(order.created_at || "").slice(0, 10),
-      createdAt: order.created_at,
-      items: (order.items || []).map((item) => ({
-        name: item.item_title_snapshot,
-        qty: Number(item.quantity || 0),
-        price: Number(item.unit_price_inr || 0)
-      }))
+      id: partner.id,
+      partnerId: partner.id,
+      partnerType: partner.partner_type,
+      providerName: partner.display_name || "WE4ALL Service Provider",
+      displayName: partner.display_name || "WE4ALL Service Provider",
+      zoneId: partner.zone_id,
+      status: "Approved",
+      isPublished: true,
+      availabilityRules: rules,
+      availableSlots: Array.isArray(rules.availableSlots) ? rules.availableSlots : [],
+      serviceCategoryId: rate.serviceCategoryId || "",
+      serviceCategory: rate.serviceCategory || "",
+      specialization: rate.specialization || "",
+      visitingFee: Number(rate.visitingFeeInr || 0),
+      hourlyRate: Number(rate.hourlyRateInr || 0),
+      emergencyFee: Number(rate.emergencyFeeInr || 0),
+      rateCardItems: Array.isArray(rate.rateCardItems) ? rate.rateCardItems : []
     };
+  });
+}
+
+/** Public read-only registry: only published public modules are returned. */
+export async function loadPublishedDynamicModules({ portalTarget, zoneCode = "*" } = {}) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  let query = supabase.from("we4all_dynamic_modules")
+    .select("id,module_key,title,description,icon,category_key,portal_target,zone_codes,visibility_roles,sort_order,version,module_config")
+    .eq("status", "published")
+    .eq("is_public", true);
+  if (portalTarget) query = query.eq("portal_target", portalTarget);
+  const { data, error } = await query.order("sort_order", { ascending: true });
+  if (error) throw error;
+  return (data || []).filter((module) =>
+    !Array.isArray(module.zone_codes) || module.zone_codes.includes("*") || module.zone_codes.includes(zoneCode)
+  );
+}
+
+/** Founder-only list. The Edge Function validates the trusted app_metadata claim. */
+export async function listFounderDynamicModules() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", { body: { action: "list" } });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Founder module access denied.");
+  return Array.isArray(data.modules) ? data.modules : [];
+}
+
+export async function saveFounderDynamicModule(moduleDraft) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", {
+    body: { action: "save_draft", ...moduleDraft }
+  });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Could not save module draft.");
+  return data.result;
+}
+
+export async function setFounderDynamicModuleStatus(moduleId, action) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  if (!["publish", "disable"].includes(action)) throw new Error("Unsupported module action.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", {
+    body: { action, moduleId }
+  });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Could not update module status.");
+  return data.result;
+}
+
+
+/** Upload a rider's GPS fix only after the rider explicitly enables server sharing. */
+export async function submitRiderLocationPing({ longitude, latitude, accuracyM, headingDeg, speedMps }) {
+  const lon = Number(longitude), lat = Number(latitude);
+  if (!Number.isFinite(lon) || lon < -180 || lon > 180 || !Number.isFinite(lat) || lat < -90 || lat > 90) {
+    throw new Error("Invalid GPS coordinates.");
+  }
+  return invokeWe4AllOperations("rider_location_ping", {
+    longitude: lon, latitude: lat,
+    accuracyM: Number.isFinite(Number(accuracyM)) ? Number(accuracyM) : null,
+    headingDeg: Number.isFinite(Number(headingDeg)) ? Number(headingDeg) : null,
+    speedMps: Number.isFinite(Number(speedMps)) ? Number(speedMps) : null
+  });
+}
+
+
+/** Public, column-limited approved Labour & Mistri Adda directory. */
+export async function loadPublicLabourProviders() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase
+    .from("we4all_partners")
+    .select("id,partner_type,display_name,zone_id,approval_status,availability_rules")
+    .eq("partner_type", "labour")
+    .eq("approval_status", "approved")
+    .order("display_name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((partner) => {
+    const profile = partner.availability_rules?.labourProfile || {};
+    return {
+      id: partner.id,
+      partnerId: partner.id,
+      partnerType: partner.partner_type,
+      ownerUserId: null,
+      name: String(profile.name || partner.display_name || "Approved Labour Partner"),
+      tradeId: String(profile.tradeId || "lab_mason"),
+      tradeName: String(profile.tradeName || profile.tradeId || "Labour / Mistri"),
+      mode: profile.mode === "TOLI_GROUP" ? "TOLI_GROUP" : "INDIVIDUAL",
+      toliSize: Math.max(1, Number(profile.toliSize || 1)),
+      fullDayWage: Math.max(0, Number(profile.fullDayWage || 0)),
+      toolsIncluded: String(profile.toolsIncluded || ""),
+      status: "Approved",
+      zoneId: partner.zone_id,
+      availabilityRules: partner.availability_rules || {}
+    };
+  });
+}
+
+/** Save the approved Labour partner's public Adda listing in its server-owned profile. */
+export async function saveServerLabourProfile({ partnerId, profile, availabilityRules = {} }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) {
+    throw new Error("Your Labour/Mistri role must be Founder-approved before publishing a worker profile.");
+  }
+  const name = String(profile?.name || "").trim();
+  const wage = Number(profile?.fullDayWage);
+  const toliSize = Number(profile?.toliSize || 1);
+  if (!name || !Number.isFinite(wage) || wage < 0 || wage > 100000 || !Number.isInteger(toliSize) || toliSize < 1 || toliSize > 100) {
+    throw new Error("Enter a valid worker/group name, wage and group size.");
+  }
+  const rules = availabilityRules && typeof availabilityRules === "object" ? availabilityRules : {};
+  return setServerPartnerAvailability({
+    partnerId,
+    availabilityRules: {
+      ...rules,
+      labourProfile: {
+        name: name.slice(0, 100),
+        tradeId: String(profile.tradeId || "lab_mason").slice(0, 80),
+        tradeName: String(profile.tradeName || "").slice(0, 100),
+        mode: profile.mode === "TOLI_GROUP" ? "TOLI_GROUP" : "INDIVIDUAL",
+        toliSize,
+        fullDayWage: wage,
+        toolsIncluded: String(profile.toolsIncluded || "").slice(0, 500),
+        updatedAt: new Date().toISOString()
+      }
+    }
+  });
+}
+
+/** Create a Labour/Mistri request in the trusted booking ledger; no wages or payments are collected. */
+export async function createServerLabourEngagement({
+  partnerId, tradeKey, workerCount = 1, worksiteAddress, workDate, shift = "FULL_DAY", idempotencyKey
+}) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(partnerId || ""))) throw new Error("This Labour partner is not linked to an approved WE4ALL account.");
+  if (!String(worksiteAddress || "").trim()) throw new Error("Enter the worksite address.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(workDate || ""))) throw new Error("Choose a valid future work date.");
+  const start = new Date(`${workDate}T09:00:00+05:30`);
+  if (!Number.isFinite(start.getTime()) || start.getTime() < Date.now() - 60000) throw new Error("Choose a future work date.");
+  const durationHours = shift === "HALF_DAY" ? 4.25 : 8.5;
+  if (!["FULL_DAY", "HALF_DAY"].includes(shift)) throw new Error("Choose full-day or half-day work.");
+  const count = Number(workerCount);
+  if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("Worker/group size must be between 1 and 100.");
+  const key = String(idempotencyKey || makeOperationsIdempotencyKey("labour"));
+  return invokeWe4AllOperations("create_labour", {
+    partnerId,
+    tradeKey: String(tradeKey || "").slice(0, 80),
+    workerCount: count,
+    requestedStartAt: start.toISOString(),
+    durationHours,
+    worksiteAddress: { address: String(worksiteAddress).trim().slice(0, 500) },
+    idempotencyKey: key
+  });
+}
+
+/** Partner accepts a Labour request with a quote or declines it; this does not release wages. */
+export async function quoteServerLabourEngagement({ engagementId, decision, agreedTotalInr = null }) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(engagementId || ""))) throw new Error("Invalid Labour request reference.");
+  if (!["accept", "decline"].includes(decision)) throw new Error("Choose accept or decline.");
+  const total = decision === "accept" ? Number(agreedTotalInr) : null;
+  if (decision === "accept" && (!Number.isFinite(total) || total <= 0 || total > 10000000)) {
+    throw new Error("Enter a valid Labour quote.");
+  }
+  return invokeWe4AllOperations("quote_labour", {
+    engagementId, decision, agreedTotalInr: total
   });
 }

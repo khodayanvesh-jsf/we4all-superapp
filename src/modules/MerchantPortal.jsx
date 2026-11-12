@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
-import { cancelMarketplaceOrder, confirmMarketplaceOrder, listMarketplaceOrders, supabase } from "../supabaseClient";
-import { listSubcategories } from "./workflows/subcategoryKeys";
+import { supabase, adjustMarketplaceStock } from "../supabaseClient";
 
 export default function MerchantPortal({
   footerTab,
@@ -22,75 +21,13 @@ export default function MerchantPortal({
   const [autoStockWindowActive] = useState(false);
   const merchantId = currentUser?.id || "";
   const merchantName = currentUser?.businessName || currentUser?.fullName || "";
-  const [marketplaceOrders, setMarketplaceOrders] = useState([]);
-  const [confirmingOrderId, setConfirmingOrderId] = useState("");
-  const [cancellingOrderId, setCancellingOrderId] = useState("");
-  const [ordersLoadError, setOrdersLoadError] = useState("");
   const merchantProducts = (products || []).filter((product) =>
     product.ownerUserId === merchantId ||
     (merchantName && product.shopName === merchantName)
   );
-  const localMerchantOrders = (orders || []).filter((order) => isMerchantOrderOwned(order, currentUser));
-  const localOrderIds = new Set(localMerchantOrders.map((order) => String(order.id)));
-  const activeMarketplaceOrders = marketplaceOrders.filter((order) =>
-    !["delivered", "cancelled", "disputed", "refunded"].includes(String(order.status).toLowerCase())
-  );
-  const merchantOrders = [
-    ...activeMarketplaceOrders.filter((order) => !localOrderIds.has(String(order.id))),
-    ...localMerchantOrders
-  ];
+  const merchantOrders = (orders || []).filter((order) => isMerchantOrderOwned(order, currentUser));
   const [heavyLaborFees, setHeavyLaborFees] = useState({});
   const [productSubmitting, setProductSubmitting] = useState(false);
-  const [liveProducts, setLiveProducts] = useState([]);
-  const [stockDeltas, setStockDeltas] = useState({});
-  const [stockBusy, setStockBusy] = useState(false);
-  const stockAttempt = useRef(null);
-  const partnerId = currentUser?.partnerId;
-
-  useEffect(() => {
-    setLiveProducts([]);
-    setStockDeltas({});
-    stockAttempt.current = null;
-    if (footerTab !== "stock" || !supabase || !partnerId) return;
-    let active = true;
-    supabase.from("we4all_catalog_items")
-      .select("id,title,price_inr,stock_quantity,approval_status,is_active")
-      .eq("partner_id", partnerId).order("created_at", { ascending: false })
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (error) onTriggerToast(error.message || "Could not load your live products.");
-        else setLiveProducts(data || []);
-      });
-    return () => { active = false; };
-  }, [footerTab, partnerId]);
-
-  const adjustLiveStock = async (product) => {
-    const delta = Number(stockDeltas[product.id]);
-    if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 100000) {
-      onTriggerToast("Enter a whole-number stock change, such as 10 to add or -2 to remove.");
-      return;
-    }
-    const previous = stockAttempt.current;
-    const idempotencyKey = previous?.id === product.id && previous.delta === delta ? previous.key : crypto.randomUUID();
-    stockAttempt.current = { id: product.id, delta, key: idempotencyKey };
-    setStockBusy(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("we4all-adjust-stock", {
-        body: { partnerId, catalogItemId: product.id, quantityDelta: delta, idempotencyKey }
-      });
-      const details = await error?.context?.clone?.().json().catch(() => null);
-      if (error || !data?.ok || !Number.isInteger(data.stock_quantity)) throw new Error(details?.error || data?.error || "Stock update was not confirmed. Try again.");
-      setLiveProducts((items) => items.map((item) => item.id === product.id ? { ...item, stock_quantity: data.stock_quantity } : item));
-      setStockDeltas((values) => ({ ...values, [product.id]: "" }));
-      stockAttempt.current = null;
-      onTriggerToast("Stock saved to the marketplace.");
-    } catch (error) {
-      onTriggerToast(error.message);
-    } finally {
-      setStockBusy(false);
-    }
-  };
-
   const [newProdForm, setNewProdForm] = useState({
     categoryId: "daily_needs",
     subcategoryKey: "",
@@ -178,6 +115,34 @@ export default function MerchantPortal({
     return renderAccountTab();
   }
 
+  const handleToggleLiveStock = async (product) => {
+    if (!currentUser?.partnerId || !product?.catalogItemId) {
+      onTriggerToast("This product is not linked to a verified live catalogue record.");
+      return;
+    }
+    const currentQuantity = Number(product.stockQuantity || 0);
+    const targetQuantity = currentQuantity > 0 ? 0 : 1;
+    const delta = targetQuantity - currentQuantity;
+    const idempotencyKey = globalThis.crypto?.randomUUID?.() || `stock-${product.catalogItemId}-${Date.now()}`;
+    try {
+      const result = await adjustMarketplaceStock({
+        partnerId: currentUser.partnerId,
+        catalogItemId: product.catalogItemId,
+        quantityDelta: delta,
+        idempotencyKey
+      });
+      const quantity = Number(result.stock_quantity);
+      setProducts((items) => (items || []).map((item) =>
+        item.catalogItemId === product.catalogItemId
+          ? { ...item, stockQuantity: quantity, inStock: quantity > 0 }
+          : item
+      ));
+      onTriggerToast(`Online stock saved. ${quantity > 0 ? "Available" : "Out of stock"} in the shared WE4ALL catalogue.`);
+    } catch (error) {
+      onTriggerToast(error?.message || "Stock update failed. No local success was recorded.");
+    }
+  };
+
   const handleConfirmHeavyAndLaborBill = (ord) => {
     const fees = heavyLaborFees[ord.id] || { heavyTransportFee: 0, laborFee: 0 };
     const heavyFee = Number(fees.heavyTransportFee || 0);
@@ -203,7 +168,7 @@ export default function MerchantPortal({
       )
     );
     if (onTriggerToast) {
-          onTriggerToast(`Draft bill of ₹${grandTotal} updated in this app session. It has not been sent to the customer or saved as a server order.`);
+      onTriggerToast(`Bill of ₹${grandTotal} prepared for customer review. Payment is not confirmed.`);
     }
   };
 
@@ -236,7 +201,7 @@ export default function MerchantPortal({
                 Stock Reservation Window
               </p>
               <p className="text-[9px] text-slate-400">
-                Live marketplace orders reserve available stock on the server. This manual timed toggle is not connected.
+                Stock changes sync to the WE4ALL inventory ledger. Orders are reserved by the server at checkout.
               </p>
             </div>
             <button
@@ -252,11 +217,6 @@ export default function MerchantPortal({
             </button>
           </div>
 
-          {ordersLoadError && (
-            <p role="status" className="text-amber-200 bg-amber-950/50 border border-amber-700/60 rounded-xl p-2 text-[10px]">
-              Live orders are temporarily unavailable. {ordersLoadError}
-            </p>
-          )}
           {merchantOrders.length === 0 ? (
             <p className="text-slate-400 text-center py-6 bg-slate-900 rounded-2xl border border-slate-800">
               No active store orders in queue. Place an order from the Customer App to test!
@@ -380,14 +340,14 @@ export default function MerchantPortal({
                           onTriggerToast("Packing is locked until payment is verified by the server.");
                           return;
                         }
-                        setOrders((currentOrders) =>
-                          currentOrders.map((o) =>
+                        setOrders(
+                          orders.map((o) =>
                             o.id === ord.id
                               ? { ...o, status: "PACKED_PENDING_SERVER_DISPATCH" }
                               : o
                           )
                         );
-                        onTriggerToast(`Order #${ord.id} marked packed in this app session. Dispatch still requires server confirmation.`);
+                        onTriggerToast(`Order #${ord.id} marked packed locally. Dispatch still requires server confirmation.`);
                       }}
                       className="bg-amber-400 disabled:bg-slate-700 disabled:text-slate-300 text-slate-950 font-black py-1.5 rounded-xl text-[10px] cursor-pointer"
                     >
@@ -407,21 +367,9 @@ export default function MerchantPortal({
       {footerTab === "stock" && (
         <div className="space-y-2">
           <h4 className="font-black text-emerald-400">
-            My server products and stock
+            2. My Products &amp; Stock Manual ({merchantProducts.length} Items)
           </h4>
-          {liveProducts.map((product) => (
-            <div key={product.id} className="space-y-2 rounded-xl bg-slate-900 p-3">
-              <p className="text-sm font-bold text-white">{product.title}</p>
-              <p className="text-xs text-slate-300">₹{product.price_inr} · {product.approval_status} · {product.stock_quantity} in stock</p>
-              {product.is_active && product.approval_status === "approved" && <div className="flex gap-2">
-                <input type="number" aria-label={`Stock change for ${product.title}`} placeholder="+ Add / − Remove" value={stockDeltas[product.id] ?? ""}
-                  onChange={(event) => setStockDeltas((values) => ({ ...values, [product.id]: event.target.value }))} className="min-w-0 flex-1 rounded bg-slate-950 p-2 text-xs text-white" />
-                <button type="button" disabled={stockBusy} onClick={() => adjustLiveStock(product)} className="rounded bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950">Save stock change</button>
-              </div>}
-            </div>
-          ))}
-          {merchantProducts.some((product) => !product.catalogItemId) && <h5 className="text-xs text-slate-400">Local product drafts</h5>}
-          {merchantProducts.filter((product) => !product.catalogItemId).map((prod) => (
+          {merchantProducts.map((prod) => (
             <div
               key={prod.id}
               className="bg-slate-900 p-2.5 rounded-2xl border border-slate-800 flex justify-between items-center gap-2"
@@ -461,13 +409,7 @@ export default function MerchantPortal({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setProducts((products || []).map((item) =>
-                    item.id === prod.id && item.ownerUserId === merchantId
-                      ? { ...item, inStock: !item.inStock, updatedAt: new Date().toISOString() }
-                      : item
-                  ));
-                }}
+                onClick={() => handleToggleLiveStock(prod)}
                 className={`px-3 py-1.5 rounded-xl font-black text-[10px] cursor-pointer ${
                   prod.inStock !== false
                     ? "bg-emerald-500 text-slate-950"
@@ -562,7 +504,7 @@ export default function MerchantPortal({
                     mrp_inr: mrp,
                     stock_quantity: 0,
                     unit_label: newProdForm.unitLabel || "unit",
-                    metadata: { image_url: newProdForm.image || "", subcategory_key: newProdForm.subcategoryKey || null }
+                    metadata: { image_url: newProdForm.image || "" }
                   })
                   .select("id,partner_id,title,sku,category_key,price_inr,mrp_inr,stock_quantity,unit_label,approval_status,is_active,created_at")
                   .single();
@@ -574,7 +516,6 @@ export default function MerchantPortal({
                   merchantId,
                   partnerId: created.partner_id,
                   categoryId: created.category_key,
-                  subcategoryKey: newProdForm.subcategoryKey || "",
                   subCategoryBrand: created.title,
                   shopName: merchantName,
                   sku: created.sku,

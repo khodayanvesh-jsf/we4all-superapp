@@ -9,7 +9,8 @@ import {
   getFounderCredentials,
   supabase,
   activateSupabaseAccount,
-  clearActiveSupabaseAccount
+  clearActiveSupabaseAccount,
+  probeSupabaseConnection
 } from "../supabaseClient";
 import SignaturePad from "./SignaturePad";
 import AccountRecovery, { BackupCodeForm, RecoveryEmailSettings } from "./AccountRecovery";
@@ -70,7 +71,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
   // If logged in, default to account details; if guest, show login/register gate
   const [subTab, setSubTab] = useState(() => (isLoggedIn ? "account_details" : "kyc_gate"));
   const [authMode, setAuthMode] = useState("login"); // login | register
-  const [loginMethod, setLoginMethod] = useState("pin");
   const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
   const [registrationRoleOptions, setRegistrationRoleOptions] = useState(ROLE_OPTIONS);
   const [showPinText, setShowPinText] = useState(false);
@@ -82,47 +82,31 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const privateTestSession = useRef(null);
   const trialOtpModeEnabled = !privateTestMode && import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true";
 
-  const [loginForm, setLoginForm] = useState({ identifier: "", pin: "" });
+  const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
 
   const [regForm, setRegForm] = useState({
     fullName: "",
     businessName: "",
+    email: "",
+    password: "",
     phone: "",
     email: "",
     upiId: "",
-    zoneId: "",
-    area: "",
-    pin: "",
-    pinConfirm: "",
-    partnerDetails: {}
+    area: "Subhash Nagar, Adilabad"
   });
 
   const [formFeedback, setFormFeedback] = useState({ type: "", message: "" });
-  const [businessLocation, setBusinessLocation] = useState({ latitude: null, longitude: null });
-  const [locationBusy, setLocationBusy] = useState(false);
-  const [otpState, setOtpState] = useState({ sent: false, phone: "", token: "", busy: false });
-  const [trialChallengeId, setTrialChallengeId] = useState("");
-  const otpInputRef = useRef(null);
-  const [partnerApplication, setPartnerApplication] = useState(null);
-  const [partnerApplicationLoading, setPartnerApplicationLoading] = useState(false);
-  const [kycFiles, setKycFiles] = useState({});
-  const [uploadedKycPaths, setUploadedKycPaths] = useState({});
-  const [signatureMode, setSignatureMode] = useState("typed_name");
-  const [signatureFile, setSignatureFile] = useState(null);
-  const [signatureName, setSignatureName] = useState("");
-  const [termsAccepted, setTermsAccepted] = useState(false);
-  const [biometricEnabled, setBiometricEnabled] = useState(() => {
-    try { return typeof window !== "undefined" && window.localStorage.getItem("we4all_biometric_login_v1") === "enabled"; }
-    catch { return false; }
+  const [authState, setAuthState] = useState({ busy: false });
+  const [connectionHealth, setConnectionHealth] = useState({
+    checking: true,
+    configured: false,
+    backendReachable: false,
+    authenticated: false,
+    accountLinked: false,
+    syncReady: false,
+    message: "Checking Supabase connection…"
   });
-  const [kycSubmitting, setKycSubmitting] = useState(false);
-  const [kycFeedback, setKycFeedback] = useState({ type: "", message: "" });
-  useEffect(() => {
-    if (!otpState.sent) return undefined;
-    otpInputRef.current?.focus();
 
-    return undefined;
-  }, [otpState.sent]);
   useEffect(() => {
     let active = true;
     const guest = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
@@ -144,12 +128,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
         return;
       }
       const user = data.user;
-      const activation = await activateSupabaseAccount(user.id);
-      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
-      if (activation.changed && typeof window !== "undefined") {
-        window.location.reload();
-        return;
-      }
       const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
         supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
@@ -165,7 +143,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (resolvedRole !== "customer") {
         const { data, error: partnerError } = await supabase
           .from("we4all_partners")
-          .select("id,partner_type,approval_status,market_id,zone_id")
+          .select("id,partner_type,approval_status,vehicle_class")
           .eq("owner_user_id", user.id)
           .eq("partner_type", resolvedRole)
           .eq("approval_status", "approved")
@@ -183,7 +161,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         area: profile?.area || "",
         role: resolvedRole,
         partnerId: partnerRecord?.id || null,
-        marketId: partnerRecord?.market_id || partnerRecord?.zone_id || "",
+        vehicleCode: partnerRecord?.vehicle_class === "4W" ? "4W_HEAVY" : (partnerRecord?.vehicle_class || "UNVERIFIED"),
         status: "Approved",
         isGuest: false
       };
@@ -207,156 +185,20 @@ export default function OwnerAccountProfile(rawProps = {}) {
     return () => { active = false; };
   }, [currentUser?.authUserId]);
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      if (!supabase) return;
-      const { data, error } = await supabase.from("we4all_registration_roles")
-        .select("role_key,label").eq("enabled", true).order("sort_order");
-      if (error) {
-        console.warn("Could not load Founder-controlled registration roles:", error.message);
-        return;
-      }
-      const known = new Map(ROLE_OPTIONS.map((role) => [role.id, role]));
-      const activeRoles = (data || []).map((row) => {
-        const baseline = known.get(row.role_key);
-        return baseline ? { ...baseline, label: row.label || baseline.label } : null;
-      }).filter(Boolean);
-      if (!active) return;
-      const safeRoles = activeRoles.some((role) => role.id === "customer") ? activeRoles : ROLE_OPTIONS;
-      setRegistrationRoleOptions(safeRoles);
-      setSelectedRoleKey((current) => safeRoles.some((role) => role.id === current) ? current : "customer");
-    })().catch((error) => console.warn("Registration role list could not be loaded:", error?.message || error));
-    return () => { active = false; };
-  }, []);
-
 
   useEffect(() => {
     let active = true;
-    const loadLatestPartnerApplication = async () => {
-      if (!supabase || !localUser?.authUserId || localUser.isGuest) {
-        setPartnerApplication(null);
-        return;
-      }
-      setPartnerApplicationLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("we4all_partner_applications")
-          .select("id,requested_role,application_payload,status,created_at,reviewed_at")
-          .eq("user_id", localUser.authUserId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (error) throw error;
-        if (active) {
-          setPartnerApplication(data || null);
-          setUploadedKycPaths(data?.application_payload?.kyc?.files || {});
-          if (!signatureName) setSignatureName(data?.application_payload?.full_name || localUser.fullName || "");
-        }
-      } catch (error) {
-        if (active) setKycFeedback({ type: "error", message: error?.message || "Could not load your partner application." });
-      } finally {
-        if (active) setPartnerApplicationLoading(false);
-      }
+    const refreshConnection = async () => {
+      const result = await probeSupabaseConnection();
+      if (active) setConnectionHealth({ checking: false, ...result });
     };
-    loadLatestPartnerApplication();
-    return () => { active = false; };
-  }, [localUser?.authUserId, localUser?.isGuest]);
-
-  const handleKycFileChange = (key, file) => {
-    if (!file) return;
-    const allowedTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
-    if (!allowedTypes.includes(file.type)) {
-      setKycFeedback({ type: "error", message: "Choose a PDF, JPG, PNG, or WebP file." });
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setKycFeedback({ type: "error", message: "Each document must be 10 MB or smaller." });
-      return;
-    }
-    setKycFiles((current) => ({ ...current, [key]: file }));
-    setKycFeedback({ type: "", message: "" });
-  };
-
-  const uploadKycObject = async (file, key, applicationId) => {
-    const extension = String(file.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const path = `${localUser.authUserId}/${applicationId}/${key}-${crypto.randomUUID()}.${extension}`;
-    const { error } = await supabase.storage.from(KYC_BUCKET).upload(path, file, {
-      contentType: file.type,
-      cacheControl: "60",
-      upsert: false
-    });
-    if (error) throw error;
-    return path;
-  };
-
-  const submitPartnerKyc = async () => {
-    if (!supabase || !partnerApplication?.id || partnerApplication.status !== "pending") return;
-    if (!termsAccepted) {
-      setKycFeedback({ type: "error", message: "Read the trial declaration and confirm before sending your documents." });
-      return;
-    }
-    const signerName = String(signatureName || "").trim();
-    if (signerName.length < 2 || (signatureMode !== "typed_name" && !signatureFile && !kycFiles.signature)) {
-      setKycFeedback({ type: "error", message: "Add your full name and complete the selected signature method." });
-      return;
-    }
-    const kycDocuments = getPartnerKycDocuments(partnerApplication.requested_role);
-    if (!kycDocuments.length || kycDocuments.some(({ key }) => !kycFiles[key] && !uploadedKycPaths[key])) {
-      setKycFeedback({ type: "error", message: "Add each document listed for your partner role before submitting." });
-      return;
-    }
-
-    setKycSubmitting(true);
-    setKycFeedback({ type: "info", message: "Uploading securely. Keep this screen open until submission finishes." });
-    try {
-      const nextPaths = { ...uploadedKycPaths };
-      for (const { key } of kycDocuments) {
-        if (kycFiles[key]) nextPaths[key] = await uploadKycObject(kycFiles[key], key, partnerApplication.id);
-      }
-      let signaturePath = "";
-      const signatureToUpload = signatureFile || kycFiles.signature;
-      if (signatureMode !== "typed_name" && signatureToUpload) {
-        signaturePath = await uploadKycObject(signatureToUpload, "signature", partnerApplication.id);
-      }
-      setUploadedKycPaths(nextPaths);
-      const signatureMethod = signatureMode === "drawn" ? "drawn_image" : signatureMode === "uploaded" ? "uploaded_image" : "typed_name";
-      const { data, error } = await supabase.functions.invoke("we4all-submit-partner-kyc", {
-        body: {
-          application_id: partnerApplication.id,
-          files: nextPaths,
-          signature: {
-            method: signatureMethod,
-            signer_name: signerName,
-            path: signaturePath || null
-          },
-          terms_accepted: true,
-          terms_version: PARTNER_TERMS_VERSION
-        }
-      });
-      if (error) throw new Error(await getFunctionResponseError(error, "Your documents could not be submitted."));
-      if (data?.ok !== true) throw new Error(data?.error || "Your documents could not be submitted.");
-      setPartnerApplication((current) => ({
-        ...current,
-        application_payload: {
-          ...current.application_payload,
-          kyc: {
-            files: nextPaths,
-            signature: { method: signatureMethod, signer_name: signerName, path: signaturePath || null },
-            terms: { accepted: true, version: data.terms_version, accepted_at: data.submitted_at },
-            submitted_at: data.submitted_at,
-            status: "submitted"
-          }
-        }
-      }));
-      setKycFiles({});
-      setKycFeedback({ type: "success", message: "Documents received. Your role stays private until an authorized reviewer finishes the checks." });
-    } catch (error) {
-      setKycFeedback({ type: "error", message: error?.message || "Secure document submission failed. Your account is still available; retry when connected." });
-    } finally {
-      setKycSubmitting(false);
-    }
-  };
+    refreshConnection();
+    const timer = window.setInterval(refreshConnection, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [localUser?.authUserId]);
 
   const cleanPhoneDigits = (raw) => {
     const digits = String(raw || "").replace(/\D/g, "");
@@ -369,359 +211,137 @@ export default function OwnerAccountProfile(rawProps = {}) {
     return fallbackPhone ? `${fallbackPhone}@ybl` : "";
   };
 
-  const cleanPinDigits = (value) => String(value || "").replace(/\D/g, "");
-
-  const captureBusinessLocation = () => new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error("This device does not provide location access. Enter your area and try another device."));
-    setLocationBusy(true);
-    navigator.geolocation.getCurrentPosition((position) => {
-      const latitude = Number(position.coords.latitude.toFixed(6));
-      const longitude = Number(position.coords.longitude.toFixed(6));
-      const marketId = marketCellId(latitude, longitude);
-      setBusinessLocation({ latitude, longitude });
-      setRegForm((current) => ({ ...current, zoneId: marketId, area: current.area || "Pinned business location" }));
-      setFormFeedback({ type: "success", message: "Business location saved. WE4ALL will create or join its local market automatically." });
-      setLocationBusy(false);
-      resolve({ latitude, longitude, marketId });
-    }, (error) => {
-      setLocationBusy(false);
-      reject(new Error(error?.code === 1 ? "Allow location permission to continue partner registration." : "Could not read your business location. Try again or enable device location."));
-    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
-  });
-
-  const sendRegistrationCode = async () => {
-    const phone = accountLoginIdentity(regForm.phone)?.phone || "";
-    const email = realAccountEmail(regForm.email);
-    if (!supabase || (!trialOtpModeEnabled && !email) || (trialOtpModeEnabled && !phone)) {
-      setFormFeedback({ type: "error", message: "Enter a valid registration contact and check your connection." });
-      return;
-    }
-    if (!regForm.fullName.trim() || !/^\d{6}$/.test(regForm.pin) || regForm.pin !== regForm.pinConfirm) {
-      setFormFeedback({ type: "error", message: "Enter your full name and two matching six-digit PINs." });
-      return;
-    }
-    if (!isConsumerSelected) {
-      const missingLocation = !Number.isFinite(businessLocation.latitude) || !Number.isFinite(businessLocation.longitude);
-      const message = !regForm.businessName.trim() ? "Enter your business or partner name."
-        : missingLocation ? "Add your business GPS location."
-        : validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
-      if (message) {
-        setFormFeedback({ type: "error", message });
-        return;
-      }
-    }
-    setOtpState((previous) => ({ ...previous, busy: true, token: "" }));
-    try {
-      if (trialOtpModeEnabled) {
-        const { data, error } = await supabase.functions.invoke("we4all-trial-otp-auth", {
-          body: {
-            action: "request", phone, requested_role: selectedRoleKey,
-            full_name: regForm.fullName.trim(), business_name: regForm.businessName.trim(),
-            area: regForm.area || "", zone_id: regForm.zoneId,
-            latitude: businessLocation.latitude, longitude: businessLocation.longitude
-          }
-        });
-        if (error) throw new Error(await getFunctionResponseError(error, "Trial code service is unavailable."));
-        if (data?.ok !== true || !data.challenge_id || !/^\d{6}$/.test(String(data.trial_code || ""))) {
-          throw new Error("Trial code service returned an invalid challenge.");
-        }
-        setTrialChallengeId(data.challenge_id);
-        setOtpState({ sent: true, phone, token: String(data.trial_code), busy: false });
-        setFormFeedback({ type: "success", message: "Private test code filled in. This code does not verify phone ownership." });
-        return;
-      }
-
-      const metadata = {
-        full_name: regForm.fullName.trim(),
-        business_name: regForm.businessName.trim(),
-        area: regForm.area || ""
-      };
-      const result = otpState.sent && otpState.email === email
-        ? await supabase.auth.resend({ type: "signup", email })
-        : await supabase.auth.signUp({ email, password: regForm.pin, options: { data: metadata } });
-      if (result.error?.code === "email_address_not_authorized" || result.error?.code === "over_email_send_rate_limit") {
-        throw new Error("WE4ALL cannot send your email code right now. For a private trial, use a test pass issued by the Founder.");
-      }
-      if (result.error) throw result.error;
-      if (result.data?.session) {
-        await supabase.auth.signOut({ scope: "local" });
-        throw new Error("Email confirmation is unavailable. Contact WE4ALL support before registering.");
-      }
-      setTrialChallengeId("");
-      setOtpState({ sent: true, phone, email, token: "", busy: false });
-      setFormFeedback({ type: "success", message: "Check your email inbox for the registration code. If you already have an account, use Sign in or Forgot PIN." });
-    } catch (error) {
-      setOtpState((previous) => ({ ...previous, busy: false }));
-      setFormFeedback({ type: "error", message: error?.message || "Could not send your registration code." });
-    }
-  };
-
   const handleLoginSubmit = async () => {
-    const identity = accountLoginIdentity(loginForm.identifier);
-    if (!identity || !supabase || !/^\d{6}$/.test(loginForm.pin)) {
-      setFormFeedback({ type: "error", message: "Enter your mobile number or verified email and your six-digit PIN." });
+    const email = String(loginForm.identifier || "").trim().toLowerCase();
+    const password = String(loginForm.password || "");
+    if (!email.includes("@") || password.length < 8) {
+      setFormFeedback({ type: "error", message: "Enter your registered email address and password (minimum 8 characters)." });
       return;
     }
-    setOtpState((state) => ({ ...state, busy: true }));
+    if (!supabase) {
+      setFormFeedback({ type: "error", message: "WE4ALL database is not configured. The connection checker is separate from sign-in; SMS is not required." });
+      return;
+    }
+    setAuthState((state) => ({ ...state, busy: true }));
     try {
-      const signedIn = await supabase.auth.signInWithPassword({ ...identity, password: loginForm.pin });
-      let data = signedIn.data;
-      if (identity.phone && signedIn.error && (signedIn.error.code === "phone_provider_disabled" || /phone logins are disabled/i.test(signedIn.error.message))) {
-        const trial = await supabase.functions.invoke("we4all-trial-otp-auth", {
-          body: { action: "trial_pin_login", phone: identity.phone, pin: loginForm.pin }
-        });
-        if (trial.error || !trial.data?.session?.access_token || !trial.data?.session?.refresh_token) {
-          throw new Error("Mobile sign-in is unavailable for this account. Use your verified email or contact WE4ALL support.");
-        }
-        const { error } = await supabase.auth.setSession({
-          access_token: trial.data.session.access_token,
-          refresh_token: trial.data.session.refresh_token
-        });
-        if (error) throw error;
-        data = trial.data;
-      } else if (signedIn.error) {
-        throw new Error("Could not sign in. Check your login and PIN or use Forgot PIN.");
-      }
-      if (biometricEnabled && Capacitor.isNativePlatform()) {
-        try {
-          await BiometricAuth.authenticate({ reason: "Confirm your WE4ALL sign-in", cancelTitle: "Use PIN" });
-        } catch (error) {
-          await supabase.auth.signOut({ scope: "local" });
-          throw new Error(error?.message || "Biometric check was cancelled. Sign in again with your PIN.");
-        }
-      }
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
       const user = data?.user;
-      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified user session.");
-
+      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a signed-in session.");
       const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
         supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
       ]);
       if (profileError) throw profileError;
       if (rolesError) throw rolesError;
-
       const activation = await activateSupabaseAccount(user.id);
       if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
-      if (activation.changed && typeof window !== "undefined") {
-        window.location.reload();
-        return;
-      }
-
-      const customerRole = (roles || []).find((r) => r.role === "customer" && r.status === "approved");
+      if (activation.changed && typeof window !== "undefined") { window.location.reload(); return; }
+      const customerRole = (roles || []).find((role) => role.role === "customer" && role.status === "approved");
+      if (!customerRole) throw new Error("Customer role is not yet provisioned. Please contact WE4ALL support.");
       const baseUser = {
-        id: user.id,
-        authUserId: user.id,
+        id: user.id, authUserId: user.id, email: user.email || email,
         phone: user.phone || profile?.phone || "",
         fullName: profile?.full_name || user.user_metadata?.full_name || "",
         businessName: profile?.business_name || user.user_metadata?.business_name || "",
-        area: profile?.area || user.user_metadata?.area || "",
-        isGuest: false
+        area: profile?.area || user.user_metadata?.area || "", isGuest: false
       };
-      if (!customerRole) throw new Error("Customer profile is not yet provisioned. Contact WE4ALL support.");
-
-      const requestedRole = selectedRoleKey;
-      if (requestedRole !== "customer") {
-        const approved = (roles || []).find((r) => r.role === requestedRole && r.status === "approved");
+      if (selectedRoleKey !== "customer") {
+        const approved = (roles || []).find((role) => role.role === selectedRoleKey && role.status === "approved");
         if (!approved) {
-          const partnerUser = { ...baseUser, role: "customer", status: "Approved" };
-          setLocalUser(partnerUser);
-          setCurrentUser?.(partnerUser);
-          setActivePortal?.("customer");
-          onSelectRole?.("customer");
-          setFormFeedback({ type: "error", message: `Your customer account is active. The ${requestedRole.replace("_", " ")} portal is still pending Founder approval.` });
-          setSubTab("account_details");
-          return;
+          const customer = { ...baseUser, role: "customer", status: "Approved" };
+          setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
+          setFormFeedback({ type: "error", message: `Your customer account is active. The ${selectedRoleKey.replace("_", " ")} portal is pending Founder approval.` });
+          setSubTab("account_details"); return;
         }
-        const { data: partnerRecord, error: partnerError } = await supabase
-          .from("we4all_partners")
-          .select("id,partner_type,approval_status,market_id,zone_id")
-          .eq("owner_user_id", user.id)
-          .eq("partner_type", requestedRole)
-          .eq("approval_status", "approved")
-          .maybeSingle();
+        const { data: partner, error: partnerError } = await supabase.from("we4all_partners")
+          .select("id,partner_type,approval_status,vehicle_class").eq("owner_user_id", user.id)
+          .eq("partner_type", selectedRoleKey).eq("approval_status", "approved").maybeSingle();
         if (partnerError) throw partnerError;
-        if (!partnerRecord) throw new Error("Founder-approved role has no active WE4ALL partner profile yet.");
-        const partnerUser = { ...baseUser, role: requestedRole, partnerId: partnerRecord.id, marketId: partnerRecord.market_id || partnerRecord.zone_id || "", status: "Approved" };
-        setLocalUser(partnerUser);
-        setCurrentUser?.(partnerUser);
-        onPartnerAuthenticated?.(requestedRole, partnerUser);
-        setFormFeedback({ type: "success", message: `${requestedRole.replace("_", " ")} portal access verified.` });
-        setSubTab("account_details");
-        return;
+        if (!partner) throw new Error("Your approved portal has no active partner profile.");
+        const partnerUser = { ...baseUser, role: selectedRoleKey, partnerId: partner.id, vehicleCode: partner.vehicle_class === "4W" ? "4W_HEAVY" : (partner.vehicle_class || "UNVERIFIED"), status: "Approved" };
+        setLocalUser(partnerUser); setCurrentUser?.(partnerUser);
+        onPartnerAuthenticated?.(selectedRoleKey, partnerUser);
+        setFormFeedback({ type: "success", message: `${selectedRoleKey.replace("_", " ")} portal access verified.` });
+      } else {
+        const customer = { ...baseUser, role: "customer", status: "Approved" };
+        setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
+        setFormFeedback({ type: "success", message: "Signed in. Your WE4ALL account is connected to Supabase." });
       }
-
-      const customer = { ...baseUser, role: "customer", status: "Approved" };
-      setLocalUser(customer);
-      setCurrentUser?.(customer);
-      setActivePortal?.("customer");
-      onSelectRole?.("customer");
-      setFormFeedback({ type: "success", message: "Signed in to your WE4ALL account." });
       setSubTab("account_details");
     } catch (error) {
-      setFormFeedback({ type: "error", message: error?.message || "Sign-in failed." });
+      setFormFeedback({ type: "error", message: error?.message || "Email/password sign-in failed." });
     } finally {
-      setOtpState((s) => ({ ...s, busy: false }));
+      setAuthState((state) => ({ ...state, busy: false }));
     }
   };
 
   const handleRegistrationSubmit = async () => {
-    if (selectedRoleKey !== "customer") {
-        if (!Number.isFinite(businessLocation.latitude) || !Number.isFinite(businessLocation.longitude)) {
-          setFormFeedback({ type: "error", message: "Add your business GPS location before submitting partner registration." });
-          return;
-        }
-      const detailsError = validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
-      if (detailsError) {
-        setFormFeedback({ type: "error", message: detailsError });
+    const email = String(regForm.email || "").trim().toLowerCase();
+    const password = String(regForm.password || "");
+    if (!regForm.fullName.trim()) { setFormFeedback({ type: "error", message: "Enter your full name." }); return; }
+    if (!email.includes("@")) { setFormFeedback({ type: "error", message: "Enter a valid email address." }); return; }
+    if (password.length < 8) { setFormFeedback({ type: "error", message: "Choose a password with at least 8 characters." }); return; }
+    if (!isConsumerSelected && !regForm.businessName.trim()) { setFormFeedback({ type: "error", message: "Enter your business or partner name." }); return; }
+    if (!supabase) { setFormFeedback({ type: "error", message: "WE4ALL database is not configured. SMS is not required for the database connection." }); return; }
+    setOtpState((state) => ({ ...state, busy: true }));
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email, password,
+        options: { data: {
+          full_name: regForm.fullName.trim(),
+          business_name: regForm.businessName.trim(),
+          phone: cleanPhoneDigits(regForm.phone),
+          area: regForm.area || ""
+        } }
+      });
+      if (error) throw error;
+      const user = data?.user;
+      if (!user?.id) throw new Error("Supabase did not create an account.");
+      if (!data.session) {
+        setFormFeedback({
+          type: "success",
+          message: "Account registration started. Check your email for Supabase's free verification link, then return here and sign in. No SMS was sent."
+        });
+        setAuthMode("login");
+        setLoginForm({ identifier: email, password: "" });
+        setAuthState({ busy: false });
         return;
       }
-    }
-    if (privateTestMode && (!regForm.fullName.trim() || !/^\d{6}$/.test(regForm.pin) || regForm.pin !== regForm.pinConfirm ||
-        (!privateTestSession.current && !/^[a-f0-9]{56}$/i.test(privateTestPass.trim())))) {
-      setFormFeedback({ type: "error", message: "Enter your name, two matching six-digit PINs and the Founder test pass." });
-      return;
-    }
-    if (!privateTestMode && (!otpState.sent || !/^\d{6,10}$/.test(otpState.token.trim()))) {
-      setFormFeedback({ type: "error", message: "Request a registration code and enter the code you received." });
-      return;
-    }
-    try {
-      setOtpState((s) => ({ ...s, busy: true }));
-      let data;
-      const isTrialRegistration = Boolean(trialChallengeId);
-      if (privateTestMode) {
-        if (!privateTestSession.current) {
-          const verified = await supabase.auth.verifyOtp({ token_hash: privateTestPass.trim(), type: "signup" });
-          if (verified.error) throw new Error("This test pass is invalid, expired, or already used. Ask the Founder for a fresh pass.");
-          const trialUser = verified.data?.user;
-          if (trialUser?.app_metadata?.we4all_trial_account !== true ||
-              !/^trial-[a-f0-9]{32}@trial\.we4all\.invalid$/.test(trialUser.email || "")) {
-            await supabase.auth.signOut({ scope: "local" });
-            throw new Error("Use the private pass issued for a WE4ALL trial account.");
-          }
-          privateTestSession.current = verified.data;
-        }
-        data = privateTestSession.current;
-        const { error: pinError } = await supabase.auth.updateUser({ password: regForm.pin });
-        if (pinError) throw pinError;
-      } else if (isTrialRegistration) {
-        const { data: trialData, error } = await supabase.functions.invoke("we4all-trial-otp-auth", {
-          body: {
-            action: "verify", phone: otpState.phone, challenge_id: trialChallengeId,
-            code: otpState.token.trim(), pin: regForm.pin, requested_role: selectedRoleKey,
-            full_name: regForm.fullName.trim(), business_name: regForm.businessName.trim(),
-            area: regForm.area || "", zone_id: regForm.zoneId,
-            latitude: businessLocation.latitude, longitude: businessLocation.longitude,
-            partner_details: regForm.partnerDetails || {}
-          }
-        });
-        if (error) throw new Error(trialData?.error || await getFunctionResponseError(error, "Could not verify trial code."));
-        if (trialData?.ok === true && trialData.pending_review === true && !trialData.session?.access_token) {
-          setTrialChallengeId("");
-          setOtpState({ sent: false, phone: otpState.phone, token: "", busy: false });
-          setFormFeedback({
-            type: "success",
-            message: `Partner application ${trialData.partner_application_id || ""} is now pending Founder/Admin review. Partner portal access remains locked until approval. You can sign in with your mobile number and PIN to finish the document and signature steps.`
-          });
-          return;
-        }
-        if (trialData?.ok !== true || !trialData.session?.access_token || !trialData.session?.refresh_token) {
-          throw new Error(trialData?.error || "Trial registration did not return a server-authenticated session.");
-        }
-        const { error: sessionError } = await supabase.auth.setSession({ access_token: trialData.session.access_token, refresh_token: trialData.session.refresh_token });
-        if (sessionError) throw sessionError;
-        data = trialData;
-      } else {
-        const verified = await supabase.auth.verifyOtp({ email: otpState.email, token: otpState.token.trim(), type: "signup" });
-        if (verified.error) throw verified.error;
-        data = verified.data;
-      }
-      const user = data?.user;
-      if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified account.");
-      if (!privateTestMode && !isTrialRegistration && (!user.email_confirmed_at || user.email !== otpState.email)) {
-        await supabase.auth.signOut({ scope: "local" });
-        throw new Error("The registration email could not be confirmed.");
-      }
-      setTrialChallengeId("");
       const profilePayload = {
-        user_id: user.id,
-        full_name: regForm.fullName.trim(),
+        user_id: user.id, full_name: regForm.fullName.trim(),
         business_name: regForm.businessName.trim(),
-        phone: user.phone || accountLoginIdentity(regForm.phone)?.phone || "",
-        area: regForm.area || "",
+        phone: cleanPhoneDigits(regForm.phone), area: regForm.area || "",
         updated_at: new Date().toISOString()
       };
       const { error: profileError } = await supabase.from("we4all_profiles").upsert(profilePayload, { onConflict: "user_id" });
       if (profileError) throw profileError;
-
-      const customer = {
-        id: user.id, authUserId: user.id,
-        phone: profilePayload.phone,
-        fullName: regForm.fullName.trim(),
-        businessName: regForm.businessName.trim(),
-        area: regForm.area || "",
-        role: "customer", status: "Approved", isGuest: false
-      };
-
-      if (selectedRoleKey !== "customer" && !(isTrialRegistration && data?.partner_application_id)) {
-        const location = businessLocation;
-        if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
-          throw new Error("Add your business GPS location before submitting partner registration.");
-        }
-        const { data: marketId, error: marketError } = await supabase.rpc("we4all_register_market", {
-          p_latitude: location.latitude,
-          p_longitude: location.longitude,
-          p_display_name: regForm.area || `Local market ${regForm.zoneId}`,
-          p_state_name: ""
-        });
-        if (marketError || typeof marketId !== "string") throw new Error(marketError?.message || "Could not create the local market for this business location.");
+      if (selectedRoleKey !== "customer") {
         const { error: applicationError } = await supabase.from("we4all_partner_applications").insert({
-          user_id: user.id,
-          requested_role: selectedRoleKey,
-          application_payload: {
-            full_name: regForm.fullName.trim(),
-            business_name: regForm.businessName.trim(),
-            phone: profilePayload.phone,
-            area: profilePayload.area,
-            zone_id: marketId,
-            market_id: marketId,
-            latitude: location.latitude,
-            longitude: location.longitude,
-            partner_details: regForm.partnerDetails || {}
-          }
+          user_id: user.id, requested_role: selectedRoleKey,
+          application_payload: { full_name: profilePayload.full_name, business_name: profilePayload.business_name, phone: profilePayload.phone, area: profilePayload.area }
         });
         if (applicationError) throw applicationError;
       }
-
       const activation = await activateSupabaseAccount(user.id);
-      if (privateTestMode && activation.ok) {
-        privateTestSession.current = null;
-        setPrivateTestPass("");
-      }
-      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
-      if (activation.changed && typeof window !== "undefined") {
-        window.location.reload();
-        return;
-      }
-
-      setLocalUser(customer);
-      setCurrentUser?.(customer);
-      setActivePortal?.("customer");
-      onSelectRole?.("customer");
+      if (!activation.ok) throw new Error(activation.reason || "Could not activate your WE4ALL account.");
+      const customer = {
+        id: user.id, authUserId: user.id, email,
+        phone: profilePayload.phone, fullName: profilePayload.full_name,
+        businessName: profilePayload.business_name, area: profilePayload.area,
+        role: "customer", status: "Approved", isGuest: false
+      };
+      setLocalUser(customer); setCurrentUser?.(customer); setActivePortal?.("customer"); onSelectRole?.("customer");
       setSubTab("account_details");
-      setFormFeedback({
-        type: "success",
-        message: selectedRoleKey === "customer"
-          ? "Customer account created and verified. Your account is now connected to Supabase."
-          : "Customer account created. Your partner application was submitted as pending Founder approval."
-      });
+      setFormFeedback({ type: "success", message: selectedRoleKey === "customer"
+        ? "Customer account created and connected to WE4ALL."
+        : "Customer account created. Your partner application is awaiting Founder approval." });
     } catch (error) {
       setFormFeedback({ type: "error", message: error?.message || "Could not complete registration." });
     } finally {
-      setOtpState((s) => ({ ...s, busy: false }));
+      setOtpState((state) => ({ ...state, busy: false }));
     }
   };
-
 
   const handleLogout = async () => {
     try {
@@ -742,29 +362,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
     if (typeof window !== "undefined") window.location.reload();
   };
 
-  const handleBiometricSetup = async () => {
-    try {
-      if (biometricEnabled) {
-        window.localStorage.removeItem("we4all_biometric_login_v1");
-        setBiometricEnabled(false);
-        setFormFeedback({ type: "success", message: "Biometric sign-in has been turned off on this device." });
-        return;
-      }
-      if (!Capacitor.isNativePlatform()) {
-        setFormFeedback({ type: "error", message: "Biometric sign-in is available in the Android/iOS app after the native build is installed." });
-        return;
-      }
-      const availability = await BiometricAuth.checkBiometry();
-      if (!availability?.isAvailable) throw new Error("No enrolled device biometric is available. Set up fingerprint or face unlock in device settings first.");
-      await BiometricAuth.authenticate({ reason: "Enable biometric confirmation for WE4ALL sign-in", cancelTitle: "Cancel" });
-      window.localStorage.setItem("we4all_biometric_login_v1", "enabled");
-      setBiometricEnabled(true);
-      setFormFeedback({ type: "success", message: "Biometric confirmation is enabled on this device. Your PIN remains available as a fallback." });
-    } catch (error) {
-      setFormFeedback({ type: "error", message: error?.message || "Could not enable device biometrics." });
-    }
-  };
-
   return (
     <div className="space-y-4 pb-8 text-xs font-sans">
       {isLoggedIn && (
@@ -779,6 +376,24 @@ export default function OwnerAccountProfile(rawProps = {}) {
           </button>
         </div>
       )}
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-black text-slate-200">Supabase cloud connection</span>
+          <span className={connectionHealth.backendReachable ? "text-emerald-300 font-black" : "text-rose-300 font-black"}>
+            {connectionHealth.checking
+              ? "CHECKING"
+              : connectionHealth.syncReady
+                ? "CONNECTED · ACCOUNT SYNC VERIFIED"
+                : connectionHealth.backendReachable
+                  ? "API CONNECTED"
+                  : connectionHealth.configured
+                    ? "API UNREACHABLE"
+                    : "NOT CONFIGURED"}
+          </span>
+        </div>
+        <p className="text-slate-400">{connectionHealth.message}</p>
+      </div>
 
       {/* Account Navigation Tabs */}
       <div className={`grid ${partnerApplication ? "grid-cols-2 md:grid-cols-5" : "grid-cols-2 md:grid-cols-4"} gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800`}>
@@ -875,23 +490,25 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 </select>
               </div>
 
-              {loginMethod === "pin" ? <>
-                <label className="block text-[10px] text-slate-400 font-bold">Mobile number, verified email, or test login
-                  <input type="text" autoComplete="username" maxLength={254} value={loginForm.identifier} onChange={(event) => setLoginForm({ ...loginForm, identifier: event.target.value })} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
-                </label>
-                <label className="block text-[10px] text-slate-400 font-bold">Six-digit PIN
-                  <input type={showPinText ? "text" : "password"} inputMode="numeric" autoComplete="current-password" maxLength={6} value={loginForm.pin} onChange={(event) => setLoginForm({ ...loginForm, pin: cleanPinDigits(event.target.value).slice(0, 6) })} className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
-                </label>
-                <button type="button" onClick={handleLoginSubmit} disabled={otpState.busy || loginForm.pin.length !== 6 || !accountLoginIdentity(loginForm.identifier)} className="w-full bg-emerald-500 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl">
-                  {otpState.busy ? "Signing in…" : "Sign in securely"}
-                </button>
-                <div className="flex flex-wrap gap-4 text-xs text-emerald-300">
-                  <button type="button" className="underline" onClick={() => { setFormFeedback({}); setLoginMethod("reset"); }}>Forgot PIN</button>
-                  <button type="button" className="underline" onClick={() => { setFormFeedback({}); setLoginMethod("identifier"); }}>Find my login</button>
-                  <button type="button" className="underline" onClick={() => { setFormFeedback({}); setLoginMethod("backup"); }}>Use backup code</button>
-                </div>
-              </> : loginMethod === "backup" ? <BackupCodeForm onBack={() => setLoginMethod("pin")} /> :
-                <AccountRecovery key={loginMethod} mode={loginMethod} onBack={() => setLoginMethod("pin")} />}
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold block mb-1">Email address *</label>
+                <input type="email" autoComplete="username" value={loginForm.identifier}
+                  onChange={(e) => setLoginForm({ ...loginForm, identifier: e.target.value })}
+                  placeholder="name@example.com"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold" />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold block mb-1">Password *</label>
+                <input type="password" autoComplete="current-password" value={loginForm.password}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                  placeholder="At least 8 characters"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
+              </div>
+              <p className="text-[10px] text-emerald-300">Free sign-in: SMS OTP is temporarily paused. Database connection is checked separately and never requires a text message.</p>
+              <button type="button" onClick={handleLoginSubmit} disabled={authState.busy}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs">
+                {otpState.busy ? "Signing in…" : "Sign in securely →"}
+              </button>
             </div>
           ) : (
             /* REGISTRATION VIEW */
@@ -930,126 +547,31 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 />
               )}
 
-              {!isConsumerSelected && (PARTNER_ROLE_FIELDS[selectedRoleKey] || []).length > 0 && (
-                <fieldset className="space-y-2 rounded-2xl border border-slate-700 bg-slate-950/70 p-3">
-                  <legend className="px-1 text-xs font-black text-amber-200">Details for your {ROLE_OPTIONS.find((role) => role.id === selectedRoleKey)?.label.replace(/^\S+\s*/, "") || "partner"} role</legend>
-                  {(PARTNER_ROLE_FIELDS[selectedRoleKey] || []).map((field) => {
-                    const value = regForm.partnerDetails?.[field.key] || "";
-                    const inputClass = "mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2.5 text-sm text-white placeholder:text-slate-500";
-                    return (
-                      <label key={field.key} className="block text-[11px] font-bold text-slate-200">
-                        {field.label}{field.required ? " *" : ""}
-                        {field.kind === "select" ? (
-                          <select required={field.required} value={value} onChange={(event) => setRegForm((current) => ({ ...current, partnerDetails: { ...current.partnerDetails, [field.key]: event.target.value } }))} className={inputClass}>
-                            <option value="">Choose one</option>
-                            {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                          </select>
-                        ) : field.kind === "textarea" ? (
-                          <textarea rows={3} value={value} onChange={(event) => setRegForm((current) => ({ ...current, partnerDetails: { ...current.partnerDetails, [field.key]: event.target.value } }))} placeholder={field.placeholder || ""} className={inputClass} />
-                        ) : (
-                          <input type={field.kind || "text"} min={field.kind === "number" ? "0" : undefined} step={field.kind === "number" ? "1" : undefined} required={field.required} value={value} onChange={(event) => setRegForm((current) => ({ ...current, partnerDetails: { ...current.partnerDetails, [field.key]: event.target.value } }))} placeholder={field.placeholder || ""} className={inputClass} />
-                        )}
-                      </label>
-                    );
-                  })}
-                  <p className="text-[10px] text-slate-400">Do not enter bank passwords, card details, OTPs, or payment gateway credentials here. Payment account setup is a separate later step.</p>
-                </fieldset>
-              )}
-
-              {!privateTestSession.current && <button type="button" disabled={otpState.busy} onClick={() => {
-                setPrivateTestMode((value) => !value);
-                setPrivateTestPass("");
-                setTrialChallengeId("");
-                setOtpState({ sent: false, phone: "", token: "", busy: false });
-                setFormFeedback({});
-              }} className="text-xs text-emerald-300 underline">
-                {privateTestMode ? "Use regular registration" : "I have a Founder test pass"}
-              </button>}
-              {privateTestMode && <label className="block text-xs text-slate-300">Private test pass
-                <input type="password" autoComplete="off" disabled={otpState.busy || Boolean(privateTestSession.current)} value={privateTestPass}
-                  onChange={(event) => setPrivateTestPass(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-950 p-2.5 text-white" />
-              </label>}
-              {!privateTestMode && !trialOtpModeEnabled && <label className="block text-[10px] text-slate-300 font-bold">Email for sign-in and recovery
-                <input type="email" autoComplete="email" maxLength={254} disabled={otpState.sent || otpState.busy} value={regForm.email} onChange={(event) => setRegForm({ ...regForm, email: event.target.value })} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
-              </label>}
-              <input
-                type="tel"
-                autoComplete="tel-national"
-                maxLength={10}
-                disabled={otpState.sent || otpState.busy}
-                value={regForm.phone}
+              <input type="email" autoComplete="email" required value={regForm.email}
+                onChange={(e) => setRegForm({ ...regForm, email: e.target.value })}
+                placeholder="Email address *" className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
+              <input type="password" autoComplete="new-password" required minLength={8} value={regForm.password}
+                onChange={(e) => setRegForm({ ...regForm, password: e.target.value })}
+                placeholder="Create password (minimum 8 characters) *" className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
+              <input type="tel" maxLength={10} value={regForm.phone}
                 onChange={(e) => setRegForm({ ...regForm, phone: cleanPhoneDigits(e.target.value) })}
-                placeholder={trialOtpModeEnabled ? "Test mobile number" : "Contact mobile number (optional)"}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
-              />
+                placeholder="Mobile number (optional contact only)"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold" />
 
                 <input
                 type="text"
-                maxLength={100}
+                maxLength={4}
                 value={regForm.area}
                 onChange={(e) => setRegForm({ ...regForm, area: e.target.value })}
                 placeholder="Area / address"
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white"
               />
 
-              {!isConsumerSelected && (
-                <section className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3 space-y-2" aria-label="Business location">
-                  <div>
-                    <p className="text-[10px] font-black text-emerald-200">Business GPS location required</p>
-                    <p className="mt-1 text-[10px] font-normal text-slate-400">Your shop or service appears in the market around this pin. A new local market is created automatically when needed.</p>
-                  </div>
-                  <button type="button" disabled={locationBusy} onClick={() => captureBusinessLocation().catch((error) => setFormFeedback({ type: "error", message: error.message }))} className="w-full rounded-xl bg-emerald-400 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">
-                    {locationBusy ? "Finding location…" : businessLocation.latitude != null ? "Update business GPS pin" : "Use device location"}
-                  </button>
-                  {businessLocation.latitude != null && <p className="text-[10px] text-emerald-200">GPS {businessLocation.latitude}, {businessLocation.longitude} · Market {regForm.zoneId}</p>}
-                </section>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <label className="text-[10px] text-slate-300 font-bold">Create 6-digit sign-in PIN *
-                  <input type="password" inputMode="numeric" autoComplete="new-password" disabled={otpState.sent || otpState.busy} maxLength={6} value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
-                </label>
-                <label className="text-[10px] text-slate-300 font-bold">Confirm PIN *
-                  <input type="password" inputMode="numeric" autoComplete="new-password" disabled={otpState.sent || otpState.busy} maxLength={6} value={regForm.pinConfirm} onChange={(e) => setRegForm({ ...regForm, pinConfirm: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
-                </label>
-              </div>
-              <p className="text-[10px] text-slate-400">{privateTestMode ? "Keep the test login supplied by the Founder and the PIN you create here." : trialOtpModeEnabled ? "Use your test mobile and PIN to sign in." : "Use your verified email and PIN to sign in. A contact mobile number does not become a sign-in number until verified."}</p>
-
-              <div className="space-y-2">
-                {!privateTestMode && <button
-                  type="button"
-                  disabled={otpState.busy}
-                  onClick={sendRegistrationCode}
-                  className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
-                >
-                  {trialOtpModeEnabled ? "Generate private test code" : otpState.sent ? "Resend email code" : "Send registration email code"}
-                </button>}
-                {otpState.sent && (
-                  <input
-                    ref={otpInputRef}
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    aria-label="Registration verification code"
-                    maxLength={10}
-                    value={otpState.token}
-                    onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 10) })}
-                    placeholder={trialChallengeId ? "Server-generated test code" : "Enter email code"}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-center font-mono tracking-widest"
-                  />
-                )}
-                {otpState.sent && <button type="button" className="text-xs text-emerald-300 underline" disabled={otpState.busy} onClick={() => { setOtpState({ sent: false, phone: "", token: "", busy: false }); setTrialChallengeId(""); }}>Change registration details</button>}
-                <button
-                  type="button"
-                  disabled={otpState.busy || (!privateTestMode && (!otpState.sent || !/^\d{6,10}$/.test(otpState.token)))}
-                  onClick={handleRegistrationSubmit}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl shadow text-xs"
-                >
-                  {privateTestMode ? "Create test account" : "Verify code and create account"}
-                </button>
-              </div>
+              <p className="text-[10px] text-emerald-300">No paid SMS is used. Supabase may send a free email confirmation link depending on your Auth settings. Your database connection is tested separately.</p>
+              <button type="button" disabled={otpState.busy} onClick={handleRegistrationSubmit}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl shadow text-xs">
+                {otpState.busy ? "Creating account…" : "Create free WE4ALL account →"}
+              </button>
             </div>
           )}
         </div>

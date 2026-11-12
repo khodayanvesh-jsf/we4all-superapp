@@ -63,9 +63,11 @@ test("environment example contains public settings only and no server secret", (
 });
 
 test("account authentication and file upload are bound to verified user identity", () => {
-  assert.equal(owner.includes("supabase.auth.verifyOtp"), true);
+  assert.equal(owner.includes("supabase.auth.signUp"), true);
+  assert.equal(owner.includes("signInWithPassword"), true);
+  assert.equal(owner.includes("verifyOtp("), false);
   assert.equal(owner.includes("supabase.auth.getUser"), true);
-  assert.equal(client.includes('const objectPath = `${user.id}/${folder}/${crypto.randomUUID()}.'), true);
+  assert.equal(client.includes("const safeFolder = String(folder"), true);
   assert.equal(client.includes("auth.getUser()"), true);
 });
 
@@ -102,4 +104,16 @@ test("per-user state changes are published through Supabase Realtime and filtere
   assert.equal(realtimeMigration.includes("ALTER PUBLICATION supabase_realtime ADD TABLE public.we4all_user_state"), true);
   assert.equal(realtimeMigration.includes("DROP TABLE public.we4all_town_state"), true);
   assert.equal(realtimeMigration.includes("DROP TABLE public.we4all_orders_ledger"), true);
+});
+
+test("connection status reports backend health separately from sign-in and account sync", async () => {
+  const [profile, connection] = await Promise.all([
+    read("../src/modules/OwnerAccountProfile.jsx"),
+    read("../src/supabaseClient.js")
+  ]);
+  assert.equal(profile.includes("API CONNECTED · SIGN IN TO SYNC"), false);
+  assert.equal(profile.includes('?"API CONNECTED"'), false);
+  assert.equal(profile.includes('"API CONNECTED"'), true);
+  assert.equal(connection.includes("Sign in with SMS OTP to enable private account sync."), false);
+  assert.equal(connection.includes("Supabase backend and WE4ALL catalogue API are reachable."), true);
 });

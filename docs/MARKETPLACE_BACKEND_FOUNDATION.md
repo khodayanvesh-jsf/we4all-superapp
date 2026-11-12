@@ -43,3 +43,8 @@ The current React portals still need their UI handlers migrated from in-memory a
 - It verifies the merchant is approved, validates unique catalogue item IDs and quantities, locks approved active catalogue rows, calculates price from the database, checks available stock and writes order + line items + inventory reservation atomically. Retries with the same customer/idempotency key return the existing order.
 - New order status is `awaiting_payment` and payment status is `pending`. Tax and delivery fee are zero placeholders until correct merchant tax setup and live delivery quote configuration exist. The function does not mark payment complete, create a dispatch assignment, or settle a payout.
 - The client helper `createMarketplaceOrder` is ready to call the Edge Function, but the customer UI checkout and merchant product-publishing flows still need to be connected to the normalized catalogue IDs/partner IDs. Do not expose the existing local checkout draft as a completed server order.
+
+
+## Founder catalogue approval
+
+Live merchant product submissions are written to `we4all_catalog_items` as `approval_status=pending`, `is_active=false`, `stock_quantity=0`. Founder Admin's Live Supabase catalogue queue calls `we4all-admin-review` actions `list_products` and `review_product`. The Edge Function checks trusted `app_metadata.we4all_role=founder`, then executes service-role-only `we4all_review_catalog_item`. Approval makes the listing active, but does not add stock; the merchant must use the server inventory adjustment flow. Rejections remain hidden. The transaction also writes an audit event.

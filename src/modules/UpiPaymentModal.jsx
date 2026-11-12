@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from "react";
-import { buildUpiIntent } from "./payment/upiIntent.js";
 
 /**
  * Opens a server-prepared UPI destination when one is supplied.
@@ -11,7 +10,7 @@ import { buildUpiIntent } from "./payment/upiIntent.js";
 export default function UpiPaymentModal({ paymentRequest, onClose }) {
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState("");
-  const intent = useMemo(() => buildUpiIntent(paymentRequest), [paymentRequest]);
+  const intent = { ok: false, amount: Number(paymentRequest?.amount || 0), payeeVpa: "", reason: "Online payments are temporarily paused to avoid paid-provider charges. No payment was started." };
 
   if (!paymentRequest) return null;
 
@@ -44,7 +43,7 @@ export default function UpiPaymentModal({ paymentRequest, onClose }) {
         <div className="flex justify-between items-start gap-3 border-b border-slate-800 pb-2">
           <div>
             <h3 id="we4all-payment-title" className="font-black text-emerald-400 text-sm">
-              UPI Payment
+              Payments temporarily paused
             </h3>
             <p className="text-[10px] text-slate-400">{paymentRequest.title || "WE4ALL order"}</p>
           </div>
@@ -74,7 +73,7 @@ export default function UpiPaymentModal({ paymentRequest, onClose }) {
 
         {!intent.ok && (
           <div className="bg-amber-950/60 border border-amber-500/60 p-3 rounded-xl space-y-1">
-            <p className="text-amber-300 text-xs font-black">Payment is not available yet</p>
+            <p className="text-amber-300 text-xs font-black">Online payments are temporarily disabled</p>
             <p className="text-[11px] text-amber-100/90">{intent.reason}</p>
             <p className="text-[10px] text-slate-300">
               Your order remains unpaid. WE4ALL will not send money to a placeholder or unverified UPI ID.
@@ -93,7 +92,7 @@ export default function UpiPaymentModal({ paymentRequest, onClose }) {
               {launching ? "UPI app opened" : "Open UPI app"}
             </button>
             <p className="text-[10px] text-slate-300">
-              Opening a UPI app does not confirm payment. The order will remain pending until WE4ALL receives trusted server-side payment confirmation.
+              WE4ALL is operating in no-paid-services mode. Do not transfer money outside the app for this request. Orders remain unpaid and unconfirmed.
             </p>
           </>
         )}
@@ -106,7 +105,7 @@ export default function UpiPaymentModal({ paymentRequest, onClose }) {
 
         {launching && (
           <div role="status" className="bg-sky-950/60 border border-sky-500/50 p-2 rounded-xl text-sky-200 text-[11px]">
-            UPI app launch requested. Payment is still awaiting verification; no order or escrow status has been changed.
+            Payments are paused. No payment has been initiated and no order or escrow status has been changed.
           </div>
         )}
       </section>
