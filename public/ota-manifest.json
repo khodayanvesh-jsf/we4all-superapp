@@ -1,9 +1,9 @@
 {
-    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.3.2",
-    "currentVersion":  "3.3.1",
+    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.3.3",
+    "currentVersion":  "3.3.2",
     "liveServerUrl":  "https://we-4-all-super-app.vercel.app",
-    "latestAvailableVersion":  "3.3.2",
-    "publishedAt":  "2026-11-12T10:26:39Z",
+    "latestAvailableVersion":  "3.3.3",
+    "publishedAt":  "2026-11-12T10:28:36Z",
     "updateAvailable":  true,
-    "releaseNotes":  "WE4ALL v3.3.2: Unified all 7 branches into main with live Cloud OTA auto-update."
+    "releaseNotes":  "WE4ALL v3.3.3: Added new feature"
 }
