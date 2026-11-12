@@ -1,5 +1,5 @@
 ﻿{
-    "bundleUrl":  "https://we4all-super-app.vercel.app/ota-bundle.zip",
-    "version":  "3.3.6-20261112192654",
-    "builtAt":  "2026-11-12T13:56:58.1416202Z"
+    "bundleUrl":  "/ota-bundle.zip",
+    "version":  "3.3.7-20261112193224",
+    "builtAt":  "2026-11-12T14:02:27.7896075Z"
 }

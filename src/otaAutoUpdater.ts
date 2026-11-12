@@ -1,7 +1,7 @@
 ﻿import { Capacitor } from '@capacitor/core';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
-const BUILD_OTA_VERSION = '3.3.6-20261112192654';
+const BUILD_OTA_VERSION = '3.3.7-20261112193224';
 const DEFAULT_OTA_BASE_URL = 'https://we4all-super-app.vercel.app';
 
 let otaCheckInProgress = false;
@@ -74,3 +74,4 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+
