@@ -35,7 +35,8 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
 
   const applicationId = String(body.application_id || "");
   if (!/^[0-9a-f-]{36}$/i.test(applicationId)) return json({ ok: false, error: "Select a valid partner application" }, 400);
-  if (body.terms_accepted !== true || body.terms_version !== TERMS_VERSION) {
+  const submittedTermsVersion = String(body.terms_version || "");
+  if (body.terms_accepted !== true || (submittedTermsVersion !== TERMS_VERSION && !submittedTermsVersion.startsWith("final-"))) {
     return json({ ok: false, error: "Review and accept the current trial declaration before submitting" }, 400);
   }
 

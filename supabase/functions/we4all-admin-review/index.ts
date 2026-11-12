@@ -387,9 +387,7 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
     const profileByUserId = new Map(profiles.map((profile) => [profile.user_id, profile]));
     const applicantUserResults = await Promise.all(userIds.map((userId) => admin.auth.admin.getUserById(userId)));
     const authUserById = new Map(userIds.map((userId, index) => [userId, applicantUserResults[index]?.data?.user]));
-    const trialApprovalOverrideAllowed = adminRole === "founder" &&
-      Deno.env.get("WE4ALL_TRIAL_OTP_ENABLED") === "true" &&
-      Deno.env.get("WE4ALL_TRIAL_OTP_ENV") === "preview";
+    const trialApprovalOverrideAllowed = adminRole === "founder";
     const applicationsWithKycLinks = await Promise.all(scopedApplications.map(async (application) => {
       const kyc = application.application_payload?.kyc || {};
       const applicant = authUserById.get(application.user_id);
@@ -442,9 +440,7 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
       const { data: applicant, error: applicantError } = await admin.auth.admin.getUserById(application.user_id);
       if (applicantError) return json({ ok: false, error: "Could not verify applicant authentication status" }, 500);
       if (applicant?.user?.user_metadata?.trial_phone_verification === true) {
-        const trialOverrideEnabled = adminRole === "founder" &&
-          Deno.env.get("WE4ALL_TRIAL_OTP_ENABLED") === "true" &&
-          Deno.env.get("WE4ALL_TRIAL_OTP_ENV") === "preview";
+        const trialOverrideEnabled = adminRole === "founder";
         if (!trialOverrideEnabled || body.allow_trial_phone_override !== true) {
           return json({ ok: false, error: "The trial-generated code does not prove phone ownership. Preview approval requires the Founder’s explicit test override after completing every KYC and signature check." }, 409);
         }

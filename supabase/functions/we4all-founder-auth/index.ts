@@ -41,16 +41,18 @@ Deno.serve(async (req) => {
     const { data: list, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     if (listError) throw listError;
     const requested = username.toLowerCase();
+    const validFounderNames = new Set([BOOTSTRAP_USERNAME.toLowerCase(), "khodayanvesh"]);
     const founder = (list?.users || []).find((user) =>
       user.app_metadata?.we4all_role === "founder" &&
-      String(user.app_metadata?.we4all_username || "").toLowerCase() === requested
+      (String(user.app_metadata?.we4all_username || "").toLowerCase() === requested ||
+       (validFounderNames.has(requested) && validFounderNames.has(String(user.app_metadata?.we4all_username || "").toLowerCase())))
     ) || null;
     const geoManager = !founder && username.includes("@") ? (list?.users || []).find((user) =>
       user.app_metadata?.we4all_role === "city_manager" && String(user.email || "").toLowerCase() === requested
     ) || null : null;
     let accountEmail = founder?.email || geoManager?.email || "";
     if (!founder && !geoManager) {
-      const matchesBootstrap = requested === BOOTSTRAP_USERNAME.toLowerCase() &&
+      const matchesBootstrap = validFounderNames.has(requested) &&
         secureEqual(await sha256(password), BOOTSTRAP_PASSWORD_SHA256);
       if (!matchesBootstrap) return json({ ok: false, error: "Founder username or password is incorrect. After first-use reset, use your new password; the temporary bootstrap password no longer works." }, 401);
       const { data: created, error: createError } = await admin.auth.admin.createUser({

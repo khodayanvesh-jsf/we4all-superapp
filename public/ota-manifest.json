@@ -1,9 +1,9 @@
 {
-    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.3.4",
-    "currentVersion":  "3.3.3",
+    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
+    "currentVersion":  "3.3.1",
     "liveServerUrl":  "https://we-4-all-super-app.vercel.app",
-    "latestAvailableVersion":  "3.3.4",
-    "publishedAt":  "2026-11-12T11:51:37Z",
+    "latestAvailableVersion":  "3.3.5",
+    "publishedAt":  "2026-11-12T13:26:55Z",
     "updateAvailable":  true,
-    "releaseNotes":  "WE4ALL v3.3.4: New WE4ALL feature update deployed! Tap Update \u0026 Restart to load the latest features with zero data loss."
+    "releaseNotes":  "v3.3.5: Added Cash on Delivery (COD) end-to-end, free Pilot Mobile OTP login/signup, restored Profile \u0026 UPI and Addresses tabs, and unblocked Partner KYC approvals."
 }

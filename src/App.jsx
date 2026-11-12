@@ -48,14 +48,11 @@ import {
   checkLiveCloudOtaManifest,
   performZeroLossOtaUpdate,
   createMarketplaceOrder,
-  createServerBooking,
-  loadServerOperations,
-  loadPublicLabourProviders,
-  loadPublicServiceProviders,
   getMarketplaceFeeQuote,
   supabase,
   activateSupabaseAccount,
-  clearActiveSupabaseAccount
+  clearActiveSupabaseAccount,
+  bootstrapCustomerAccount
 } from "./supabaseClient";
 
 function FounderLogoBadge({ logoUrl }) {
@@ -691,8 +688,6 @@ function AppContent() {
   };
 
   const [globalCustomerSubTab, setGlobalCustomerSubTab] = useState("stores");
-  const [publishedDynamicModules, setPublishedDynamicModules] = useState([]);
-  const [selectedDynamicModule, setSelectedDynamicModule] = useState(null);
   const customerHomeSubTab = globalCustomerSubTab;
   const setCustomerHomeSubTab = setGlobalCustomerSubTab;
   const [selectedCategory, setSelectedCategory] = useState("daily_needs");
@@ -707,6 +702,7 @@ function AppContent() {
   const [merchantCart, setMerchantCart] = useState(savedCloud?.merchantCart || []);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [checkoutQuote, setCheckoutQuote] = useState(null);
+  const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState("cod");
   const checkoutAttemptRef = useRef(null);
   const [serviceCart, setServiceCart] = useState(savedCloud?.serviceCart || []);
   const [decorCart, setDecorCart] = useState(savedCloud?.decorCart || []);
@@ -719,132 +715,12 @@ function AppContent() {
     dropPin: "",
     distanceKm: 2.5
   });
-  const [taxiBookingBusy, setTaxiBookingBusy] = useState(false);
-  const [serviceBookingBusyId, setServiceBookingBusyId] = useState("");
-
-
-  const [p2pParcelForm, setP2pParcelForm] = useState({
-    pickupAddress: "", dropAddress: "", parcelType: "Documents",
-    weightKg: "1", vehicleClass: "2W", instructions: "", deliveryId: "", testOtp: "", otpExpiresAt: ""
-  });
-  const [p2pSubmitting, setP2pSubmitting] = useState(false);
-
 
   const [orders, setOrders] = useState(savedCloud?.orders || []);
-  const checkoutIdempotencyKeyRef = useRef(null);
   const [activeOrderId, setActiveOrderId] = useState(null);
   const [liveOrderDrawerOpen, setLiveOrderDrawerOpen] = useState(false);
   const [serviceBookings, setServiceBookings] = useState(savedCloud?.serviceBookings || []);
   const [labourBookings, setLabourBookings] = useState(savedCloud?.labourBookings || []);
-  const [serviceBookingBusy, setServiceBookingBusy] = useState(false);
-  const serviceRequestKeys = useRef(new Map());
-
-  useEffect(() => {
-    if (!supabase) return;
-    let active = true;
-    let refreshing = false;
-    const userId = currentUser?.authUserId;
-    const refresh = async () => {
-      if (refreshing) return;
-      refreshing = true;
-      try {
-        const [services, workers, operations] = await Promise.allSettled([
-          loadPublicServiceProviders(), loadPublicLabourProviders(),
-          userId ? loadServerOperations() : Promise.resolve(null)
-        ]);
-        if (!active) return;
-        if (services.status === "fulfilled") {
-          setServiceProviders((previous) => [
-            ...services.value,
-            ...previous.filter((item) => !item.partnerId && !services.value.some((provider) => provider.id === item.id))
-          ]);
-        }
-        if (workers.status === "fulfilled") setLabourWorkers(workers.value);
-        if (operations.status !== "fulfilled" || !operations.value) return;
-        const date = (value) => new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
-        }).format(new Date(value));
-        const time = (value) => new Intl.DateTimeFormat("en-US", {
-          timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
-        }).format(new Date(value)).replace(/\s+/g, " ");
-        const serviceRows = new Map((operations.value.bookings || [])
-          .filter((row) => row.booking_type === "service" && row.requested_start_at && row.requested_end_at)
-          .map((row) => [row.id, {
-            id: row.id, serverBookingId: row.id, providerId: row.partner_id, customerId: row.customer_user_id,
-            bookedDate: date(row.requested_start_at), bookedSlot: `${time(row.requested_start_at)} - ${time(row.requested_end_at)}`,
-            status: row.status, paymentStatus: row.payment_status, address: row.metadata?.address || "",
-            quotedTotal: row.quoted_total_inr, providerName: services.status === "fulfilled"
-              ? services.value.find((provider) => provider.id === row.partner_id)?.providerName : undefined
-          }]));
-        const labourRows = new Map((operations.value.labourEngagements || []).filter((row) => row.requested_start_at)
-          .map((row) => [row.id, {
-            id: row.id, workerId: row.labour_partner_id, customerId: row.customer_user_id,
-            workerName: workers.status === "fulfilled" ? workers.value.find((worker) => worker.id === row.labour_partner_id)?.name : undefined,
-            tradeId: row.trade_key, siteAddress: row.worksite_address?.address || "",
-            workDate: date(row.requested_start_at), shift: Number(row.requested_duration_hours) >= 8 ? "FULL_DAY" : "HALF_DAY",
-            workerCount: row.worker_count, totalWage: row.agreed_total_inr, status: row.status,
-            paymentStatus: row.payment_status, requestedAt: row.created_at, serverRecord: true
-          }]));
-        setServiceBookings((previous) => [...serviceRows.values(), ...previous.filter((row) => !row.serverBookingId && !serviceRows.has(row.id))]);
-        setLabourBookings((previous) => [...labourRows.values(), ...previous.filter((row) => !row.serverRecord && !labourRows.has(row.id))]);
-      } finally {
-        refreshing = false;
-      }
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 20000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [currentUser?.authUserId, currentUser?.role]);
-
-  const submitServiceCart = async () => {
-    if (serviceBookingBusy) return;
-    const userId = currentUser?.authUserId;
-    if (!userId || currentUser.isGuest) {
-      triggerToast("Sign in before sending service requests. Your cart is saved.");
-      setFooterTab("account");
-      return;
-    }
-    if (!addressBook.length || !activeAddressObj.fullAddress?.trim()) {
-      triggerToast("Add a service address to your account first.");
-      return;
-    }
-    const requestIdentity = (item) => JSON.stringify([userId, item.providerId, item.bookingDate, item.bookingSlot]);
-    const submitted = new Set();
-    let firstError = "";
-    setServiceBookingBusy(true);
-    try {
-      for (const item of serviceCart) {
-        const key = requestIdentity(item);
-        if (submitted.has(key)) continue;
-        if (!serviceRequestKeys.current.has(key)) serviceRequestKeys.current.set(key, crypto.randomUUID());
-        try {
-          const result = await createServerBooking({
-            partnerId: item.partnerId, date: item.bookingDate, slot: item.bookingSlot,
-            metadata: { address: activeAddressObj.fullAddress.trim().slice(0, 500) },
-            idempotencyKey: serviceRequestKeys.current.get(key)
-          });
-          submitted.add(key);
-          serviceRequestKeys.current.delete(key);
-          setServiceBookings((previous) => [{
-            id: result.booking_id, serverBookingId: result.booking_id, providerId: item.partnerId,
-            providerName: item.providerName, customerId: userId,
-            bookedDate: item.bookingDate, bookedSlot: item.bookingSlot,
-            status: result.status || "requested", paymentStatus: result.payment_status || "pending",
-            address: activeAddressObj.fullAddress
-          }, ...previous.filter((row) => row.id !== result.booking_id)]);
-        } catch (error) {
-          firstError ||= error.message;
-        }
-      }
-      setServiceCart((previous) => previous.filter((item) => !submitted.has(requestIdentity(item))));
-      triggerToast(firstError
-        ? `${submitted.size} request(s) sent. Remaining items are in your cart. ${firstError}`
-        : `${submitted.size} request(s) sent. Awaiting provider quote.`);
-    } finally {
-      setServiceBookingBusy(false);
-    }
-  };
-
   const [decorBids, setDecorBids] = useState(savedCloud?.decorBids || []);
   const [captainRadarJobs, setCaptainRadarJobs] = useState(savedCloud?.captainRadarJobs || []);
   const [pendingServiceProviders, setPendingServiceProviders] = useState(savedCloud?.pendingServiceProviders || []);
@@ -953,145 +829,6 @@ function AppContent() {
   ]);
 
   useEffect(() => {
-    let active = true;
-    let channel = null;
-
-    const refreshCatalog = async () => {
-      try {
-        const liveProducts = await loadMarketplaceCatalog();
-        if (active) setProducts(liveProducts);
-      } catch (error) {
-        console.warn("WE4ALL live catalogue load failed:", error?.message || error);
-      }
-    };
-
-    const refreshServiceDirectory = async () => {
-      try {
-        const directory = await loadPublicServiceProviders();
-        if (active) setServiceProviders(directory);
-      } catch (error) {
-        console.warn("WE4ALL public service directory load failed:", error?.message || error);
-      }
-    };
-
-    const refreshLabourDirectory = async () => {
-      try {
-        const directory = await loadPublicLabourProviders();
-        if (active) setLabourWorkers(directory);
-      } catch (error) {
-        console.warn("WE4ALL approved Labour directory load failed:", error?.message || error);
-      }
-    };
-
-    const refreshDynamicModules = async () => {
-      try {
-        const modules = await loadPublishedDynamicModules({
-          portalTarget: "customer",
-          zoneCode: activeAddressObj?.zoneCode || activeAddressObj?.zoneId || "adilabad"
-        });
-        if (active) setPublishedDynamicModules(modules.filter((module) =>
-          !Array.isArray(module.visibility_roles) || module.visibility_roles.includes("customer") || module.visibility_roles.includes("*")
-        ));
-      } catch (error) {
-        console.warn("WE4ALL published dynamic modules load failed:", error?.message || error);
-      }
-    };
-    const refreshOrders = async () => {
-      if (!currentUser?.authUserId) return;
-      try {
-        const liveOrders = await loadMarketplaceOrders(currentUser);
-        if (active) setOrders(liveOrders);
-      } catch (error) {
-        console.warn("WE4ALL shared orders load failed:", error?.message || error);
-      }
-    };
-
-    const refreshServerOperations = async () => {
-      if (!currentUser?.authUserId) return;
-      try {
-        const live = await loadServerOperations();
-        if (!active) return;
-        const inIndiaDate = (value) => value ? new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
-        }).format(new Date(value)) : "";
-        const inIndiaTime = (value) => value ? new Date(value).toLocaleTimeString("en-IN", {
-          timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
-        }) : "";
-        setServiceBookings((live.bookings || []).filter((row) => row.booking_type === "service").map((row) => ({
-          id: row.id, serverBookingId: row.id, providerId: row.partner_id,
-          customerId: row.customer_user_id, status: row.status, paymentStatus: row.payment_status,
-          bookedDate: inIndiaDate(row.requested_start_at),
-          bookedSlot: `${inIndiaTime(row.requested_start_at)} - ${inIndiaTime(row.requested_end_at)}`,
-          customerName: currentUser.fullName || "WE4ALL Customer",
-          address: row.metadata?.address || "", bookingType: row.booking_type
-        })));
-        const labourRows = (live.labourEngagements || []).map((row) => {
-          const worker = (labourWorkers || []).find((item) => item.partnerId === row.labour_partner_id);
-          const duration = Number(row.requested_duration_hours || 8.5);
-          const site = row.worksite_address || {};
-          return {
-            id: row.id, workerId: row.labour_partner_id,
-            workerUserId: currentUser.role === "labour" ? currentUser.authUserId : null,
-            workerName: worker?.name || "Approved Labour Partner",
-            tradeId: row.trade_key, tradeName: worker?.tradeName || row.trade_key,
-            customerId: row.customer_user_id,
-            customerName: row.customer_user_id === currentUser.authUserId ? (currentUser.fullName || "Customer") : "Customer",
-            siteAddress: site.address || site.full_address || "",
-            workDate: inIndiaDate(row.requested_start_at),
-            shift: duration >= 8 ? "FULL_DAY" : "HALF_DAY",
-            workerCount: Number(row.worker_count || 1),
-            totalWage: row.agreed_total_inr == null ? null : Number(row.agreed_total_inr),
-            status: row.status, paymentStatus: row.payment_status,
-            requestedAt: row.created_at, serverRecord: true
-          };
-        });
-        const uniqueLabourRows = Array.from(new Map(labourRows.map((row) => [row.id, row])).values());
-        setLabourBookings(uniqueLabourRows);
-        setTaxiCart((live.rides || []).map((ride) => ({
-          id: ride.id, serverRideBookingId: ride.id, vehicle: ride.vehicle_class,
-          pickup: ride.pickup_location?.address || "", drop: ride.dropoff_location?.address || "",
-          status: ride.status, paymentStatus: ride.payment_status, fare: ride.quoted_total_inr || null
-        })));
-      } catch (error) {
-        console.warn("WE4ALL operational records refresh failed:", error?.message || error);
-      }
-    };
-
-    refreshCatalog();
-    refreshServiceDirectory();
-    refreshLabourDirectory();
-    refreshOrders();
-    refreshServerOperations();
-    refreshDynamicModules();
-
-    if (supabase) {
-      channel = supabase
-        .channel("we4all-marketplace-live")
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_catalog_items" }, refreshCatalog)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_partners" }, () => {
-          refreshServiceDirectory();
-          refreshLabourDirectory();
-        })
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_orders" }, refreshOrders)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_order_items" }, refreshOrders)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_bookings" }, refreshServerOperations)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_ride_bookings" }, refreshServerOperations)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_labour_engagements" }, refreshServerOperations)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_dynamic_modules" }, refreshDynamicModules)
-        .subscribe();
-    }
-
-    return () => {
-      active = false;
-      if (channel && supabase) supabase.removeChannel(channel);
-    };
-  }, [currentUser?.authUserId, currentUser?.role, currentUser?.partnerId]);
-
-  useEffect(() => {
-    checkoutIdempotencyKeyRef.current = null;
-  }, [merchantCart]);
-
-  useEffect(() => {
     return subscribeToRealtimeUpdates((remoteState) => {
       if (remoteState.orders) setOrders(remoteState.orders);
       if (remoteState.serviceBookings) setServiceBookings(remoteState.serviceBookings);
@@ -1126,53 +863,6 @@ function AppContent() {
     setAdminAccess(null);
     setViewMode("founder_web");
   };
-  const handleFounderAdminLogin = async () => {
-    const suppliedUsername = String(adminLoginForm.username || "").trim();
-    // Preserve the familiar Founder username while authenticating against the dedicated Supabase Auth identity.
-    const email = suppliedUsername.toLowerCase() === "admin"
-      ? "admin@we4all.com"
-      : suppliedUsername.toLowerCase();
-    const password = String(adminLoginForm.password || "");
-    setAdminLoginError("");
-    if (!email.includes("@") || password.length < 8) {
-      setAdminLoginError("Enter username admin (or the Founder email) and the current Supabase Founder password.");
-      return;
-    }
-    if (!supabase) {
-      setAdminLoginError("Supabase is not configured. Founder login cannot be verified.");
-      return;
-    }
-    setAdminLoginError("Checking secure Founder authorization…");
-    try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      if (authError) throw authError;
-      if (!authData?.session?.access_token || !authData?.user?.id) {
-        throw new Error("Supabase did not return a valid authenticated session.");
-      }
-      // The server verifies the signed JWT app_metadata.we4all_role claim.
-      const { data: founderCheck, error: founderError } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "list" }
-      });
-      if (founderError) throw founderError;
-      if (founderCheck?.ok !== true || !Array.isArray(founderCheck.applications)) {
-        throw new Error(founderCheck?.error || "This Supabase account is not authorized as a WE4ALL Founder.");
-      }
-      setIsAdminAuthenticated(true);
-      setAdminAuthStep(1);
-      setAdminLoginError("");
-      setAdminLoginForm({ username: email, password: "" });
-      triggerToast("Founder authorization verified by Supabase. Admin console unlocked.");
-    } catch (error) {
-      const message = error?.message || "Founder login failed.";
-      setIsAdminAuthenticated(false);
-      setAdminLoginError(
-        /founder server authorization|403|not authorized/i.test(message)
-          ? "This email/password is valid, but this account has not been provisioned as a Founder. A trusted administrator must assign app_metadata.we4all_role = founder, then sign in again."
-          : message
-      );
-    }
-  };
-
 
   const getProductBestOffer = (product) => {
     const offers =
@@ -1316,10 +1006,12 @@ function AppContent() {
         deliveryAddress: {
           label: activeAddressObj.label || "Primary",
           fullAddress: activeAddressObj.fullAddress || "",
-          area: activeAddressObj.area || ""
+          area: activeAddressObj.area || "",
+          paymentMethod: checkoutPaymentMethod
         },
         idempotencyKey: attempt.idempotencyKey,
-        feePolicyVersions: checkoutQuote.policy_versions || {}
+        feePolicyVersions: checkoutQuote.policy_versions || {},
+        paymentMethod: checkoutPaymentMethod
       });
       const placedAt = new Date().toISOString();
       const serverOrder = {
@@ -1339,6 +1031,7 @@ function AppContent() {
         feeBreakdown: created.fee_breakdown || [],
         grandTotal: Number(created.total_inr || 0),
         status: created.status || "awaiting_payment",
+        paymentMethod: String(created.payment_method || checkoutPaymentMethod || "upi").toUpperCase(),
         paymentStatus: String(created.payment_status || "pending").toUpperCase(),
         createdAt: placedAt,
         dateStr: placedAt.slice(0, 10),
@@ -1475,13 +1168,12 @@ function AppContent() {
 
           {footerTab === "home" && (
             <>
-              <div className="grid grid-cols-6 gap-1 bg-slate-200/80 p-1 rounded-xl text-[10px] font-black text-slate-800">
+              <div className="grid grid-cols-5 gap-1 bg-slate-200/80 p-1 rounded-xl text-[10px] font-black text-slate-800">
                 {[
                   { id: "stores", label: "Stores" },
                   { id: "services", label: "1-Hr Srv" },
                   { id: "events", label: "Events" },
-                  { id: "taxi", label: "Taxi" },
-                  { id: "parcel", label: "P2P Parcel" },
+                  { id: "taxi", label: "Rides" },
                   { id: "labour", label: "Mistri" }
                 ].map((tab) => (
                   <button
@@ -1636,12 +1328,11 @@ function AppContent() {
 
                             <button
                               type="button"
-                              disabled={prod.inStock === false}
                               onClick={() => handleAddToUnifiedMerchantCart(prod)}
                               aria-label={`Add ${prod.subCategoryBrand} to cart`}
                               className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                             >
-                              {prod.inStock === false ? "Out of stock" : "+ Add"}
+                              + Add
                             </button>
                           </div>
 
@@ -1693,7 +1384,7 @@ function AppContent() {
                     </select>
                   </div>
 
-                  {(serviceProviders || []).filter((provider) => provider.partnerId && provider.status === "Approved" && provider.isPublished !== false).length === 0 ? (
+                  {(serviceProviders || []).filter((provider) => provider.status === "Approved" && provider.isPublished !== false).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
                       <p className="font-black text-xs">No Active 1-Hr Service Providers Yet</p>
                       <button
@@ -1708,16 +1399,15 @@ function AppContent() {
                       </button>
                     </div>
                   ) : (
-                    serviceProviders.filter((provider) => provider.partnerId && provider.status === "Approved" && provider.isPublished !== false).map((sp) => {
+                    serviceProviders.filter((provider) => provider.status === "Approved" && provider.isPublished !== false).map((sp) => {
                       const slotIsAvailable =
                         Array.isArray(sp.availableSlots) &&
-                        (!sp.availabilityRules?.oneHourSlotDate || sp.availabilityRules.oneHourSlotDate === serviceFilterDate) &&
                         sp.availableSlots.includes(serviceFilterSlot) &&
                         !(serviceBookings || []).some((booking) =>
                           booking.providerId === sp.id &&
                           booking.bookedDate === serviceFilterDate &&
                           booking.bookedSlot === serviceFilterSlot &&
-                          !["cancelled", "rejected", "completed"].includes(String(booking.status).toLowerCase())
+                          !["CANCELLED", "REJECTED", "COMPLETED"].includes(booking.status)
                         );
                       return (
                       <div
@@ -1728,7 +1418,7 @@ function AppContent() {
                           <h4 className="font-black text-xs">{sp.providerName}</h4>
                           <p className="text-[10px] text-slate-600">{sp.specialization}</p>
                           <p className="text-[10px] font-black text-emerald-700">
-                            Estimated visit fee: ₹{sp.visitingFee}
+                            Visiting Escrow Fee: Rs.{sp.visitingFee}
                           </p>
                         </div>
                         <button
@@ -1852,69 +1542,6 @@ function AppContent() {
                 </React.Suspense>
               )}
 
-
-              {customerHomeSubTab === "parcel" && (
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-2">
-                  <h3 className="font-black text-xs">Personal Parcel — Door-to-Door Delivery</h3>
-                  <p className="text-[10px] text-slate-600">Send documents, gifts or personal parcels from one person to another. Rider matching follows the selected vehicle class. Payment is paused; this creates an unpaid delivery request only.</p>
-                  <input value={p2pParcelForm.pickupAddress} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, pickupAddress: e.target.value })} placeholder="Pickup person's address" className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs" />
-                  <input value={p2pParcelForm.dropAddress} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, dropAddress: e.target.value })} placeholder="Receiver's delivery address" className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <select value={p2pParcelForm.parcelType} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, parcelType: e.target.value })} className="border border-slate-300 rounded-xl px-2 py-2 text-xs">
-                      <option>Documents</option><option>Small parcel</option><option>Food / gift</option><option>Household item</option><option>Other permitted parcel</option>
-                    </select>
-                    <input type="number" min="0.1" max="2000" step="0.1" value={p2pParcelForm.weightKg} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, weightKg: e.target.value })} placeholder="Weight (kg)" className="border border-slate-300 rounded-xl px-2 py-2 text-xs" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[["2W","Bike"],["3W","Auto"],["4W","4W vehicle"]].map(([code,label]) => (
-                      <button key={code} type="button" onClick={() => setP2pParcelForm({ ...p2pParcelForm, vehicleClass: code })} className={`rounded-xl border px-2 py-2 text-[10px] font-black ${p2pParcelForm.vehicleClass === code ? "bg-emerald-600 border-emerald-700 text-white" : "bg-slate-50 border-slate-300 text-slate-700"}`}>{label}</button>
-                    ))}
-                  </div>
-                  <textarea value={p2pParcelForm.instructions} onChange={(e) => setP2pParcelForm({ ...p2pParcelForm, instructions: e.target.value })} placeholder="Parcel handling instructions (optional)" rows={2} className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs" />
-                  <button type="button" disabled={p2pSubmitting} onClick={async () => {
-                    if (!currentUser?.authUserId || currentUser?.isGuest) {
-                      triggerToast("Sign in with your free WE4ALL account before creating a parcel request.");
-                      setFooterTab("account"); return;
-                    }
-                    if (!p2pParcelForm.pickupAddress.trim() || !p2pParcelForm.dropAddress.trim()) {
-                      triggerToast("Enter both pickup and delivery addresses."); return;
-                    }
-                    setP2pSubmitting(true);
-                    try {
-                      const result = await createServerP2PDelivery({
-                        pickupLocation: { address: p2pParcelForm.pickupAddress.trim() },
-                        dropoffLocation: { address: p2pParcelForm.dropAddress.trim() },
-                        parcelDetails: { type: p2pParcelForm.parcelType, weightKg: Number(p2pParcelForm.weightKg), instructions: p2pParcelForm.instructions.slice(0,500) },
-                        vehicleClass: p2pParcelForm.vehicleClass,
-                        zoneId: activeAddressObj?.zoneId || "adilabad_master",
-                        idempotencyKey: `we4-p2p-${currentUser.authUserId}-${globalThis.crypto?.randomUUID?.() || Date.now()}`
-                      });
-                      triggerToast(`Parcel request ${result.delivery_id} added to the ${p2pParcelForm.vehicleClass} rider queue. No payment was collected.`);
-                      setP2pParcelForm({ ...p2pParcelForm, deliveryId: result.delivery_id, testOtp: "", otpExpiresAt: "" });
-                    } catch (error) {
-                      triggerToast(error?.message || "Parcel request could not be saved. No delivery was created.");
-                    } finally { setP2pSubmitting(false); }
-                  }} className="w-full rounded-xl bg-emerald-600 disabled:bg-slate-300 text-white font-black py-3 text-xs">{p2pSubmitting ? "Submitting request…" : "Find a WE4ALL parcel rider →"}</button>
-                  {p2pParcelForm.deliveryId && (
-                    <div className="rounded-xl border border-amber-400/50 bg-amber-50 p-3 space-y-2">
-                      <p className="text-[10px] font-black text-slate-800">P2P request: {p2pParcelForm.deliveryId}</p>
-                      <p className="text-[10px] text-slate-600">Optional test-only handover code. Generate after a rider accepts the parcel. No SMS is sent, and this code does not complete the delivery.</p>
-                      <button type="button" onClick={async () => {
-                        try {
-                          const result = await issueDeliveryTestOtp({ deliveryType: "P2P", deliveryId: p2pParcelForm.deliveryId });
-                          setP2pParcelForm({ ...p2pParcelForm, testOtp: result.test_otp, otpExpiresAt: result.expires_at });
-                          triggerToast("Optional test code generated. Share it only with the assigned rider.");
-                        } catch (error) {
-                          triggerToast(error?.message || "A test code is available only after the assigned rider accepts.");
-                        }
-                      }} className="rounded-lg bg-amber-400 text-slate-950 font-black text-[10px] px-3 py-2">Generate optional test code</button>
-                      {p2pParcelForm.testOtp && <p className="font-mono text-xl font-black tracking-[0.35em] text-slate-950">{p2pParcelForm.testOtp}</p>}
-                      {p2pParcelForm.otpExpiresAt && <p className="text-[9px] text-slate-600">Expires: {new Date(p2pParcelForm.otpExpiresAt).toLocaleTimeString()}</p>}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {customerHomeSubTab === "labour" && (
                 <LabourWorksitePortal
                   mode="customer"
@@ -1991,6 +1618,35 @@ function AppContent() {
                           <p className="text-[10px] text-slate-300">This fee breakdown is shown before you confirm. If a fee schedule changes, WE4ALL will ask you to review the updated total.</p>
                         </div>
                       )}
+                      <div className="rounded-xl border border-slate-300 bg-slate-50 p-2.5 space-y-2 text-[10px]">
+                        <p className="font-black text-slate-800">Select Payment Method:</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setCheckoutPaymentMethod("cod")}
+                            className={`rounded-xl border p-2 text-left font-black cursor-pointer ${
+                              checkoutPaymentMethod === "cod"
+                                ? "border-emerald-600 bg-emerald-100 text-emerald-950"
+                                : "border-slate-300 bg-white text-slate-700"
+                            }`}
+                          >
+                            <span className="block text-[11px]">💵 Cash on Delivery (COD)</span>
+                            <span className="block text-[9px] font-normal opacity-80">Pay Cash or UPI at Doorstep</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCheckoutPaymentMethod("upi")}
+                            className={`rounded-xl border p-2 text-left font-black cursor-pointer ${
+                              checkoutPaymentMethod === "upi"
+                                ? "border-emerald-600 bg-emerald-100 text-emerald-950"
+                                : "border-slate-300 bg-white text-slate-700"
+                            }`}
+                          >
+                            <span className="block text-[11px]">📱 Online UPI / Cashfree</span>
+                            <span className="block text-[9px] font-normal opacity-80">Pay via UPI Checkout</span>
+                          </button>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         disabled={checkoutSubmitting}
@@ -2024,11 +1680,77 @@ function AppContent() {
                       ))}
                       <button
                         type="button"
-                        disabled={serviceBookingBusy}
-                        onClick={submitServiceCart}
+                        onClick={() => {
+                          if (!currentUser || currentUser.isGuest || !currentUser.authUserId) {
+                            triggerToast("Secure customer sign-in is required before requesting a service booking. Your cart is unchanged.");
+                            setFooterTab("account");
+                            return;
+                          }
+                          const total = serviceCart.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0);
+                          if (!Number.isFinite(total) || total <= 0) {
+                            triggerToast("The service cart has an invalid visiting-fee total.");
+                            return;
+                          }
+                          const grouped = new Map();
+                          for (const item of serviceCart) {
+                            const providerId = item.providerId || item.id || item.providerName;
+                            if (!providerId) continue;
+                            const current = grouped.get(providerId) || [];
+                            current.push(item);
+                            grouped.set(providerId, current);
+                          }
+                          if (!grouped.size) {
+                            triggerToast("The service cart does not contain a provider identity. No booking request was created.");
+                            return;
+                          }
+                          const pendingBookings = [];
+                          for (const [providerId, items] of grouped.entries()) {
+                            const bookingKey = JSON.stringify(
+                              items.map((item) => ({
+                                providerId,
+                                providerName: item.providerName || "",
+                                bookingDate: item.bookingDate || serviceFilterDate,
+                                bookingSlot: item.bookingSlot || "",
+                                visitingFee: Number(item.visitingFee || 0)
+                              })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+                            );
+                            const existing = (serviceBookings || []).find((booking) =>
+                              booking.customerId === currentUser.id &&
+                              booking.bookingKey === bookingKey &&
+                              ["AWAITING_VERIFIED_PAYMENT", "PAYMENT_SETUP_REQUIRED"].includes(booking.status)
+                            );
+                            pendingBookings.push(existing || {
+                              id: "SRV-" + (globalThis.crypto?.randomUUID?.() || Date.now() + "-" + providerId),
+                              bookingKey,
+                              customerId: currentUser.id,
+                              customerName: currentUser.fullName || currentUser.name || "Customer",
+                              bookingItems: items,
+                              providerId,
+                              providerName: items[0]?.providerName || "Service provider",
+                              bookedDate: items[0]?.bookingDate || serviceFilterDate,
+                              bookedSlot: items.map((item) => item.bookingSlot).join(", "),
+                              visitingFee: items.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0),
+                              escrowVisitingAmount: items.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0),
+                              escrowStatus: "NOT_FUNDED",
+                              paymentStatus: "PENDING",
+                              happyCodeStatus: "NOT_ISSUED",
+                              status: "AWAITING_VERIFIED_PAYMENT",
+                              createdAt: new Date().toISOString()
+                            });
+                          }
+                          const knownIds = new Set((serviceBookings || []).map((booking) => booking.id));
+                          const newBookings = pendingBookings.filter((booking) => !knownIds.has(booking.id));
+                          if (newBookings.length) setServiceBookings([...newBookings, ...(serviceBookings || [])]);
+                          setPendingUpiPayment({
+                            type: "SERVICE_ESCROW",
+                            orderId: pendingBookings.map((booking) => booking.id).join(","),
+                            title: "Service visiting-fee payment",
+                            amount: total
+                          });
+                        }}
                         className="w-full bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
                       >
-                        {serviceBookingBusy ? "Sending requests…" : "Send service requests"}
+                        Continue to secure visiting-fee payment
                       </button>
                     </>
                   )}
@@ -2125,7 +1847,6 @@ function AppContent() {
               setOrders={setOrders}
               serviceBookings={serviceBookings || []}
               labourBookings={labourBookings}
-              customerId={currentUser?.authUserId}
               brightTheme={brightTheme}
               onOpenLiveMap={(ord) => {
                 setActiveOrderId(ord.id);
@@ -2143,6 +1864,9 @@ function AppContent() {
               setAccountSecurity={setAccountSecurity}
               addressBook={addressBook}
               setAddressBook={setAddressBook}
+              selectedAddressId={selectedAddressId}
+              setSelectedAddressId={setSelectedAddressId}
+              activeAddressObj={activeAddressObj}
               registeredUsers={registeredUsers || []}
               setRegisteredUsers={setRegisteredUsers}
               activePortal={activePortal}

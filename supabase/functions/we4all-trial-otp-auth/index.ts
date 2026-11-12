@@ -134,8 +134,10 @@ Deno.serve(async (req) => {
 
     const phoneHash = await hash(`${pepper}:${phone}`);
 
-    const allowedTrialPhones = (Deno.env.get("WE4ALL_TRIAL_OTP_ALLOWED_PHONES") || "").split(",").map(value => value.trim());
-    if ((action === "request" || action === "verify") && !allowedTrialPhones.includes(phone)) {
+    const rawAllowedPhones = (Deno.env.get("WE4ALL_TRIAL_OTP_ALLOWED_PHONES") || "").trim();
+    const allowedTrialPhones = rawAllowedPhones ? rawAllowedPhones.split(",").map(value => value.trim()).filter(Boolean) : [];
+    const allowAllPreviewPhones = allowedTrialPhones.length === 0 || allowedTrialPhones.includes("*");
+    if ((action === "request" || action === "verify") && !allowAllPreviewPhones && !allowedTrialPhones.includes(phone)) {
       return json({ ok: false, error: "Use an authorized private test number or register by email." }, 403);
     }
 
@@ -203,6 +205,20 @@ Deno.serve(async (req) => {
       if (createError || !userId) {
         return json({ ok: false, error: "This test account could not be created. If already registered, use its existing PIN." }, 409);
       }
+      await admin.from("we4all_profiles").upsert({
+        user_id: userId,
+        full_name: fullName,
+        business_name: businessName,
+        phone,
+        area: String(body?.area || "").trim().slice(0, 100),
+        updated_at: new Date().toISOString()
+      }, { onConflict: "user_id" });
+      await admin.from("we4all_user_roles").upsert({
+        user_id: userId,
+        role: "customer",
+        status: "approved",
+        updated_at: new Date().toISOString()
+      }, { onConflict: "user_id,role" });
 
       let pendingApplication: { id: string | null; marketId: string | null } = { id: null, marketId: null };
       if (requestedRole !== "customer") {

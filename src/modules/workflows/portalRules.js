@@ -32,12 +32,19 @@ export function isMerchantOrderOwned(order, merchant) {
   );
 }
 
+export function isCodOrder(order) {
+  const method = String(order?.paymentMethod || order?.payment_method || "").toUpperCase();
+  return method === "COD" || order?.paymentStatus === "COD_PENDING" || order?.paymentStatus === "COD_CONFIRMED";
+}
+
 export function canMarkOrderPacked(order) {
+  const statusUpper = String(order?.status || "").toUpperCase();
   const paid = order?.paymentStatus === "VERIFIED" ||
     order?.paymentStatus === "PAID" ||
-    order?.status === "PAYMENT_VERIFIED" ||
-    order?.status === "PAID";
-  return paid && !["CANCELLED", "REFUNDED", "DELIVERED"].includes(order?.status);
+    statusUpper === "PAYMENT_VERIFIED" ||
+    statusUpper === "PAID";
+  const codReady = isCodOrder(order) && ["ACCEPTED", "MERCHANT_CONFIRMED", "COD_CONFIRMED", "CONFIRMED"].includes(statusUpper);
+  return (paid || codReady) && !["CANCELLED", "REFUNDED", "DELIVERED"].includes(statusUpper);
 }
 
 export function vehicleClassForWeight(weightKg) {

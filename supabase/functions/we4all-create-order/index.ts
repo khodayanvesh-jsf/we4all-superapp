@@ -64,11 +64,21 @@ Deno.serve(async (req: Request) => {
     cleanItems.push({ catalog_item_id: catalogItemId, quantity });
   }
 
-  const { data, error } = await admin.rpc("we4all_create_order", {
+  const paymentMethod = String(body.paymentMethod || "upi").toLowerCase() === "cod" ? "cod" : "upi";
+  let { data, error } = await admin.rpc("we4all_create_order", {
     p_customer_user_id: user.id, p_partner_id: partnerId, p_items: cleanItems,
     p_zone_id: zoneId, p_delivery_address: deliveryAddress, p_idempotency_key: idempotencyKey,
-    p_fee_policy_versions: feePolicyVersions
+    p_fee_policy_versions: feePolicyVersions, p_payment_method: paymentMethod
   });
+  if (error && (error.code === "PGRST202" || String(error.message || "").includes("p_payment_method"))) {
+    const fallback = await admin.rpc("we4all_create_order", {
+      p_customer_user_id: user.id, p_partner_id: partnerId, p_items: cleanItems,
+      p_zone_id: zoneId, p_delivery_address: deliveryAddress, p_idempotency_key: idempotencyKey,
+      p_fee_policy_versions: feePolicyVersions
+    });
+    data = fallback.data ? { ...(fallback.data as Record<string, unknown>), payment_method: paymentMethod } : fallback.data;
+    error = fallback.error;
+  }
   if (error) {
     const safe = ["MERCHANT_NOT_APPROVED","CATALOG_ITEM_UNAVAILABLE","INSUFFICIENT_STOCK","INVALID_CHECKOUT_CONTEXT","INVALID_IDEMPOTENCY_KEY","INVALID_ORDER_ITEMS","INVALID_ITEM_QUANTITY","DUPLICATE_CATALOG_ITEM","DELIVERY_ADDRESS_REQUIRED","FEE_POLICY_CHANGED"];
     const match = safe.find((code) => (error.message || "").includes(code));

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
-import { cancelMarketplaceOrder, confirmMarketplaceOrder, listMarketplaceOrders, supabase } from "../supabaseClient";
+import { cancelMarketplaceOrder, confirmCodOrderCollection, confirmMarketplaceOrder, listMarketplaceOrders, supabase } from "../supabaseClient";
 import { listSubcategories } from "./workflows/subcategoryKeys";
 
 export default function MerchantPortal({
@@ -178,34 +178,6 @@ export default function MerchantPortal({
     return renderAccountTab();
   }
 
-  const handleToggleLiveStock = async (product) => {
-    if (!currentUser?.partnerId || !product?.catalogItemId) {
-      onTriggerToast("This product is not linked to a verified live catalogue record.");
-      return;
-    }
-    const currentQuantity = Number(product.stockQuantity || 0);
-    const targetQuantity = currentQuantity > 0 ? 0 : 1;
-    const delta = targetQuantity - currentQuantity;
-    const idempotencyKey = globalThis.crypto?.randomUUID?.() || `stock-${product.catalogItemId}-${Date.now()}`;
-    try {
-      const result = await adjustMarketplaceStock({
-        partnerId: currentUser.partnerId,
-        catalogItemId: product.catalogItemId,
-        quantityDelta: delta,
-        idempotencyKey
-      });
-      const quantity = Number(result.stock_quantity);
-      setProducts((items) => (items || []).map((item) =>
-        item.catalogItemId === product.catalogItemId
-          ? { ...item, stockQuantity: quantity, inStock: quantity > 0 }
-          : item
-      ));
-      onTriggerToast(`Online stock saved. ${quantity > 0 ? "Available" : "Out of stock"} in the shared WE4ALL catalogue.`);
-    } catch (error) {
-      onTriggerToast(error?.message || "Stock update failed. No local success was recorded.");
-    }
-  };
-
   const handleConfirmHeavyAndLaborBill = (ord) => {
     const fees = heavyLaborFees[ord.id] || { heavyTransportFee: 0, laborFee: 0 };
     const heavyFee = Number(fees.heavyTransportFee || 0);
@@ -320,8 +292,32 @@ export default function MerchantPortal({
                     <div className="space-y-2 border-t border-slate-800 pt-2">
                       <p className="text-[10px] text-slate-300">
                         Server status: <strong>{String(ord.status).replace(/_/g, " ")}</strong>
+                        {" · "}Method: <strong className="text-amber-300">{String(ord.paymentMethod || "UPI").toUpperCase()}</strong>
                         {" · "}Payment: <strong>{String(ord.paymentStatus).replace(/_/g, " ")}</strong>
                       </p>
+                      {String(ord.paymentMethod || "").toUpperCase() === "COD" && ord.paymentStatus !== "PAID" && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await confirmCodOrderCollection(ord.serverOrderId);
+                              setMarketplaceOrders((current) =>
+                                current.map((item) =>
+                                  item.serverOrderId === ord.serverOrderId
+                                    ? { ...item, paymentStatus: "PAID", status: item.status === "awaiting_payment" ? "accepted" : item.status }
+                                    : item
+                                )
+                              );
+                              onTriggerToast?.(`COD cash/UPI collection recorded for Order #${ord.id}!`);
+                            } catch (err) {
+                              onTriggerToast?.(err?.message || "Could not record COD collection.");
+                            }
+                          }}
+                          className="w-full bg-amber-400 text-slate-950 font-black py-1.5 rounded-xl text-[10px]"
+                        >
+                          💵 Confirm COD Cash/UPI Collected (Rs.{ord.grandTotal})
+                        </button>
+                      )}
                       <button
                         type="button"
                         disabled={confirmingOrderId === ord.serverOrderId || cancellingOrderId === ord.serverOrderId || !canConfirmServerOrder}
@@ -677,17 +673,43 @@ export default function MerchantPortal({
 
       {/* TAB 4: INVOICES & GST LEDGER ("orders") */}
       {footerTab === "orders" && (
-        <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 space-y-2">
-          <h4 className="font-black text-emerald-400">
-            4. Merchant GST &amp; Settlement Ledger ({merchantOrders.length} Orders)
-          </h4>
-          <p className="text-[11px] text-slate-300">
-            Order value shown (not settled payout):{" "}
-            <strong>
-              Rs.{merchantOrders.reduce((s, o) => s + Number(o.grandTotal || 0), 0)}
-            </strong>{" "}
-            (settlement not verified)
-          </p>
+        <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 space-y-3">
+          <div className="flex justify-between items-center gap-2">
+            <div>
+              <h4 className="font-black text-emerald-400">
+                4. Merchant GST &amp; Settlement Ledger ({merchantOrders.length} Orders)
+              </h4>
+              <p className="text-[11px] text-slate-300">
+                Order value shown (not settled payout):{" "}
+                <strong>
+                  Rs.{merchantOrders.reduce((s, o) => s + Number(o.grandTotal || 0), 0)}
+                </strong>{" "}
+                (settlement not verified)
+              </p>
+            </div>
+          </div>
+          {merchantOrders.length === 0 ? (
+            <p className="text-[11px] text-slate-400 py-3 text-center bg-slate-950 rounded-xl border border-slate-800">
+              No store orders recorded yet. Completed and active orders appear here with itemized GST breakdown.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {merchantOrders.map((ord) => (
+                <div key={ord.id} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center gap-2">
+                  <div>
+                    <p className="font-bold text-white text-xs">#{ord.id} &bull; {ord.customerName || "Customer"}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {ord.dateStr || "Today"} &bull; {String(ord.paymentMethod || "UPI").toUpperCase()} &bull; {String(ord.paymentStatus || "PENDING")} &bull; {String(ord.status || "").replace(/_/g, " ")}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-black text-amber-300 text-xs">Rs.{ord.grandTotal}</p>
+                    <p className="text-[9px] text-slate-400">GST: Rs.{ord.gst || 0}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

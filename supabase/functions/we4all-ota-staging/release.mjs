@@ -39,12 +39,19 @@ export function releasePayload(value) {
 const bytes = (base64) => Uint8Array.from(atob(base64), char => char.charCodeAt(0));
 export const payloadBytes = (release) => new TextEncoder().encode(JSON.stringify(releasePayload(release)));
 
+async function getSubtleCrypto() {
+  if (globalThis.crypto?.subtle) return globalThis.crypto.subtle;
+  const nodeCrypto = await import("node:crypto");
+  return nodeCrypto.webcrypto.subtle;
+}
+
 export async function verifyRelease(release, publicKey) {
   try {
+    const subtle = await getSubtleCrypto();
     const pem = publicKey.replace(/-----BEGIN PUBLIC KEY-----|-----END PUBLIC KEY-----|\s/g, "");
-    const key = await crypto.subtle.importKey("spki", bytes(pem), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+    const key = await subtle.importKey("spki", bytes(pem), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
     if (typeof release.signature !== "string" || release.signature.length > 800) return false;
-    return await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, bytes(release.signature), payloadBytes(release));
+    return await subtle.verify("RSASSA-PKCS1-v1_5", key, bytes(release.signature), payloadBytes(release));
   } catch {
     return false;
   }

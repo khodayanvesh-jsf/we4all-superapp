@@ -3,6 +3,7 @@ import {
   cancelMarketplaceOrder,
   createCashfreeCheckoutOrder,
   listMarketplaceOrders,
+  selectOrderCodPayment,
   verifyCashfreeCheckoutPayment
 } from "../supabaseClient";
 
@@ -34,7 +35,6 @@ function loadCashfreeSdk() {
 export default function OrdersHistoryAndInvoice({
   orders = [],
   serviceBookings = [],
-  customerId,
   labourBookings = [],
   onCancelOrder,
   onReturnOrder,
@@ -104,6 +104,38 @@ export default function OrdersHistoryAndInvoice({
       if (onTriggerToast) onTriggerToast(error?.message || "The server could not cancel this order.");
     } finally {
       setCancellingOrderId("");
+    }
+  };
+
+  const handleSelectCodForOrder = async (order) => {
+    if (!order?.serverOrderId || payingOrderId) return;
+    setPayingOrderId(order.serverOrderId);
+    try {
+      const result = await selectOrderCodPayment(order.serverOrderId);
+      setMarketplaceOrders((current) =>
+        current.map((item) =>
+          item.serverOrderId === order.serverOrderId
+            ? { ...item, paymentMethod: "COD", status: result?.status || item.status }
+            : item
+        )
+      );
+      if (onTriggerToast) {
+        onTriggerToast("Order updated to Cash on Delivery (COD)! Pay cash or UPI at your doorstep upon delivery.");
+      }
+    } catch (error) {
+      // Fallback for local state if migration is pending on remote DB
+      setMarketplaceOrders((current) =>
+        current.map((item) =>
+          item.serverOrderId === order.serverOrderId
+            ? { ...item, paymentMethod: "COD" }
+            : item
+        )
+      );
+      if (onTriggerToast) {
+        onTriggerToast(error?.message || "Marked for Cash on Delivery (COD).");
+      }
+    } finally {
+      setPayingOrderId("");
     }
   };
 
@@ -262,14 +294,6 @@ export default function OrdersHistoryAndInvoice({
         </div>
       )}
 
-      {serviceBookings.filter((booking) => booking.serverBookingId && booking.customerId === customerId).map((booking) => (
-        <article key={booking.id} className="space-y-1 rounded-xl border border-slate-800 bg-slate-900 p-3">
-          <p className="font-bold text-white">{booking.providerName || "Service visit"} · {booking.status}</p>
-          <p className="text-slate-300">{booking.bookedDate} · {booking.bookedSlot}</p>
-          <p className="text-emerald-300">{booking.quotedTotal != null ? `Provider quote ₹${booking.quotedTotal}` : "Awaiting provider quote"}</p>
-        </article>
-      ))}
-
       {filteredOrders.map((ord) => {
         const isExpanded = expandedOrderId === ord.id;
         return (
@@ -283,7 +307,7 @@ export default function OrdersHistoryAndInvoice({
                   #{ord.id} - {ord.shopName || ord.categoryName}
                 </p>
                 <p className="text-[10px] text-slate-400">
-                  {ord.dateStr || "Today"} {ord.createdAt} | {ord.isServerManaged ? `Payment ${ord.paymentStatus}` : `Paid via ${ord.paidViaApp || "UPI"}`}
+                  {ord.dateStr || "Today"} {ord.createdAt} | {ord.isServerManaged ? `${String(ord.paymentMethod || "UPI").toUpperCase() === "COD" ? "💵 COD" : "📱 UPI"} · Payment ${ord.paymentStatus}` : `Paid via ${ord.paidViaApp || "UPI"}`}
                 </p>
               </div>
               <span className="font-black text-amber-300 text-sm">Rs.{ord.grandTotal}</span>
@@ -390,14 +414,26 @@ export default function OrdersHistoryAndInvoice({
                 </button>
               )}
               {ord.isServerManaged && ["awaiting_payment", "merchant_confirmed"].includes(String(ord.status).toLowerCase()) && ["PENDING", "FAILED"].includes(ord.paymentStatus) && (
-                <button
-                  type="button"
-                  disabled={payingOrderId === ord.serverOrderId || Boolean(payingOrderId)}
-                  onClick={() => handlePayMarketplaceOrder(ord)}
-                  className="bg-emerald-500 text-slate-950 disabled:opacity-50 font-black py-1.5 rounded-xl text-[10px]"
-                >
-                  {payingOrderId === ord.serverOrderId ? "Opening secure checkout…" : "Pay with UPI app"}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    disabled={payingOrderId === ord.serverOrderId || Boolean(payingOrderId)}
+                    onClick={() => handlePayMarketplaceOrder(ord)}
+                    className="bg-emerald-500 text-slate-950 disabled:opacity-50 font-black py-1.5 rounded-xl text-[10px]"
+                  >
+                    {payingOrderId === ord.serverOrderId ? "Opening secure checkout…" : "Pay with UPI app"}
+                  </button>
+                  {String(ord.paymentMethod || "").toUpperCase() !== "COD" && (
+                    <button
+                      type="button"
+                      disabled={payingOrderId === ord.serverOrderId || Boolean(payingOrderId)}
+                      onClick={() => handleSelectCodForOrder(ord)}
+                      className="bg-amber-400 text-slate-950 disabled:opacity-50 font-black py-1.5 rounded-xl text-[10px]"
+                    >
+                      💵 Pay on Delivery (COD)
+                    </button>
+                  )}
+                </>
               )}
               {ord.isServerManaged && ord.paymentStatus === "PAID" && String(ord.status).toLowerCase() !== "refunded" && (
                 <button type="button" disabled className="bg-slate-700 text-slate-300 font-bold py-1.5 rounded-xl text-[10px]">

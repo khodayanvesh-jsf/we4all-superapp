@@ -23,7 +23,7 @@ const REGISTRATION_ROLE_LABELS = {
 
 function hasReviewableTerms(application) {
   const version = application.application_payload?.kyc?.terms?.version || "";
-  return version.startsWith("final-") || (application.founder_test_account === true && version === "trial-draft-1");
+  return version.startsWith("final-") || version === "trial-draft-1" || Boolean(application.founder_test_account && version === "trial-draft-1");
 }
 
 export default function FounderAdminSuite({
@@ -2677,77 +2677,6 @@ export default function FounderAdminSuite({
       )}
 
       {/* =====================================================================
-          TAB 4: VERSIONED DYNAMIC MODULE REGISTRY
-      ===================================================================== */}
-      {founderTab === "modules" && (
-        <div className="space-y-4">
-          <section className="bg-slate-900 border border-cyan-500/40 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h3 className="font-black text-cyan-300 text-sm">Versioned Dynamic Module Builder</h3>
-                <p className="text-[10px] text-slate-400">Save drafts, publish or disable modules across devices. Configuration is declarative JSON; scripts and executable HTML are rejected.</p>
-              </div>
-              <button type="button" onClick={refreshDynamicModules} disabled={dynamicModulesLoading}
-                className="bg-slate-800 text-white px-3 py-2 rounded-lg text-[10px] font-bold disabled:opacity-50">
-                {dynamicModulesLoading ? "Refreshing…" : "Refresh"}
-              </button>
-            </div>
-            {dynamicModulesError && <p className="bg-rose-950/50 border border-rose-500/50 text-rose-200 rounded-xl p-2 text-[10px]">{dynamicModulesError}</p>}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <input value={dynamicModuleForm.moduleKey} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, moduleKey: e.target.value })}
-                placeholder="Module key, e.g. farm_inputs" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
-              <input value={dynamicModuleForm.title} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, title: e.target.value })}
-                placeholder="Module title" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
-              <select value={dynamicModuleForm.portalTarget} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, portalTarget: e.target.value })}
-                className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs">
-                <option value="customer">Customer</option><option value="merchant">Merchant</option>
-                <option value="service_provider">Service Provider</option><option value="decorator">Decorator / Hall</option>
-                <option value="rider">Rider</option><option value="labour">Labour</option><option value="founder">Founder</option>
-              </select>
-              <input value={dynamicModuleForm.icon} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, icon: e.target.value })}
-                placeholder="Icon name" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
-              <input value={dynamicModuleForm.categoryKey} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, categoryKey: e.target.value })}
-                placeholder="Category key" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
-              <input value={dynamicModuleForm.zoneCodes} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, zoneCodes: e.target.value })}
-                placeholder="Zone codes (comma-separated, * for all)" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
-              <input value={dynamicModuleForm.visibilityRoles} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, visibilityRoles: e.target.value })}
-                placeholder="Visible roles (comma-separated)" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs md:col-span-2"/>
-              <input value={dynamicModuleForm.description} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, description: e.target.value })}
-                placeholder="Module description" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
-            </div>
-            <textarea rows={7} value={dynamicModuleForm.moduleConfig} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, moduleConfig: e.target.value })}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-emerald-200 font-mono text-[10px]"
-              placeholder='{"layout":"grid","components":[]}'/>
-            <button type="button" onClick={handleSaveDynamicModuleDraft} disabled={dynamicModuleBusy}
-              className="w-full bg-cyan-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black py-2.5 rounded-xl text-xs">
-              {dynamicModuleBusy ? "Saving…" : "Save versioned draft"}
-            </button>
-          </section>
-          <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-            <h4 className="font-black text-white text-xs">Registered modules ({dynamicModules.length})</h4>
-            {dynamicModulesLoading ? <p className="text-[10px] text-slate-400">Loading server registry…</p> :
-              dynamicModules.length === 0 ? <p className="text-[10px] text-slate-400">No dynamic modules have been saved yet, or Founder authorization is not active.</p> :
-              dynamicModules.map((module) => (
-                <div key={module.id} className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-wrap justify-between items-center gap-2">
-                  <div className="min-w-0">
-                    <p className="font-black text-cyan-200 text-xs">{module.icon} {module.title} <span className="text-slate-400">v{module.version}</span></p>
-                    <p className="text-[9px] text-slate-400">{module.module_key} · {module.portal_target} · {module.status} · zones: {(module.zone_codes || []).join(", ")}</p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {module.status !== "published" && <button type="button" disabled={dynamicModuleBusy} onClick={() => handleDynamicModuleStatus(module.id, "publish")}
-                      className="bg-emerald-500 text-slate-950 font-black px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50">Publish</button>}
-                    {module.status !== "disabled" && <button type="button" disabled={dynamicModuleBusy} onClick={() => handleDynamicModuleStatus(module.id, "disable")}
-                      className="bg-rose-700 text-white font-black px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50">Disable</button>}
-                  </div>
-                </div>
-              ))}
-          </section>
-        </div>
-      )}
-
-      {/* =====================================================================
-          TAB 9: MULTI-PHONE LIVE TESTING SANDBOX & 1-CLICK FLOW TESTER
-      ===================================================================== */}      {/* =====================================================================
           TAB 9: MULTI-PHONE LIVE TESTING SANDBOX & 1-CLICK FLOW TESTER
       ===================================================================== */}
       {founderTab === "founder_profile" && (

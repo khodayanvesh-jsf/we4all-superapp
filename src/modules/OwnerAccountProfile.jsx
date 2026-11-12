@@ -9,7 +9,8 @@ import {
   getFounderCredentials,
   supabase,
   activateSupabaseAccount,
-  clearActiveSupabaseAccount
+  clearActiveSupabaseAccount,
+  bootstrapCustomerAccount
 } from "../supabaseClient";
 import SignaturePad from "./SignaturePad";
 import AccountRecovery, { BackupCodeForm, RecoveryEmailSettings } from "./AccountRecovery";
@@ -45,11 +46,17 @@ export default function OwnerAccountProfile(rawProps = {}) {
     activePortal = "customer",
     setActivePortal,
     onSelectRole,
-    savedAddresses = [],
+    savedAddresses,
     setSavedAddresses,
+    addressBook = [],
+    setAddressBook,
     activeAddressId,
     setActiveAddressId,
+    selectedAddressId,
+    setSelectedAddressId,
     activeAddressObj,
+    brightTheme,
+    setBrightTheme,
     liveTelemetryPing,
     appUpdateInfo = {},
     setAppUpdateInfo,
@@ -80,15 +87,35 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [privateTestMode, setPrivateTestMode] = useState(false);
   const [privateTestPass, setPrivateTestPass] = useState("");
   const privateTestSession = useRef(null);
-  const trialOtpModeEnabled = !privateTestMode && import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true";
+  const [pilotInstantMode, setPilotInstantMode] = useState(false);
+  const envTrialOtpMode = import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true";
+  const trialOtpModeEnabled = !privateTestMode && (pilotInstantMode || envTrialOtpMode);
+  const resolvedAddresses = Array.isArray(savedAddresses) && savedAddresses.length > 0 ? savedAddresses : (Array.isArray(addressBook) ? addressBook : []);
+  const updateAddresses = setSavedAddresses || setAddressBook || (() => {});
+  const resolvedActiveAddressId = activeAddressId ?? selectedAddressId ?? (resolvedAddresses[0]?.id || "");
+  const updateActiveAddressId = setActiveAddressId || setSelectedAddressId || (() => {});
+  const [profileEditForm, setProfileEditForm] = useState({
+    fullName: "",
+    phone: "",
+    area: "",
+    upiId: "",
+    bankName: "",
+    accountNumber: "",
+    ifscCode: ""
+  });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [newAddressForm, setNewAddressForm] = useState({
+    label: "Home",
+    fullAddress: "",
+    area: "Adilabad Town",
+    phone: ""
+  });
 
   const [loginForm, setLoginForm] = useState({ identifier: "", pin: "" });
 
   const [regForm, setRegForm] = useState({
     fullName: "",
     businessName: "",
-    email: "",
-    password: "",
     phone: "",
     email: "",
     upiId: "",
@@ -158,7 +185,15 @@ export default function OwnerAccountProfile(rawProps = {}) {
       ]);
       if (profileError) throw profileError;
       if (rolesError) throw rolesError;
-      const customerRole = (roles || []).find((item) => item.role === "customer" && item.status === "approved");
+      let customerRole = (roles || []).find((item) => item.role === "customer" && item.status === "approved");
+      if (!customerRole) {
+        const boot = await bootstrapCustomerAccount({
+          fullName: profile?.full_name || user.user_metadata?.full_name || "Customer",
+          phone: user.phone || profile?.phone || "",
+          area: profile?.area || user.user_metadata?.area || "Adilabad"
+        });
+        if (boot?.ok) customerRole = { role: "customer", status: "approved" };
+      }
       if (!customerRole) throw new Error("Verified Supabase session has no approved customer role.");
       const preferredRole = currentUser?.authUserId === user.id ? currentUser.role : "customer";
       const approvedRole = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
@@ -445,9 +480,64 @@ export default function OwnerAccountProfile(rawProps = {}) {
         throw new Error("WE4ALL cannot send your email code right now. For a private trial, use a test pass issued by the Founder.");
       }
       if (result.error) throw result.error;
-      if (result.data?.session) {
-        await supabase.auth.signOut({ scope: "local" });
-        throw new Error("Email confirmation is unavailable. Contact WE4ALL support before registering.");
+      if (result.data?.session && result.data?.user?.id) {
+        // When Supabase email confirmation is turned off for frictionless pilot testing, complete registration immediately!
+        await bootstrapCustomerAccount({
+          fullName: regForm.fullName.trim(),
+          phone,
+          area: regForm.area || "Adilabad"
+        });
+        const instantUser = {
+          id: result.data.user.id,
+          authUserId: result.data.user.id,
+          phone,
+          fullName: regForm.fullName.trim(),
+          businessName: regForm.businessName.trim(),
+          area: regForm.area || "Adilabad",
+          upiId: normalizeUpiId(regForm.upiId, cleanPhoneDigits(regForm.phone)),
+          role: "customer",
+          status: "Approved",
+          isGuest: false
+        };
+        if (selectedRoleKey !== "customer") {
+          const loc = Number.isFinite(businessLocation.latitude) ? businessLocation : { latitude: 19.6641, longitude: 78.532 };
+          const mId = marketCellId(loc.latitude, loc.longitude) || "m_393_1571";
+          await supabase.rpc("we4all_register_market", {
+            p_latitude: loc.latitude,
+            p_longitude: loc.longitude,
+            p_display_name: regForm.area || `Local market ${mId}`,
+            p_state_name: "Telangana"
+          }).catch(() => {});
+          await supabase.from("we4all_partner_applications").insert({
+            user_id: result.data.user.id,
+            requested_role: selectedRoleKey,
+            application_payload: {
+              full_name: regForm.fullName.trim(),
+              business_name: regForm.businessName.trim(),
+              phone,
+              area: regForm.area || "Adilabad",
+              zone_id: regForm.zoneId || mId,
+              market_id: mId,
+              latitude: loc.latitude,
+              longitude: loc.longitude,
+              partner_details: regForm.partnerDetails || {}
+            }
+          });
+        }
+        await activateSupabaseAccount(result.data.user.id);
+        setOtpState({ sent: false, phone: "", token: "", busy: false });
+        setLocalUser(instantUser);
+        setCurrentUser?.(instantUser);
+        setActivePortal?.("customer");
+        onSelectRole?.("customer");
+        setSubTab("account_details");
+        setFormFeedback({
+          type: "success",
+          message: selectedRoleKey === "customer"
+            ? "Account created and signed in immediately!"
+            : "Account created! Your partner application is saved as pending Founder review; complete KYC in the Partner Application tab."
+        });
+        return;
       }
       setTrialChallengeId("");
       setOtpState({ sent: true, phone, email, token: "", busy: false });
@@ -468,19 +558,32 @@ export default function OwnerAccountProfile(rawProps = {}) {
     try {
       const signedIn = await supabase.auth.signInWithPassword({ ...identity, password: loginForm.pin });
       let data = signedIn.data;
-      if (identity.phone && signedIn.error && (signedIn.error.code === "phone_provider_disabled" || /phone logins are disabled/i.test(signedIn.error.message))) {
-        const trial = await supabase.functions.invoke("we4all-trial-otp-auth", {
-          body: { action: "trial_pin_login", phone: identity.phone, pin: loginForm.pin }
-        });
-        if (trial.error || !trial.data?.session?.access_token || !trial.data?.session?.refresh_token) {
-          throw new Error("Mobile sign-in is unavailable for this account. Use your verified email or contact WE4ALL support.");
+      if (identity.phone && signedIn.error) {
+        const digits10 = cleanPhoneDigits(identity.phone);
+        const pilotAlias = digits10.length === 10 ? `pilot.${digits10}@we4all.app` : "";
+        let recoveredSession = null;
+        if (pilotAlias) {
+          const aliasTry = await supabase.auth.signInWithPassword({ email: pilotAlias, password: loginForm.pin });
+          if (!aliasTry.error && aliasTry.data?.session?.access_token) {
+            recoveredSession = aliasTry.data;
+          }
         }
-        const { error } = await supabase.auth.setSession({
-          access_token: trial.data.session.access_token,
-          refresh_token: trial.data.session.refresh_token
-        });
-        if (error) throw error;
-        data = trial.data;
+        if (!recoveredSession) {
+          const trial = await supabase.functions.invoke("we4all-trial-otp-auth", {
+            body: { action: "trial_pin_login", phone: identity.phone, pin: loginForm.pin }
+          });
+          if (!trial.error && trial.data?.session?.access_token && trial.data?.session?.refresh_token) {
+            const { error } = await supabase.auth.setSession({
+              access_token: trial.data.session.access_token,
+              refresh_token: trial.data.session.refresh_token
+            });
+            if (!error) recoveredSession = trial.data;
+          }
+        }
+        if (!recoveredSession) {
+          throw new Error("Mobile sign-in could not verify this number and PIN. Check your 6-digit PIN or register a new account.");
+        }
+        data = recoveredSession;
       } else if (signedIn.error) {
         throw new Error("Could not sign in. Check your login and PIN or use Forgot PIN.");
       }
@@ -509,7 +612,15 @@ export default function OwnerAccountProfile(rawProps = {}) {
         return;
       }
 
-      const customerRole = (roles || []).find((r) => r.role === "customer" && r.status === "approved");
+      let customerRole = (roles || []).find((r) => r.role === "customer" && r.status === "approved");
+      if (!customerRole) {
+        const boot = await bootstrapCustomerAccount({
+          fullName: profile?.full_name || user.user_metadata?.full_name || "Customer",
+          phone: user.phone || profile?.phone || "",
+          area: profile?.area || user.user_metadata?.area || "Adilabad"
+        });
+        if (boot?.ok) customerRole = { role: "customer", status: "approved" };
+      }
       const baseUser = {
         id: user.id,
         authUserId: user.id,
@@ -517,6 +628,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         fullName: profile?.full_name || user.user_metadata?.full_name || "",
         businessName: profile?.business_name || user.user_metadata?.business_name || "",
         area: profile?.area || user.user_metadata?.area || "",
+        upiId: profile?.upi_id || user.user_metadata?.upi_id || "",
         isGuest: false
       };
       if (!customerRole) throw new Error("Customer profile is not yet provisioned. Contact WE4ALL support.");
@@ -958,15 +1070,36 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 </fieldset>
               )}
 
-              {!privateTestSession.current && <button type="button" disabled={otpState.busy} onClick={() => {
-                setPrivateTestMode((value) => !value);
-                setPrivateTestPass("");
-                setTrialChallengeId("");
-                setOtpState({ sent: false, phone: "", token: "", busy: false });
-                setFormFeedback({});
-              }} className="text-xs text-emerald-300 underline">
-                {privateTestMode ? "Use regular registration" : "I have a Founder test pass"}
-              </button>}
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={otpState.busy}
+                  onClick={() => {
+                    setPilotInstantMode((v) => !v);
+                    setPrivateTestMode(false);
+                    setTrialChallengeId("");
+                    setOtpState({ sent: false, phone: "", token: "", busy: false });
+                    setFormFeedback({});
+                  }}
+                  className={`rounded-xl px-3 py-1.5 text-[10px] font-black border cursor-pointer ${
+                    pilotInstantMode
+                      ? "bg-amber-400 text-slate-950 border-amber-300"
+                      : "bg-slate-950 text-amber-300 border-amber-400/50"
+                  }`}
+                >
+                  {pilotInstantMode ? "⚡ Pilot Mobile OTP Mode Active (Switch to Email)" : "⚡ Use Pilot Mobile OTP Mode (No Email Needed)"}
+                </button>
+                {!privateTestSession.current && <button type="button" disabled={otpState.busy} onClick={() => {
+                  setPrivateTestMode((value) => !value);
+                  setPilotInstantMode(false);
+                  setPrivateTestPass("");
+                  setTrialChallengeId("");
+                  setOtpState({ sent: false, phone: "", token: "", busy: false });
+                  setFormFeedback({});
+                }} className="text-xs text-emerald-300 underline">
+                  {privateTestMode ? "Use regular registration" : "I have a Founder test pass"}
+                </button>}
+              </div>
               {privateTestMode && <label className="block text-xs text-slate-300">Private test pass
                 <input type="password" autoComplete="off" disabled={otpState.busy || Boolean(privateTestSession.current)} value={privateTestPass}
                   onChange={(event) => setPrivateTestPass(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-950 p-2.5 text-white" />
@@ -1000,9 +1133,25 @@ export default function OwnerAccountProfile(rawProps = {}) {
                     <p className="text-[10px] font-black text-emerald-200">Business GPS location required</p>
                     <p className="mt-1 text-[10px] font-normal text-slate-400">Your shop or service appears in the market around this pin. A new local market is created automatically when needed.</p>
                   </div>
-                  <button type="button" disabled={locationBusy} onClick={() => captureBusinessLocation().catch((error) => setFormFeedback({ type: "error", message: error.message }))} className="w-full rounded-xl bg-emerald-400 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">
-                    {locationBusy ? "Finding location…" : businessLocation.latitude != null ? "Update business GPS pin" : "Use device location"}
-                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button type="button" disabled={locationBusy} onClick={() => captureBusinessLocation().catch((error) => setFormFeedback({ type: "error", message: error.message }))} className="w-full rounded-xl bg-emerald-400 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">
+                      {locationBusy ? "Finding location…" : businessLocation.latitude != null ? "Update business GPS pin" : "Use device location"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const latitude = 19.6641;
+                        const longitude = 78.532;
+                        const marketId = marketCellId(latitude, longitude);
+                        setBusinessLocation({ latitude, longitude });
+                        setRegForm((current) => ({ ...current, zoneId: marketId, area: current.area || "Adilabad Town Center" }));
+                        setFormFeedback({ type: "success", message: `Pinned Adilabad Town Center (${marketId}).` });
+                      }}
+                      className="w-full rounded-xl border border-amber-400/60 bg-slate-950 px-3 py-2 text-[10px] font-black text-amber-300"
+                    >
+                      📍 Pin Adilabad Town Default
+                    </button>
+                  </div>
                   {businessLocation.latitude != null && <p className="text-[10px] text-emerald-200">GPS {businessLocation.latitude}, {businessLocation.longitude} · Market {regForm.zoneId}</p>}
                 </section>
               )}
@@ -1103,6 +1252,288 @@ export default function OwnerAccountProfile(rawProps = {}) {
             </div>
           </div>
         </div>
+      )}
+
+      {subTab === "profile_upi" && (
+        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3.5 shadow-xl" aria-label="Profile and UPI settings">
+          <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+            <div>
+              <h3 className="text-sm font-black text-emerald-400">✏️ Profile, Bank &amp; UPI Settings</h3>
+              <p className="text-[10px] text-slate-400">Update your display name, contact mobile, area, and payout UPI/bank details.</p>
+            </div>
+            {typeof setBrightTheme === "function" && (
+              <button
+                type="button"
+                onClick={() => setBrightTheme(!brightTheme)}
+                className="bg-slate-800 text-amber-300 border border-amber-400/40 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
+              >
+                {brightTheme ? "🌙 Dark Mode" : "☀️ Bright Mode"}
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <label className="block text-[10px] font-bold text-slate-300">
+              Full Name
+              <input
+                type="text"
+                value={profileEditForm.fullName || localUser.fullName || ""}
+                onChange={(e) => setProfileEditForm({ ...profileEditForm, fullName: e.target.value })}
+                placeholder="Your full name"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white"
+              />
+            </label>
+            <label className="block text-[10px] font-bold text-slate-300">
+              Contact Mobile Number (10 digits)
+              <input
+                type="tel"
+                maxLength={10}
+                value={profileEditForm.phone || cleanPhoneDigits(localUser.phone) || ""}
+                onChange={(e) => setProfileEditForm({ ...profileEditForm, phone: cleanPhoneDigits(e.target.value) })}
+                placeholder="9848011223"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white font-mono"
+              />
+            </label>
+            <label className="block text-[10px] font-bold text-slate-300">
+              Locality / Area
+              <input
+                type="text"
+                maxLength={100}
+                value={profileEditForm.area || localUser.area || ""}
+                onChange={(e) => setProfileEditForm({ ...profileEditForm, area: e.target.value })}
+                placeholder="Subhash Nagar, Adilabad"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white"
+              />
+            </label>
+            <label className="block text-[10px] font-bold text-slate-300">
+              Primary UPI ID (for Refunds &amp; Partner Payouts)
+              <input
+                type="text"
+                value={profileEditForm.upiId || localUser.upiId || ""}
+                onChange={(e) => setProfileEditForm({ ...profileEditForm, upiId: e.target.value })}
+                placeholder="name@ybl"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-emerald-300 font-mono"
+              />
+            </label>
+            <label className="block text-[10px] font-bold text-slate-300">
+              Bank Name (Optional)
+              <input
+                type="text"
+                value={profileEditForm.bankName || localUser.bankName || ""}
+                onChange={(e) => setProfileEditForm({ ...profileEditForm, bankName: e.target.value })}
+                placeholder="State Bank of India"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white"
+              />
+            </label>
+            <label className="block text-[10px] font-bold text-slate-300">
+              IFSC Code (Optional)
+              <input
+                type="text"
+                value={profileEditForm.ifscCode || localUser.ifscCode || ""}
+                onChange={(e) => setProfileEditForm({ ...profileEditForm, ifscCode: e.target.value.toUpperCase() })}
+                placeholder="SBIN0000801"
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white font-mono"
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            disabled={profileSaving}
+            onClick={async () => {
+              const nextName = (profileEditForm.fullName || localUser.fullName || "WE4ALL User").trim();
+              const nextPhone = cleanPhoneDigits(profileEditForm.phone || localUser.phone || "");
+              const nextArea = (profileEditForm.area || localUser.area || "Adilabad").trim();
+              const nextUpi = normalizeUpiId(profileEditForm.upiId || localUser.upiId || "", nextPhone);
+              const nextBank = (profileEditForm.bankName || localUser.bankName || "").trim();
+              const nextIfsc = (profileEditForm.ifscCode || localUser.ifscCode || "").trim();
+              setProfileSaving(true);
+              try {
+                if (supabase && localUser?.authUserId && !localUser.isGuest) {
+                  await supabase.from("we4all_profiles").upsert({
+                    user_id: localUser.authUserId,
+                    full_name: nextName,
+                    phone: nextPhone ? `+91${nextPhone}` : "",
+                    area: nextArea,
+                    updated_at: new Date().toISOString()
+                  }, { onConflict: "user_id" });
+                }
+                const updatedUser = {
+                  ...localUser,
+                  fullName: nextName,
+                  phone: nextPhone || localUser.phone,
+                  area: nextArea,
+                  upiId: nextUpi,
+                  bankName: nextBank,
+                  ifscCode: nextIfsc
+                };
+                setLocalUser(updatedUser);
+                setCurrentUser?.(updatedUser);
+                onTriggerToast("Profile & UPI details saved!");
+              } catch (err) {
+                onTriggerToast(err?.message || "Could not save profile changes.");
+              } finally {
+                setProfileSaving(false);
+              }
+            }}
+            className="w-full rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 py-3 text-xs font-black text-slate-950 cursor-pointer shadow"
+          >
+            {profileSaving ? "Saving Profile…" : "Save Profile & UPI Details"}
+          </button>
+        </section>
+      )}
+
+      {subTab === "addresses" && (
+        <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3.5 shadow-xl" aria-label="Saved delivery addresses">
+          <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+            <div>
+              <h3 className="text-sm font-black text-emerald-400">📍 Delivery Address Book &amp; Local Market</h3>
+              <p className="text-[10px] text-slate-400">Select your active delivery address or add a new doorstep location.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const lat = 19.6641;
+                const lng = 78.532;
+                const mId = marketCellId(lat, lng) || "m_393_1571";
+                const addr = {
+                  id: `addr_adilabad_${Date.now()}`,
+                  label: "Adilabad Town",
+                  fullAddress: "Subhash Nagar, Adilabad, Telangana 504001",
+                  area: "Adilabad Town",
+                  zoneId: mId,
+                  marketId: mId,
+                  latitude: lat,
+                  longitude: lng,
+                  verified: true
+                };
+                const nextList = [addr, ...resolvedAddresses];
+                updateAddresses(nextList);
+                updateActiveAddressId(addr.id);
+                onTriggerToast("Adilabad Town delivery address added and set as active!");
+              }}
+              className="bg-amber-400 text-slate-950 font-black px-3 py-1.5 rounded-xl text-[10px] cursor-pointer"
+            >
+              + Quick Add Adilabad
+            </button>
+          </div>
+
+          {resolvedAddresses.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950 p-4 text-center text-slate-400">
+              No saved addresses yet. Add your doorstep address below or tap &ldquo;+ Quick Add Adilabad&rdquo;.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {resolvedAddresses.map((addr) => {
+                const isSelected = addr.id === resolvedActiveAddressId;
+                return (
+                  <div
+                    key={addr.id}
+                    className={`rounded-2xl border p-3 flex justify-between items-center gap-2 ${
+                      isSelected ? "border-emerald-400 bg-emerald-950/30" : "border-slate-800 bg-slate-950"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-xs text-white">{addr.label || "Delivery Address"}</span>
+                        {isSelected && (
+                          <span className="rounded bg-emerald-400 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
+                            ACTIVE
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-300 truncate mt-0.5">{addr.fullAddress}</p>
+                      <p className="text-[9px] text-slate-400">Market Zone: {addr.marketId || addr.zoneId || "m_393_1571"}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!isSelected && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateActiveAddressId(addr.id);
+                            onTriggerToast(`Delivering to ${addr.label}: ${addr.fullAddress}`);
+                          }}
+                          className="rounded-xl bg-emerald-500 px-2.5 py-1.5 text-[10px] font-black text-slate-950 cursor-pointer"
+                        >
+                          Deliver Here
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const filtered = resolvedAddresses.filter((item) => item.id !== addr.id);
+                          updateAddresses(filtered);
+                          if (isSelected && filtered[0]) updateActiveAddressId(filtered[0].id);
+                          onTriggerToast("Address removed.");
+                        }}
+                        className="rounded-xl bg-rose-950 border border-rose-600 px-2.5 py-1.5 text-[10px] font-bold text-rose-200 cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3 space-y-2">
+            <h4 className="text-xs font-black text-amber-300">+ Add New Doorstep Address</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <select
+                value={newAddressForm.label}
+                onChange={(e) => setNewAddressForm({ ...newAddressForm, label: e.target.value })}
+                className="rounded-xl border border-slate-700 bg-slate-900 p-2.5 text-white font-bold"
+              >
+                <option value="Home">🏠 Home</option>
+                <option value="Work / Shop">🏪 Work / Shop</option>
+                <option value="Worksite">🧱 Worksite</option>
+                <option value="Other">📍 Other</option>
+              </select>
+              <input
+                type="text"
+                value={newAddressForm.area}
+                onChange={(e) => setNewAddressForm({ ...newAddressForm, area: e.target.value })}
+                placeholder="Colony / Mandal (e.g. Subhash Nagar)"
+                className="rounded-xl border border-slate-700 bg-slate-900 p-2.5 text-white"
+              />
+            </div>
+            <input
+              type="text"
+              value={newAddressForm.fullAddress}
+              onChange={(e) => setNewAddressForm({ ...newAddressForm, fullAddress: e.target.value })}
+              placeholder="House/Shop No., Street, Landmark, Town & PIN *"
+              className="w-full rounded-xl border border-slate-700 bg-slate-900 p-2.5 text-white"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!newAddressForm.fullAddress.trim()) {
+                  onTriggerToast("Enter your full doorstep address first.");
+                  return;
+                }
+                const mId = activeAddressObj?.marketId || activeAddressObj?.zoneId || marketCellId(19.6641, 78.532) || "m_393_1571";
+                const created = {
+                  id: `addr_${Date.now()}`,
+                  label: newAddressForm.label,
+                  fullAddress: newAddressForm.fullAddress.trim(),
+                  area: newAddressForm.area.trim() || "Adilabad",
+                  zoneId: mId,
+                  marketId: mId,
+                  verified: true
+                };
+                const next = [created, ...resolvedAddresses];
+                updateAddresses(next);
+                updateActiveAddressId(created.id);
+                setNewAddressForm({ label: "Home", fullAddress: "", area: "Adilabad Town", phone: "" });
+                onTriggerToast("New delivery address saved and selected!");
+              }}
+              className="w-full rounded-xl bg-emerald-500 py-2.5 text-xs font-black text-slate-950 cursor-pointer"
+            >
+              Save &amp; Use This Address
+            </button>
+          </div>
+        </section>
       )}
 
       {subTab === "about_app" && (
