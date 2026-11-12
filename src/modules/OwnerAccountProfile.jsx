@@ -12,6 +12,8 @@ import {
   clearActiveSupabaseAccount
 } from "../supabaseClient";
 import SignaturePad from "./SignaturePad";
+import AccountRecovery, { BackupCodeForm, RecoveryEmailSettings } from "./AccountRecovery";
+import { accountLoginIdentity, realAccountEmail } from "./workflows/accountIdentity";
 import { PARTNER_ROLE_FIELDS, getPartnerKycDocuments, validatePartnerRegistration } from "./workflows/partnerRegistration";
 import { marketCellId } from "./workflows/marketLocation";
 
@@ -68,16 +70,14 @@ export default function OwnerAccountProfile(rawProps = {}) {
   // If logged in, default to account details; if guest, show login/register gate
   const [subTab, setSubTab] = useState(() => (isLoggedIn ? "account_details" : "kyc_gate"));
   const [authMode, setAuthMode] = useState("login"); // login | register
-  const [loginMethod, setLoginMethod] = useState("pin"); // OTP is reserved for registration and PIN recovery
+  const [loginMethod, setLoginMethod] = useState("pin");
   const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
   const [registrationRoleOptions, setRegistrationRoleOptions] = useState(ROLE_OPTIONS);
   const [showPinText, setShowPinText] = useState(false);
 
   const isConsumerSelected = selectedRoleKey === "customer";
-  // Local Vite development defaults to the server-generated trial flow. The
-  // Edge Function remains disabled unless its separate server secrets enable
-  // preview mode, so this client flag cannot turn on trial OTP in production.
-  const trialOtpModeEnabled = import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true" || import.meta.env.DEV;
+  // Private test builds may explicitly opt in. Public builds use email registration.
+  const trialOtpModeEnabled = import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true";
 
   const [loginForm, setLoginForm] = useState({ identifier: "", pin: "" });
 
@@ -120,19 +120,8 @@ export default function OwnerAccountProfile(rawProps = {}) {
     if (!otpState.sent) return undefined;
     otpInputRef.current?.focus();
 
-    // WebOTP auto-reads origin-bound SMS on supported secure browsers. The
-    // one-time-code autocomplete hint also enables OS keyboard autofill where
-    // WebOTP itself is unavailable. Users can always type the code manually.
-    if (trialChallengeId || typeof window === "undefined" || !window.isSecureContext || !navigator.credentials?.get) return undefined;
-    const controller = new AbortController();
-    navigator.credentials.get({ otp: { transport: ["sms"] }, signal: controller.signal })
-      .then((credential) => {
-        const code = String(credential?.code || "").replace(/\D/g, "").slice(0, 6);
-        if (code.length === 6) setOtpState((current) => current.sent ? { ...current, token: code } : current);
-      })
-      .catch(() => { /* Manual entry remains available when WebOTP is unsupported or cancelled. */ });
-    return () => controller.abort();
-  }, [otpState.sent, trialChallengeId]);
+    return undefined;
+  }, [otpState.sent]);
   useEffect(() => {
     let active = true;
     const guest = { isGuest: true, role: "customer", fullName: "Guest Visitor" };
@@ -399,138 +388,102 @@ export default function OwnerAccountProfile(rawProps = {}) {
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
   });
 
-  const sendPhoneOtp = async () => {
-    if (authMode !== "register" && loginMethod !== "otp") {
-      setFormFeedback({ type: "error", message: "Phone verification is used only for registration or PIN recovery." });
+  const sendRegistrationCode = async () => {
+    const phone = accountLoginIdentity(regForm.phone)?.phone || "";
+    const email = realAccountEmail(regForm.email);
+    if (!supabase || (!trialOtpModeEnabled && !email) || (trialOtpModeEnabled && !phone)) {
+      setFormFeedback({ type: "error", message: "Enter a valid registration contact and check your connection." });
       return;
     }
-    const phoneDigits = cleanPhoneDigits(authMode === "register" ? regForm.phone : loginForm.identifier);
-    if (phoneDigits.length !== 10) {
-      setFormFeedback({ type: "error", message: "Enter a valid 10-digit Indian mobile number." });
+    if (!regForm.fullName.trim() || !/^\d{6}$/.test(regForm.pin) || regForm.pin !== regForm.pinConfirm) {
+      setFormFeedback({ type: "error", message: "Enter your full name and two matching six-digit PINs." });
       return;
     }
-    if (!supabase) {
-      setFormFeedback({ type: "error", message: "Supabase client is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY." });
-      return;
-    }
-    setOtpState({ sent: false, phone: "", token: "", busy: true });
-    setTrialChallengeId("");
-    const phone = `+91${phoneDigits}`;
-    try {
-      const isRegistration = authMode === "register";
-      if (isRegistration) {
-        if (!regForm.fullName.trim()) throw new Error("Enter your full name before requesting OTP.");
-        if (!/^\d{6}$/.test(regForm.pin)) throw new Error("Create a 6-digit sign-in PIN.");
-        if (regForm.pin !== regForm.pinConfirm) throw new Error("The two PIN entries do not match.");
-        if (!isConsumerSelected && !regForm.businessName.trim()) throw new Error("Enter your business or partner name.");
-        if (!isConsumerSelected && (!Number.isFinite(businessLocation.latitude) || !Number.isFinite(businessLocation.longitude))) throw new Error("Add your business GPS location before requesting registration OTP.");
-        if (!isConsumerSelected) {
-          const detailsError = validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
-          if (detailsError) throw new Error(detailsError);
-        }
-        if (trialOtpModeEnabled) {
-          const { data, error } = await supabase.functions.invoke("we4all-trial-otp-auth", {
-            body: {
-              action: "request", phone, requested_role: selectedRoleKey,
-              full_name: regForm.fullName.trim(), business_name: regForm.businessName.trim(),
-              area: regForm.area || "", zone_id: regForm.zoneId,
-              latitude: businessLocation.latitude, longitude: businessLocation.longitude,
-              market_id: regForm.zoneId
-            }
-          });
-          if (error) throw new Error(data?.error || await getFunctionResponseError(error, "Trial OTP service is unavailable."));
-          if (data?.ok !== true || !data.challenge_id || !/^\d{6}$/.test(String(data.trial_code || ""))) {
-            throw new Error(data?.error || "Trial OTP service returned an invalid challenge.");
-          }
-          setTrialChallengeId(data.challenge_id);
-          setOtpState({ sent: true, phone, token: String(data.trial_code), busy: false });
-          setFormFeedback({ type: "success", message: `Trial code generated by WE4ALL server: ${data.trial_code}. This is not proof of phone ownership; use this mode only for private testing.` });
-          return;
-        }
-        setTrialChallengeId("");
-        const { error } = await supabase.auth.signInWithOtp({
-          phone,
-          options: {
-            shouldCreateUser: true,
-            data: {
-              full_name: regForm.fullName.trim(),
-              business_name: regForm.businessName.trim(),
-            area: regForm.area || "",
-            requested_role: selectedRoleKey,
-            zone_id: regForm.zoneId
-            }
-          }
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signInWithOtp({
-          phone,
-          options: { shouldCreateUser: false }
-        });
-        if (error) throw error;
+    if (!isConsumerSelected) {
+      const missingLocation = !Number.isFinite(businessLocation.latitude) || !Number.isFinite(businessLocation.longitude);
+      const message = !regForm.businessName.trim() ? "Enter your business or partner name."
+        : missingLocation ? "Add your business GPS location."
+        : validatePartnerRegistration(selectedRoleKey, regForm.partnerDetails);
+      if (message) {
+        setFormFeedback({ type: "error", message });
+        return;
       }
-      setOtpState({ sent: true, phone, token: "", busy: false });
-      setFormFeedback({ type: "success", message: `SMS verification code sent to +91 ${phoneDigits}. Enter it below to ${isRegistration ? "create your account" : "set a new PIN"}.` });
+    }
+    setOtpState((previous) => ({ ...previous, busy: true, token: "" }));
+    try {
+      if (trialOtpModeEnabled) {
+        const { data, error } = await supabase.functions.invoke("we4all-trial-otp-auth", {
+          body: {
+            action: "request", phone, requested_role: selectedRoleKey,
+            full_name: regForm.fullName.trim(), business_name: regForm.businessName.trim(),
+            area: regForm.area || "", zone_id: regForm.zoneId,
+            latitude: businessLocation.latitude, longitude: businessLocation.longitude
+          }
+        });
+        if (error) throw new Error(await getFunctionResponseError(error, "Trial code service is unavailable."));
+        if (data?.ok !== true || !data.challenge_id || !/^\d{6}$/.test(String(data.trial_code || ""))) {
+          throw new Error("Trial code service returned an invalid challenge.");
+        }
+        setTrialChallengeId(data.challenge_id);
+        setOtpState({ sent: true, phone, token: String(data.trial_code), busy: false });
+        setFormFeedback({ type: "success", message: "Private test code filled in. This code does not verify phone ownership." });
+        return;
+      }
+
+      const metadata = {
+        full_name: regForm.fullName.trim(),
+        business_name: regForm.businessName.trim(),
+        area: regForm.area || ""
+      };
+      const result = otpState.sent && otpState.email === email
+        ? await supabase.auth.resend({ type: "signup", email })
+        : await supabase.auth.signUp({ email, password: regForm.pin, options: { data: metadata } });
+      if (result.error) throw result.error;
+      if (result.data?.session) {
+        await supabase.auth.signOut({ scope: "local" });
+        throw new Error("Email confirmation is unavailable. Contact WE4ALL support before registering.");
+      }
+      setTrialChallengeId("");
+      setOtpState({ sent: true, phone, email, token: "", busy: false });
+      setFormFeedback({ type: "success", message: "Check your email inbox for the registration code. If you already have an account, use Sign in or Forgot PIN." });
     } catch (error) {
-      setOtpState({ sent: false, phone, token: "", busy: false });
-      setFormFeedback({
-        type: "error",
-        message: error?.message || "Could not send SMS OTP. Check that Phone Auth and an SMS provider are enabled in Supabase."
-      });
+      setOtpState((previous) => ({ ...previous, busy: false }));
+      setFormFeedback({ type: "error", message: error?.message || "Could not send your registration code." });
     }
   };
 
   const handleLoginSubmit = async () => {
-    const phoneDigits = cleanPhoneDigits(loginForm.identifier);
-    if (phoneDigits.length !== 10) {
-      setFormFeedback({ type: "error", message: "Enter the 10-digit mobile number used for this account." });
+    const identity = accountLoginIdentity(loginForm.identifier);
+    if (!identity || !supabase || !/^\d{6}$/.test(loginForm.pin)) {
+      setFormFeedback({ type: "error", message: "Enter your mobile number or verified email and your six-digit PIN." });
       return;
     }
-    if (loginMethod === "otp" && (!otpState.sent || otpState.token.trim().length !== 6 || !/^\d{6}$/.test(loginForm.pin))) {
-      setFormFeedback({ type: "error", message: "Request a phone verification code and enter it with your new 6-digit PIN." });
-      return;
-    }
-    if (loginMethod === "pin" && !/^\d{6}$/.test(loginForm.pin)) {
-      setFormFeedback({ type: "error", message: "Enter your 6-digit PIN." });
-      return;
-    }
-    setOtpState((s) => ({ ...s, busy: true }));
+    setOtpState((state) => ({ ...state, busy: true }));
     try {
-      const phone = `+91${phoneDigits}`;
-      let data;
-      if (loginMethod === "otp") {
-        const verified = await supabase.auth.verifyOtp({ phone, token: otpState.token.trim(), type: "sms" });
-        if (verified.error) throw verified.error;
-        data = verified.data;
-        const pinUpdate = await supabase.auth.updateUser({ password: loginForm.pin });
-        if (pinUpdate.error) throw pinUpdate.error;
-      } else {
-        const signedIn = await supabase.auth.signInWithPassword({ phone, password: loginForm.pin });
-        if (signedIn.error && (signedIn.error.code === "phone_provider_disabled" || /phone logins are disabled/i.test(signedIn.error.message || ""))) {
-          const { data: trialData, error: trialError } = await supabase.functions.invoke("we4all-trial-otp-auth", {
-            body: { action: "trial_pin_login", phone, pin: loginForm.pin }
-          });
-          if (trialError) throw new Error(await getFunctionResponseError(trialError, signedIn.error.message));
-          if (trialData?.ok !== true || !trialData.session?.access_token || !trialData.session?.refresh_token) {
-            throw new Error(trialData?.error || signedIn.error.message || "Mobile + PIN sign-in failed.");
-          }
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token: trialData.session.access_token,
-            refresh_token: trialData.session.refresh_token
-          });
-          if (sessionError) throw sessionError;
-          data = trialData;
-        } else {
-          if (signedIn.error) throw signedIn.error;
-          data = signedIn.data;
+      const signedIn = await supabase.auth.signInWithPassword({ ...identity, password: loginForm.pin });
+      let data = signedIn.data;
+      if (identity.phone && signedIn.error && (signedIn.error.code === "phone_provider_disabled" || /phone logins are disabled/i.test(signedIn.error.message))) {
+        const trial = await supabase.functions.invoke("we4all-trial-otp-auth", {
+          body: { action: "trial_pin_login", phone: identity.phone, pin: loginForm.pin }
+        });
+        if (trial.error || !trial.data?.session?.access_token || !trial.data?.session?.refresh_token) {
+          throw new Error("Mobile sign-in is unavailable for this account. Use your verified email or contact WE4ALL support.");
         }
-        if (biometricEnabled && Capacitor.isNativePlatform()) {
-          try {
-            await BiometricAuth.authenticate({ reason: "Confirm your WE4ALL sign-in", cancelTitle: "Use PIN" });
-          } catch (biometricError) {
-            await supabase.auth.signOut({ scope: "local" });
-            throw new Error(biometricError?.message || "Biometric check was cancelled. Sign in again with your PIN.");
-          }
+        const { error } = await supabase.auth.setSession({
+          access_token: trial.data.session.access_token,
+          refresh_token: trial.data.session.refresh_token
+        });
+        if (error) throw error;
+        data = trial.data;
+      } else if (signedIn.error) {
+        throw new Error("Could not sign in. Check your login and PIN or use Forgot PIN.");
+      }
+      if (biometricEnabled && Capacitor.isNativePlatform()) {
+        try {
+          await BiometricAuth.authenticate({ reason: "Confirm your WE4ALL sign-in", cancelTitle: "Use PIN" });
+        } catch (error) {
+          await supabase.auth.signOut({ scope: "local" });
+          throw new Error(error?.message || "Biometric check was cancelled. Sign in again with your PIN.");
         }
       }
       const user = data?.user;
@@ -554,7 +507,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       const baseUser = {
         id: user.id,
         authUserId: user.id,
-        phone: user.phone || profile?.phone || phone.replace("+91", ""),
+        phone: user.phone || profile?.phone || "",
         fullName: profile?.full_name || user.user_metadata?.full_name || "",
         businessName: profile?.business_name || user.user_metadata?.business_name || "",
         area: profile?.area || user.user_metadata?.area || "",
@@ -598,10 +551,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
       setCurrentUser?.(customer);
       setActivePortal?.("customer");
       onSelectRole?.("customer");
-      setFormFeedback({ type: "success", message: "Phone verified. Your WE4ALL customer account is connected to Supabase." });
+      setFormFeedback({ type: "success", message: "Signed in to your WE4ALL account." });
       setSubTab("account_details");
     } catch (error) {
-      setFormFeedback({ type: "error", message: error?.message || "OTP verification failed." });
+      setFormFeedback({ type: "error", message: error?.message || "Sign-in failed." });
     } finally {
       setOtpState((s) => ({ ...s, busy: false }));
     }
@@ -619,8 +572,8 @@ export default function OwnerAccountProfile(rawProps = {}) {
         return;
       }
     }
-    if (!otpState.sent || otpState.token.trim().length < 6) {
-      setFormFeedback({ type: "error", message: "Request an SMS OTP and enter the six-digit code." });
+    if (!otpState.sent || !/^\d{6,10}$/.test(otpState.token.trim())) {
+      setFormFeedback({ type: "error", message: "Request a registration code and enter the code you received." });
       return;
     }
     try {
@@ -655,22 +608,22 @@ export default function OwnerAccountProfile(rawProps = {}) {
         if (sessionError) throw sessionError;
         data = trialData;
       } else {
-        const verified = await supabase.auth.verifyOtp({ phone: otpState.phone, token: otpState.token.trim(), type: "sms" });
+        const verified = await supabase.auth.verifyOtp({ email: otpState.email, token: otpState.token.trim(), type: "signup" });
         if (verified.error) throw verified.error;
         data = verified.data;
       }
       const user = data?.user;
       if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified account.");
-      if (!isTrialRegistration) {
-        const pinUpdate = await supabase.auth.updateUser({ password: regForm.pin });
-        if (pinUpdate.error) throw pinUpdate.error;
+      if (!isTrialRegistration && (!user.email_confirmed_at || user.email !== otpState.email)) {
+        await supabase.auth.signOut({ scope: "local" });
+        throw new Error("The registration email could not be confirmed.");
       }
       setTrialChallengeId("");
       const profilePayload = {
         user_id: user.id,
         full_name: regForm.fullName.trim(),
         business_name: regForm.businessName.trim(),
-        phone: user.phone || otpState.phone,
+        phone: user.phone || accountLoginIdentity(regForm.phone)?.phone || "",
         area: regForm.area || "",
         updated_at: new Date().toISOString()
       };
@@ -679,7 +632,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
       const customer = {
         id: user.id, authUserId: user.id,
-        phone: user.phone || otpState.phone.replace("+91", ""),
+        phone: profilePayload.phone,
         fullName: regForm.fullName.trim(),
         businessName: regForm.businessName.trim(),
         area: regForm.area || "",
@@ -894,73 +847,23 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 </select>
               </div>
 
-              <div>
-                <label className="text-[10px] text-slate-400 font-bold block mb-1">Mobile Number *</label>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  maxLength={10}
-                  value={loginForm.identifier}
-                  onChange={(e) => setLoginForm({ ...loginForm, identifier: cleanPhoneDigits(e.target.value) })}
-                  placeholder="10-digit mobile number"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
-                />
-              </div>
-
-              {loginMethod === "pin" && (
-                <label className="block text-[10px] text-slate-400 font-bold">6-digit sign-in PIN *
-                  <input type={showPinText ? "text" : "password"} inputMode="numeric" autoComplete="current-password" maxLength={6} value={loginForm.pin} onChange={(e) => setLoginForm({ ...loginForm, pin: cleanPinDigits(e.target.value).slice(0, 6) })} placeholder="••••••" className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-emerald-300 font-mono text-center tracking-widest text-sm font-black" />
+              {loginMethod === "pin" ? <>
+                <label className="block text-[10px] text-slate-400 font-bold">Mobile number or verified email
+                  <input type="text" autoComplete="username" maxLength={254} value={loginForm.identifier} onChange={(event) => setLoginForm({ ...loginForm, identifier: event.target.value })} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
                 </label>
-              )}
-
-              {loginMethod === "otp" && (
-                <div className="space-y-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
-                  <button
-                    type="button"
-                    disabled={otpState.busy}
-                    onClick={sendPhoneOtp}
-                    className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black rounded-xl px-3 py-2"
-                  >
-                    {otpState.busy ? "Working…" : otpState.sent ? "Resend SMS OTP" : "Send SMS OTP"}
-                  </button>
-                  {otpState.sent && (
-                    <input
-                      ref={otpInputRef}
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      aria-label="Six-digit phone verification code"
-                      maxLength={6}
-                      value={otpState.token}
-                      onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
-                      placeholder={trialChallengeId ? "Server-generated trial code" : "Enter 6-digit SMS code"}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center font-black tracking-widest"
-                    />
-                  )}
-                  <p className="text-[10px] text-slate-400">{trialChallengeId ? "Trial-only code generated by the WE4ALL server. It does not verify phone ownership and must not be used for real registrations." : "Codes are issued and verified by Supabase Auth. OTP is used for registration or PIN recovery; normal sign-in uses your PIN."}</p>
+                <label className="block text-[10px] text-slate-400 font-bold">Six-digit PIN
+                  <input type={showPinText ? "text" : "password"} inputMode="numeric" autoComplete="current-password" maxLength={6} value={loginForm.pin} onChange={(event) => setLoginForm({ ...loginForm, pin: cleanPinDigits(event.target.value).slice(0, 6) })} className="mt-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
+                </label>
+                <button type="button" onClick={handleLoginSubmit} disabled={otpState.busy || loginForm.pin.length !== 6 || !accountLoginIdentity(loginForm.identifier)} className="w-full bg-emerald-500 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl">
+                  {otpState.busy ? "Signing in…" : "Sign in securely"}
+                </button>
+                <div className="flex flex-wrap gap-4 text-xs text-emerald-300">
+                  <button type="button" className="underline" onClick={() => { setFormFeedback({}); setLoginMethod("reset"); }}>Forgot PIN</button>
+                  <button type="button" className="underline" onClick={() => { setFormFeedback({}); setLoginMethod("identifier"); }}>Find my login</button>
+                  <button type="button" className="underline" onClick={() => { setFormFeedback({}); setLoginMethod("backup"); }}>Use backup code</button>
                 </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleLoginSubmit}
-                disabled={otpState.busy || (loginMethod === "pin" && (loginForm.pin.length !== 6 || cleanPhoneDigits(loginForm.identifier).length !== 10)) || (loginMethod === "otp" && (!otpState.sent || otpState.token.length !== 6 || loginForm.pin.length !== 6))}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl cursor-pointer shadow-lg text-xs"
-              >
-                {loginMethod === "otp" ? "Verify phone & set PIN →" : "Sign in securely →"}
-              </button>
-              <button type="button" onClick={() => { const next = loginMethod === "pin" ? "otp" : "pin"; setLoginMethod(next); setOtpState({ sent: false, phone: "", token: "", busy: false }); setFormFeedback({ type: "", message: "" }); }} className="w-full text-emerald-300 text-[10px] font-bold underline">
-                {loginMethod === "otp" ? "Back to PIN login" : "First sign-in or forgot PIN? Verify phone once"}
-              </button>
-              {loginMethod === "otp" && (
-                <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-[10px] text-slate-300">
-                  <button type="button" disabled={otpState.busy} onClick={sendPhoneOtp} className="w-full rounded-xl bg-amber-400 px-3 py-2 font-black text-slate-950">{otpState.busy ? "Sending…" : otpState.sent ? "Resend phone code" : "Send one-time phone code"}</button>
-                  {otpState.sent && <input ref={otpInputRef} aria-label="Phone verification code" type="text" inputMode="numeric" autoComplete="one-time-code" autoCorrect="off" spellCheck={false} maxLength={6} value={otpState.token} onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })} placeholder="6-digit verification code" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-center font-mono tracking-widest text-white" />}
-                  <p>OTP is used only to create an account or recover a forgotten PIN. Normal sign-in uses your PIN.</p>
-                </div>
-              )}
+              </> : loginMethod === "backup" ? <BackupCodeForm onBack={() => setLoginMethod("pin")} /> :
+                <AccountRecovery key={loginMethod} mode={loginMethod} onBack={() => setLoginMethod("pin")} />}
             </div>
           ) : (
             /* REGISTRATION VIEW */
@@ -1025,13 +928,19 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 </fieldset>
               )}
 
+              {!trialOtpModeEnabled && <label className="block text-[10px] text-slate-300 font-bold">Email for sign-in and recovery
+                <input type="email" autoComplete="email" maxLength={254} disabled={otpState.sent || otpState.busy} value={regForm.email} onChange={(event) => setRegForm({ ...regForm, email: event.target.value })} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
+              </label>}
               <input
                 type="tel"
+                autoComplete="tel-national"
                 maxLength={10}
+                disabled={otpState.sent || otpState.busy}
                 value={regForm.phone}
                 onChange={(e) => setRegForm({ ...regForm, phone: cleanPhoneDigits(e.target.value) })}
-                placeholder="Mobile number (optional contact only)"
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold" />
+                placeholder={trialOtpModeEnabled ? "Test mobile number" : "Contact mobile number (optional)"}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white font-bold"
+              />
 
                 <input
                 type="text"
@@ -1057,22 +966,22 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="text-[10px] text-slate-300 font-bold">Create 6-digit sign-in PIN *
-                  <input type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
+                  <input type="password" inputMode="numeric" autoComplete="new-password" disabled={otpState.sent || otpState.busy} maxLength={6} value={regForm.pin} onChange={(e) => setRegForm({ ...regForm, pin: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
                 </label>
                 <label className="text-[10px] text-slate-300 font-bold">Confirm PIN *
-                  <input type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={regForm.pinConfirm} onChange={(e) => setRegForm({ ...regForm, pinConfirm: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
+                  <input type="password" inputMode="numeric" autoComplete="new-password" disabled={otpState.sent || otpState.busy} maxLength={6} value={regForm.pinConfirm} onChange={(e) => setRegForm({ ...regForm, pinConfirm: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
                 </label>
               </div>
-              <p className="text-[10px] text-slate-400">You will use your mobile number and PIN for normal sign-in. Phone OTP is only for account creation and PIN recovery.</p>
+              <p className="text-[10px] text-slate-400">{trialOtpModeEnabled ? "Use your test mobile and PIN to sign in." : "Use your verified email and PIN to sign in. A contact mobile number does not become a sign-in number until verified."}</p>
 
               <div className="space-y-2">
                 <button
                   type="button"
                   disabled={otpState.busy}
-                  onClick={sendPhoneOtp}
+                  onClick={sendRegistrationCode}
                   className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
                 >
-                  {otpState.sent ? (trialChallengeId ? "Generate new trial code" : "Resend Registration OTP") : (trialOtpModeEnabled ? "Generate Trial OTP" : "Send Registration OTP")}
+                  {trialOtpModeEnabled ? "Generate private test code" : otpState.sent ? "Resend email code" : "Send registration email code"}
                 </button>
                 {otpState.sent && (
                   <input
@@ -1082,17 +991,18 @@ export default function OwnerAccountProfile(rawProps = {}) {
                     autoComplete="one-time-code"
                     autoCorrect="off"
                     spellCheck={false}
-                    aria-label="Six-digit registration OTP"
-                    maxLength={6}
+                    aria-label="Registration verification code"
+                    maxLength={10}
                     value={otpState.token}
-                    onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 6) })}
-                    placeholder={trialChallengeId ? "Server-generated trial code" : "Enter 6-digit SMS code"}
+                    onChange={(e) => setOtpState({ ...otpState, token: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                    placeholder={trialChallengeId ? "Server-generated test code" : "Enter email code"}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white text-center font-mono tracking-widest"
                   />
                 )}
+                {otpState.sent && <button type="button" className="text-xs text-emerald-300 underline" disabled={otpState.busy} onClick={() => { setOtpState({ sent: false, phone: "", token: "", busy: false }); setTrialChallengeId(""); }}>Change registration details</button>}
                 <button
                   type="button"
-                  disabled={otpState.busy || !otpState.sent || otpState.token.length !== 6}
+                  disabled={otpState.busy || !otpState.sent || !/^\d{6,10}$/.test(otpState.token)}
                   onClick={handleRegistrationSubmit}
                   className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl shadow text-xs"
                 >
@@ -1124,6 +1034,13 @@ export default function OwnerAccountProfile(rawProps = {}) {
               {biometricEnabled ? "Turn off biometric confirmation" : "Enable fingerprint / face confirmation"}
             </button>
           </div>
+          <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
+            <RecoveryEmailSettings />
+          </div>
+          <details className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
+            <summary className="mb-2 cursor-pointer text-xs font-bold">One-time backup codes</summary>
+            <BackupCodeForm enrollment />
+          </details>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800">
               <p className="text-[10px] text-slate-400">Account Holder Name</p>

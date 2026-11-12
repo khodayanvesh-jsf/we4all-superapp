@@ -8,14 +8,16 @@ const [ownerAccountSource, appSource] = await Promise.all([
   read("../src/App.jsx")
 ]);
 
-test("normal account login uses a server-verified phone PIN; OTP is for registration and recovery", () => {
-  assert.match(ownerAccountSource, /supabase\.auth\.signInWithOtp/);
-  assert.match(ownerAccountSource, /supabase\.auth\.verifyOtp/);
-  assert.match(ownerAccountSource, /supabase\.auth\.signInWithPassword\(\{ phone, password: loginForm\.pin \}\)/);
-  assert.match(ownerAccountSource, /OTP is used only to create an account or recover a forgotten PIN/);
-  assert.match(ownerAccountSource, /type: "sms"/);
-  assert.match(ownerAccountSource, /auth\.updateUser\(\{ password: regForm\.pin \}\)/);
+test("registration confirms email and normal sign-in uses a PIN", async () => {
+  const recovery = await read("../src/modules/AccountRecovery.jsx");
+  assert.match(ownerAccountSource, /supabase\.auth\.signUp\(\{ email, password: regForm\.pin/);
+  assert.match(ownerAccountSource, /supabase\.auth\.verifyOtp\(\{ email: otpState\.email/);
+  assert.match(ownerAccountSource, /supabase\.auth\.signInWithPassword\(\{ \.\.\.identity, password: loginForm\.pin/);
   assert.match(ownerAccountSource, /BiometricAuth\.authenticate/);
+  assert.match(recovery, /resetPasswordForEmail/);
+  assert.match(recovery, /shouldCreateUser: false/);
+  assert.match(recovery, /createIsolatedSupabaseClient/);
+  assert.doesNotMatch(recovery, /type: "sms"/);
 });
 
 test("registration creates a verified customer and submits partner applications as pending", () => {
@@ -104,7 +106,7 @@ test("trial OTP is server generated, short-lived and disabled unless an Edge sec
   const otpFunction = await read("../supabase/functions/we4all-trial-otp-auth/index.ts");
   const otpMigration = await read("../supabase/migrations/20261107180000_we4all_trial_otp_auth.sql");
   assert.match(ownerAccountSource, /we4all-trial-otp-auth/);
-  assert.match(ownerAccountSource, /VITE_WE4ALL_TRIAL_OTP_MODE === "true" \|\| import\.meta\.env\.DEV/);
+  assert.match(ownerAccountSource, /VITE_WE4ALL_TRIAL_OTP_MODE === "true";/);
   assert.match(otpFunction, /WE4ALL_TRIAL_OTP_ENABLED/);
   assert.match(otpFunction, /trial_code: code/);
   assert.match(otpFunction, /expires_at: new Date\(Date\.now\(\) \+ 2 \* 60 \* 1000\)/);

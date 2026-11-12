@@ -22,7 +22,6 @@ jobs:
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      CAPGO_PUBLIC_KEY: ${{ secrets.CAPGO_PUBLIC_KEY }}
     steps:
       - name: Checkout reviewed production source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -37,7 +36,6 @@ jobs:
           test -n "${ANDROID_KEYSTORE_PASSWORD:?Set ANDROID_KEYSTORE_PASSWORD}"
           test -n "${ANDROID_KEY_ALIAS:?Set ANDROID_KEY_ALIAS}"
           test -n "${ANDROID_KEY_PASSWORD:?Set ANDROID_KEY_PASSWORD}"
-          test -n "${CAPGO_PUBLIC_KEY:?Set the Capgo public encryption key}"
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -66,10 +64,8 @@ jobs:
           npm test
           npm run build
 
-      - name: Configure Capgo public key
-        run: |
-          npx --yes @capgo/cli@latest key save --key-data "$CAPGO_PUBLIC_KEY"
-          npx cap sync android
+      - name: Sync Android
+        run: npx cap sync android
 
       - name: Restore existing Android signing key
         shell: bash
@@ -96,7 +92,7 @@ jobs:
       - name: Upload signed release artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: WE4ALL-3.2.9-signed-android-${{ github.sha }}
+          name: WE4ALL-signed-android-${{ github.sha }}
           path: |
             android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

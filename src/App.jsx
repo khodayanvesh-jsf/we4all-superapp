@@ -380,19 +380,19 @@ function AppContent() {
       });
       if (latest?.error) throw new Error(latest.error);
       triggerToast(latest?.updateAvailable
-        ? "A Capgo update is available for this device."
+        ? "A WE4ALL update is available for this device."
         : latest?.nativeUpdaterRequired
           ? "OTA updates run inside the installed Android/iOS app."
-          : "WE4ALL is up to date on its Capgo channel.");
+          : "WE4ALL is up to date on its update channel.");
     } catch (error) {
-      triggerToast(error?.message || "Could not check the Capgo update channel.");
+      triggerToast(error?.message || "Could not check the WE4ALL update channel.");
     } finally {
       setCheckingUpdate(false);
     }
   };
 
   const handleRunOtaUpdate = async () => {
-    setOtaProgress({ pct: 5, msg: "Preparing Capgo signature-verified update..." });
+    setOtaProgress({ pct: 5, msg: "Preparing verified WE4ALL update..." });
     try {
       const updatedInfo = await performZeroLossOtaUpdate(
         appUpdateInfo.latestAvailableVersion,
@@ -408,39 +408,19 @@ function AppContent() {
     }
   };
 
-  // Check once on each native app launch. Queue signed Capgo bundles for the
-  // next safe background/relaunch; the native updater handles activation and
-  // notifyAppReady() rolls back a bundle that cannot start successfully.
+  // The native updater owns automatic download, activation, and rollback.
+  // This launch check only refreshes the About App display.
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || otaLaunchCheckStarted.current) return undefined;
     otaLaunchCheckStarted.current = true;
     let active = true;
-    const checkAndQueueLaunchUpdate = async () => {
-      try {
-        setCheckingUpdate(true);
-        const latest = await checkLiveCloudOtaManifest((payload) => {
-          if (active && payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
-        });
-        if (!active || latest?.error || !latest?.updateAvailable) return;
-        setOtaProgress({ pct: 5, msg: "A verified app update was found. Downloading it in the background…" });
-        const queued = await performZeroLossOtaUpdate(
-          latest.latestAvailableVersion,
-          latest.releaseNotes,
-          (stage) => { if (active) setOtaProgress(stage); },
-          (info) => { if (active) setAppUpdateInfo(info); }
-        );
-        if (active) setAppUpdateInfo(queued);
-      } catch (error) {
-        console.warn("WE4ALL automatic Capgo update check failed:", error?.message || error);
-      } finally {
-        if (active) {
-          setCheckingUpdate(false);
-          setOtaProgress(null);
-        }
-      }
+    void checkLiveCloudOtaManifest(({ appUpdateInfo }) => {
+      if (active) setAppUpdateInfo(appUpdateInfo);
+    });
+    return () => {
+      active = false;
+      otaLaunchCheckStarted.current = false;
     };
-    void checkAndQueueLaunchUpdate();
-    return () => { active = false; };
   }, []);
 
   const [accountSecurity, setAccountSecurity] = useState(
