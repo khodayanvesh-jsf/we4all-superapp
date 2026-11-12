@@ -77,7 +77,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   const isConsumerSelected = selectedRoleKey === "customer";
   // Private test builds may explicitly opt in. Public builds use email registration.
-  const trialOtpModeEnabled = import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true";
+  const [privateTestMode, setPrivateTestMode] = useState(false);
+  const [privateTestPass, setPrivateTestPass] = useState("");
+  const privateTestSession = useRef(null);
+  const trialOtpModeEnabled = !privateTestMode && import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true";
 
   const [loginForm, setLoginForm] = useState({ identifier: "", pin: "" });
 
@@ -333,7 +336,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
           terms_version: PARTNER_TERMS_VERSION
         }
       });
-      if (error) throw error;
+      if (error) throw new Error(await getFunctionResponseError(error, "Your documents could not be submitted."));
       if (data?.ok !== true) throw new Error(data?.error || "Your documents could not be submitted.");
       setPartnerApplication((current) => ({
         ...current,
@@ -438,6 +441,9 @@ export default function OwnerAccountProfile(rawProps = {}) {
       const result = otpState.sent && otpState.email === email
         ? await supabase.auth.resend({ type: "signup", email })
         : await supabase.auth.signUp({ email, password: regForm.pin, options: { data: metadata } });
+      if (result.error?.code === "email_address_not_authorized" || result.error?.code === "over_email_send_rate_limit") {
+        throw new Error("WE4ALL cannot send your email code right now. For a private trial, use a test pass issued by the Founder.");
+      }
       if (result.error) throw result.error;
       if (result.data?.session) {
         await supabase.auth.signOut({ scope: "local" });
@@ -572,7 +578,12 @@ export default function OwnerAccountProfile(rawProps = {}) {
         return;
       }
     }
-    if (!otpState.sent || !/^\d{6,10}$/.test(otpState.token.trim())) {
+    if (privateTestMode && (!regForm.fullName.trim() || !/^\d{6}$/.test(regForm.pin) || regForm.pin !== regForm.pinConfirm ||
+        (!privateTestSession.current && !/^[a-f0-9]{56}$/i.test(privateTestPass.trim())))) {
+      setFormFeedback({ type: "error", message: "Enter your name, two matching six-digit PINs and the Founder test pass." });
+      return;
+    }
+    if (!privateTestMode && (!otpState.sent || !/^\d{6,10}$/.test(otpState.token.trim()))) {
       setFormFeedback({ type: "error", message: "Request a registration code and enter the code you received." });
       return;
     }
@@ -580,7 +591,22 @@ export default function OwnerAccountProfile(rawProps = {}) {
       setOtpState((s) => ({ ...s, busy: true }));
       let data;
       const isTrialRegistration = Boolean(trialChallengeId);
-      if (isTrialRegistration) {
+      if (privateTestMode) {
+        if (!privateTestSession.current) {
+          const verified = await supabase.auth.verifyOtp({ token_hash: privateTestPass.trim(), type: "signup" });
+          if (verified.error) throw new Error("This test pass is invalid, expired, or already used. Ask the Founder for a fresh pass.");
+          const trialUser = verified.data?.user;
+          if (trialUser?.app_metadata?.we4all_trial_account !== true ||
+              !/^trial-[a-f0-9]{32}@trial\.we4all\.invalid$/.test(trialUser.email || "")) {
+            await supabase.auth.signOut({ scope: "local" });
+            throw new Error("Use the private pass issued for a WE4ALL trial account.");
+          }
+          privateTestSession.current = verified.data;
+        }
+        data = privateTestSession.current;
+        const { error: pinError } = await supabase.auth.updateUser({ password: regForm.pin });
+        if (pinError) throw pinError;
+      } else if (isTrialRegistration) {
         const { data: trialData, error } = await supabase.functions.invoke("we4all-trial-otp-auth", {
           body: {
             action: "verify", phone: otpState.phone, challenge_id: trialChallengeId,
@@ -614,7 +640,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       }
       const user = data?.user;
       if (!user?.id || !data?.session?.access_token) throw new Error("Supabase did not return a verified account.");
-      if (!isTrialRegistration && (!user.email_confirmed_at || user.email !== otpState.email)) {
+      if (!privateTestMode && !isTrialRegistration && (!user.email_confirmed_at || user.email !== otpState.email)) {
         await supabase.auth.signOut({ scope: "local" });
         throw new Error("The registration email could not be confirmed.");
       }
@@ -670,6 +696,10 @@ export default function OwnerAccountProfile(rawProps = {}) {
       }
 
       const activation = await activateSupabaseAccount(user.id);
+      if (privateTestMode && activation.ok) {
+        privateTestSession.current = null;
+        setPrivateTestPass("");
+      }
       if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
       if (activation.changed && typeof window !== "undefined") {
         window.location.reload();
@@ -848,7 +878,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
               </div>
 
               {loginMethod === "pin" ? <>
-                <label className="block text-[10px] text-slate-400 font-bold">Mobile number or verified email
+                <label className="block text-[10px] text-slate-400 font-bold">Mobile number, verified email, or test login
                   <input type="text" autoComplete="username" maxLength={254} value={loginForm.identifier} onChange={(event) => setLoginForm({ ...loginForm, identifier: event.target.value })} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
                 </label>
                 <label className="block text-[10px] text-slate-400 font-bold">Six-digit PIN
@@ -928,7 +958,20 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 </fieldset>
               )}
 
-              {!trialOtpModeEnabled && <label className="block text-[10px] text-slate-300 font-bold">Email for sign-in and recovery
+              {!privateTestSession.current && <button type="button" disabled={otpState.busy} onClick={() => {
+                setPrivateTestMode((value) => !value);
+                setPrivateTestPass("");
+                setTrialChallengeId("");
+                setOtpState({ sent: false, phone: "", token: "", busy: false });
+                setFormFeedback({});
+              }} className="text-xs text-emerald-300 underline">
+                {privateTestMode ? "Use regular registration" : "I have a Founder test pass"}
+              </button>}
+              {privateTestMode && <label className="block text-xs text-slate-300">Private test pass
+                <input type="password" autoComplete="off" disabled={otpState.busy || Boolean(privateTestSession.current)} value={privateTestPass}
+                  onChange={(event) => setPrivateTestPass(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-950 p-2.5 text-white" />
+              </label>}
+              {!privateTestMode && !trialOtpModeEnabled && <label className="block text-[10px] text-slate-300 font-bold">Email for sign-in and recovery
                 <input type="email" autoComplete="email" maxLength={254} disabled={otpState.sent || otpState.busy} value={regForm.email} onChange={(event) => setRegForm({ ...regForm, email: event.target.value })} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white" />
               </label>}
               <input
@@ -972,17 +1015,17 @@ export default function OwnerAccountProfile(rawProps = {}) {
                   <input type="password" inputMode="numeric" autoComplete="new-password" disabled={otpState.sent || otpState.busy} maxLength={6} value={regForm.pinConfirm} onChange={(e) => setRegForm({ ...regForm, pinConfirm: cleanPinDigits(e.target.value).slice(0, 6) })} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-center font-mono tracking-widest text-white" placeholder="••••••" />
                 </label>
               </div>
-              <p className="text-[10px] text-slate-400">{trialOtpModeEnabled ? "Use your test mobile and PIN to sign in." : "Use your verified email and PIN to sign in. A contact mobile number does not become a sign-in number until verified."}</p>
+              <p className="text-[10px] text-slate-400">{privateTestMode ? "Keep the test login supplied by the Founder and the PIN you create here." : trialOtpModeEnabled ? "Use your test mobile and PIN to sign in." : "Use your verified email and PIN to sign in. A contact mobile number does not become a sign-in number until verified."}</p>
 
               <div className="space-y-2">
-                <button
+                {!privateTestMode && <button
                   type="button"
                   disabled={otpState.busy}
                   onClick={sendRegistrationCode}
                   className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-black py-2 rounded-xl"
                 >
                   {trialOtpModeEnabled ? "Generate private test code" : otpState.sent ? "Resend email code" : "Send registration email code"}
-                </button>
+                </button>}
                 {otpState.sent && (
                   <input
                     ref={otpInputRef}
@@ -1002,11 +1045,11 @@ export default function OwnerAccountProfile(rawProps = {}) {
                 {otpState.sent && <button type="button" className="text-xs text-emerald-300 underline" disabled={otpState.busy} onClick={() => { setOtpState({ sent: false, phone: "", token: "", busy: false }); setTrialChallengeId(""); }}>Change registration details</button>}
                 <button
                   type="button"
-                  disabled={otpState.busy || !otpState.sent || !/^\d{6,10}$/.test(otpState.token)}
+                  disabled={otpState.busy || (!privateTestMode && (!otpState.sent || !/^\d{6,10}$/.test(otpState.token)))}
                   onClick={handleRegistrationSubmit}
                   className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl shadow text-xs"
                 >
-                  Verify OTP &amp; Create Account →
+                  {privateTestMode ? "Create test account" : "Verify code and create account"}
                 </button>
               </div>
             </div>

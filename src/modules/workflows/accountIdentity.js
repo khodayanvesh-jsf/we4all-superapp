@@ -6,6 +6,8 @@ export function realAccountEmail(value) {
 }
 
 export function accountLoginIdentity(value) {
+  const login = String(value || "").trim().toLowerCase();
+  if (/^trial-[0-9a-f]{32}$/.test(login)) return { email: login + "@trial.we4all.invalid" };
   const email = realAccountEmail(value);
   if (email) return { email };
   const text = String(value || "").trim();

@@ -188,9 +188,49 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
     return json({ ok: true, removed: true, retained_history: true });
   }
 
+  if (body.action === "create_test_pass") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Only the Founder can issue test passes" }, 403);
+    const login = "trial-" + crypto.randomUUID().replaceAll("-", "");
+    const email = login + "@trial.we4all.invalid";
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: "signup", email, password: crypto.randomUUID() + crypto.randomUUID(),
+      options: { data: { full_name: "WE4ALL trial account" } }
+    });
+    if (error || !data.user?.id || !data.properties?.hashed_token) {
+      console.error("Test pass issuance failed:", error?.code || "MISSING_PASS");
+      return json({ ok: false, error: "Could not issue the test pass. Try again." }, 503);
+    }
+    const { error: markerError } = await admin.auth.admin.updateUserById(data.user.id, {
+      app_metadata: { we4all_trial_account: true, we4all_trial_issued_by: reviewerId }
+    });
+    if (markerError) return json({ ok: false, error: "Could not enable the test account. Issue a new pass." }, 503);
+    return json({ ok: true, login, code: data.properties.hashed_token });
+  }
+
+  if (body.action === "listing_review") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Only the Founder can review products" }, 403);
+    const id = String(body.listing_id || "");
+    const decision = body.decision;
+    if (!/^[0-9a-f-]{36}$/i.test(id) || (decision !== "approved" && decision !== "rejected")) {
+      return json({ ok: false, error: "Select a pending product and a decision" }, 400);
+    }
+    const { data, error } = await admin.rpc("we4all_review_catalog_item", {
+      p_catalog_item_id: id, p_decision: decision, p_reviewer_id: reviewerId
+    });
+    if (error) {
+      if (error.code === "40001" || error.code === "P0002") {
+        return json({ ok: false, error: "This product is no longer pending. Refresh the list." }, 409);
+      }
+      console.error("Catalog review failed:", error.code);
+      return json({ ok: false, error: "Product review did not save. Try again." }, 503);
+    }
+    if (data?.ok !== true) return json({ ok: false, error: "Product review was not confirmed" }, 503);
+    return json(data);
+  }
+
   if (body.action === "listings_list") {
     if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to manage listings" }, 403);
-    const { data, error } = await admin.from("we4all_catalog_items").select("id,partner_id,title,item_type,approval_status,is_active,updated_at").order("updated_at", { ascending: false }).limit(250);
+    const { data, error } = await admin.from("we4all_catalog_items").select("id,partner_id,title,item_type,category_key,price_inr,stock_quantity,approval_status,is_active,updated_at").order("updated_at", { ascending: false }).limit(250);
     if (error) return json({ ok: false, error: "Could not load product and service listings" }, 500);
     return json({ ok: true, listings: data || [] });
   }
@@ -346,15 +386,13 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
 
     const profileByUserId = new Map(profiles.map((profile) => [profile.user_id, profile]));
     const applicantUserResults = await Promise.all(userIds.map((userId) => admin.auth.admin.getUserById(userId)));
-    const trialPhoneByUserId = new Map(userIds.map((userId, index) => [
-      userId,
-      applicantUserResults[index]?.data?.user?.user_metadata?.trial_phone_verification === true
-    ]));
+    const authUserById = new Map(userIds.map((userId, index) => [userId, applicantUserResults[index]?.data?.user]));
     const trialApprovalOverrideAllowed = adminRole === "founder" &&
       Deno.env.get("WE4ALL_TRIAL_OTP_ENABLED") === "true" &&
       Deno.env.get("WE4ALL_TRIAL_OTP_ENV") === "preview";
     const applicationsWithKycLinks = await Promise.all(scopedApplications.map(async (application) => {
       const kyc = application.application_payload?.kyc || {};
+      const applicant = authUserById.get(application.user_id);
       const files = kyc.files && typeof kyc.files === "object" ? kyc.files : {};
       const documentUrls: Record<string, string> = {};
       const documentErrors: Record<string, string> = {};
@@ -374,7 +412,9 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
       return {
         ...application,
         profile: profileByUserId.get(application.user_id) || null,
-        trial_phone_verification: trialPhoneByUserId.get(application.user_id) === true,
+        founder_test_account: adminRole === "founder" && applicant?.app_metadata?.we4all_trial_account === true &&
+          Boolean(applicant?.app_metadata?.we4all_trial_issued_by),
+        trial_phone_verification: applicant?.user_metadata?.trial_phone_verification === true,
         trial_approval_override_allowed: trialApprovalOverrideAllowed,
         kyc_document_urls: documentUrls,
         kyc_document_errors: documentErrors

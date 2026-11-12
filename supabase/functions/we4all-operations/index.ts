@@ -9,8 +9,7 @@ async function approvedPartner(admin:any,userId:string,type:string){
  const {data,error}=await admin.from("we4all_partners").select("id,partner_type,display_name,zone_id,vehicle_class,availability_rules").eq("owner_user_id",userId).eq("partner_type",type).eq("approval_status","approved").maybeSingle();
  if(error)throw new Error("PARTNER_LOOKUP_FAILED");return data;
 }
-Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
- if(req.method==="OPTIONS")return new Response("ok",{headers:CORS});
+const handleOperations = withSupabase({ auth: "user" }, async (req: Request, ctx) => {
  if(req.method!=="POST")return json(405,{ok:false,error:"METHOD_NOT_ALLOWED"});
  const userId=ctx.jwtClaims?.sub||ctx.userClaims?.sub||ctx.userClaims?.id;
  const user=userId?{id:userId,app_metadata:ctx.jwtClaims?.app_metadata||{}}:null;
@@ -44,7 +43,7 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
   if(!uuid(bookingId)||!uuid(partnerId))return fail("INVALID_BOOKING_REVIEW");
   const {data:p,error}=await admin.from("we4all_partners").select("id,partner_type").eq("id",partnerId).eq("owner_user_id",user.id).eq("approval_status","approved").maybeSingle();
   if(error||!p)return fail("PARTNER_OWNERSHIP_REQUIRED",403);
-  const role=p.partner_type,authorized=(role==="service_provider"&&has("service_provider"))||(role==="labour"&&has("labour"))||(role==="decorator"&&has("decorator"))||(role==="function_hall"&&(has("decorator")||founder));
+  const role=p.partner_type,authorized=(role==="service_provider"&&has("service_provider"))||(role==="decorator"&&has("decorator"))||(role==="function_hall"&&(has("decorator")||founder));
   if(!authorized)return fail("APPROVED_PARTNER_REQUIRED",403);
   const total=Number(body.quotedTotalInr),advance=Number(body.advanceRequiredInr||0);
   if(!Number.isFinite(total)||total<=0||!Number.isFinite(advance)||advance<0||advance>total)return fail("INVALID_BOOKING_QUOTE");
@@ -76,11 +75,20 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
   const id=String(body.partnerId||"");if(!uuid(id))return fail("INVALID_PARTNER_ID");
   const {data:p,error}=await admin.from("we4all_partners").select("id,partner_type,availability_rules").eq("id",id).eq("owner_user_id",user.id).eq("approval_status","approved").maybeSingle();
   if(error||!p)return fail("PARTNER_OWNERSHIP_REQUIRED",403);
-  const role=p.partner_type,authorized=(role==="service_provider"&&has("service_provider"))||(role==="decorator"&&has("decorator"))||(role==="function_hall"&&(has("decorator")||founder));
+  const role=p.partner_type,authorized=(role==="service_provider"&&has("service_provider"))||(role==="labour"&&has("labour"))||(role==="decorator"&&has("decorator"))||(role==="function_hall"&&(has("decorator")||founder));
   if(!authorized)return fail("APPROVED_PARTNER_REQUIRED",403);
-  const incomingRules=obj(body.availabilityRules);const rules={...obj(p.availability_rules),...incomingRules};if(JSON.stringify(rules).length>10000)return fail("AVAILABILITY_RULES_TOO_LARGE");
-  const {error:updateError}=await admin.from("we4all_partners").update({availability_rules:rules,updated_at:new Date().toISOString()}).eq("id",id).eq("owner_user_id",user.id);
-  if(updateError)return fail("AVAILABILITY_SAVE_FAILED",500);
+  const incoming=obj(body.availabilityRules);
+  const { labourProfile, ...otherRules } = incoming;
+  if(role==="labour"){
+    const profile=obj(labourProfile);
+    const name=String(profile.name||"").trim();
+    const size=Number(profile.toliSize),wage=Number(profile.fullDayWage);
+    if(!name||name.length>100||!Number.isInteger(size)||size<1||size>100||!Number.isFinite(wage)||wage<0||wage>100000)
+      return fail("INVALID_LABOUR_PROFILE");
+  }
+  const rules={...obj(p.availability_rules),...(role==="labour" ? {labourProfile} : otherRules)};if(JSON.stringify(rules).length>10000)return fail("AVAILABILITY_RULES_TOO_LARGE");
+  const {data:updated,error:updateError}=await admin.from("we4all_partners").update({availability_rules:rules,updated_at:new Date().toISOString()}).eq("id",id).eq("owner_user_id",user.id).eq("approval_status","approved").select("id").maybeSingle();
+  if(updateError||!updated)return fail("AVAILABILITY_SAVE_FAILED",500);
   return json(200,{ok:true,partnerId:id,availabilityRules:rules});
  }
  case "create_dispatch":{
@@ -93,9 +101,7 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
   if(!validIdem)return fail("IDEMPOTENCY_KEY_REQUIRED");
   const pickup=obj(body.pickupLocation),dropoff=obj(body.dropoffLocation),details=obj(body.parcelDetails),vehicle=String(body.vehicleClass||"");
   const weight=Number(details.weightKg||0);
-  const maxWeightByVehicle:Record<string,number>={"2W":45,"3W":300,"4W":2000};
-  const maxWeight=maxWeightByVehicle[vehicle]||0;
-  if(!maxWeight||!Object.keys(pickup).length||!Object.keys(dropoff).length||!Number.isFinite(weight)||weight<=0||weight>maxWeight)return fail("INVALID_P2P_VEHICLE_CAPACITY");
+  if(!["2W","3W","4W"].includes(vehicle)||!Object.keys(pickup).length||!Object.keys(dropoff).length||!Number.isFinite(weight)||weight<=0||weight>2000)return fail("INVALID_P2P_REQUEST");
   const {data:existing}=await admin.from("we4all_p2p_deliveries").select("id,status").eq("customer_user_id",user.id).eq("idempotency_key",idem).maybeSingle();
   if(existing)return json(200,{ok:true,duplicate:true,delivery_id:existing.id,status:existing.status});
   const {data,error}=await admin.from("we4all_p2p_deliveries").insert({customer_user_id:user.id,zone_id:String(body.zoneId||"adilabad_master"),vehicle_class:vehicle,pickup_location:pickup,dropoff_location:dropoff,parcel_details:details,idempotency_key:idem}).select("id,status,vehicle_class").single();
@@ -256,5 +262,8 @@ Deno.serve(withSupabase({ auth: "user" }, async (req: Request, ctx) => {
  default:return fail("UNSUPPORTED_OPERATIONS_ACTION");
  }
  }catch(error){const message=error?.message||"OPERATIONS_REQUEST_FAILED";const conflict=/UNAVAILABLE|ALREADY_CLAIMED|NOT_QUOTABLE|ALREADY_REVIEWED|BLOCKED/.test(message);const forbidden=/REQUIRED|OWNERSHIP|MISMATCH|NOT_OWNED/.test(message);console.error("WE4ALL operations:",message.slice(0,180));return fail(message.replace(/[^A-Z0-9_]/g,"_").slice(0,100),conflict?409:forbidden?403:400);}
-}));
+});
+Deno.serve((req: Request) => req.method === "OPTIONS"
+ ? new Response(null,{status:204,headers:CORS})
+ : handleOperations(req));
 async function approvedPartnerById(admin:any,id:string,type:string){const {data,error}=await admin.from("we4all_partners").select("id,partner_type,zone_id").eq("id",id).eq("partner_type",type).eq("approval_status","approved").maybeSingle();if(error)throw new Error("PARTNER_LOOKUP_FAILED");return data;}

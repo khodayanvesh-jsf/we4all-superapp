@@ -1,3 +1,4 @@
+
 create or replace function public.we4all_upsert_rider_location_ping(
   p_rider_user_id uuid,
   p_longitude double precision,
@@ -40,8 +41,10 @@ begin
     extensions.st_setsrid(extensions.st_makepoint(p_longitude,p_latitude),4326)::extensions.geography,
     p_accuracy_m,p_heading_deg,p_speed_mps,now(),now()+interval '2 hours'
   ) returning id into v_ping_id;
+
   delete from public.we4all_rider_location_pings
    where rider_partner_id=v_partner.id and id<>v_ping_id and observed_at<now()-interval '2 hours';
+
   return jsonb_build_object('ok',true,'ping_id',v_ping_id,'observed_at',now(),'expires_at',now()+interval '2 hours');
 end $$;
 
