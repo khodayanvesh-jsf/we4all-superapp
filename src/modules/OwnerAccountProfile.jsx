@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
 import { useRef } from "react";
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";

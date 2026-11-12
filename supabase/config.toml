@@ -51,7 +51,3 @@ verify_jwt = false
 # A native update request is public. The response contains only release metadata.
 [functions.we4all-ota-staging]
 verify_jwt = false
-
-# Operations validates the session and approved role inside the handler.
-[functions.we4all-operations]
-verify_jwt = false

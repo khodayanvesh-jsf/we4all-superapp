@@ -104,3 +104,17 @@ export const REJECTION_REASONS = [
   "Incorrect Category Declaration",
   "Duplicate Brand Listing"
 ];
+
+export const INITIAL_MANDI_RATES = [
+  { id: "m1", item: "Adilabad Fresh Cotton / Quintal", price: 7250, unit: "qtl", categoryId: "cat_kisan" },
+  { id: "m2", item: "Local Red Onion (A-Grade)", price: 32, unit: "kg", categoryId: "cat_veg" },
+  { id: "m3", item: "Farm Fresh Tomato", price: 24, unit: "kg", categoryId: "cat_veg" },
+  { id: "m4", item: "Sona Masoori Rice (25kg Bag)", price: 1320, unit: "bag", categoryId: "cat_grocery" }
+];
+
+export const TOWN_LANDMARK_PRESETS = [
+  { id: "lm1", label: "Adilabad RTC Bus Stand -> Collectorate Chowk", pickup: "Adilabad RTC Bus Stand", drop: "Collectorate Chowk, Adilabad" },
+  { id: "lm2", label: "Adilabad Railway Station -> RIMS Hospital", pickup: "Adilabad Railway Station", drop: "RIMS Hospital, Adilabad" },
+  { id: "lm3", label: "Gandhi Park -> Subhash Nagar Market", pickup: "Gandhi Park, Adilabad", drop: "Subhash Nagar, Adilabad" },
+  { id: "lm4", label: "Mavala Park Gate -> Dasnapur Chowk", pickup: "Mavala Park Gate, Adilabad", drop: "Dasnapur, Adilabad" }
+];

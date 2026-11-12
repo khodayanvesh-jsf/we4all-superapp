@@ -1,2 +1,4 @@
-This file is generated with the exact branch, commit and export time inside the GitHub Actions source package.
-For a Git clone, run: git rev-parse HEAD
+Repository: khodayanvesh-jsf/we4all-superapp
+Branch: codex/we4all-real-trial
+Commit: fe127eeabc258d429c08f3aed69b748f3d1b6e09
+Exported: 2026-11-12T04:27:06Z

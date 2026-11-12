@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { loadCloudAndLocalState, saveCloudAndLocalState } from "../supabaseClient";
 
 export default function ActionAndErrorFeedbackLayer({ children }) {
