@@ -118,6 +118,7 @@ export async function probeSupabaseConnection() {
     return {
       configured: false,
       backendReachable: false,
+      dataApiReachable: false,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
@@ -137,6 +138,7 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: false,
+      dataApiReachable: false,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
@@ -148,6 +150,7 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: false,
+      dataApiReachable: false,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
@@ -155,11 +158,15 @@ export async function probeSupabaseConnection() {
     };
   }
 
+  const { error: dataApiError } = await supabase
+    .from("we4all_catalog_items").select("id", { head: true }).limit(1);
+  const dataApiReachable = !dataApiError;
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) {
     return {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
@@ -171,10 +178,11 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: false,
       accountLinked: false,
       syncReady: false,
-      message: "Supabase is reachable. Sign in with SMS OTP to enable private account sync."
+      message: "Account sync starts after sign-in."
     };
   }
 
@@ -184,6 +192,7 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: true,
       accountLinked: false,
       syncReady: false,
@@ -196,6 +205,7 @@ export async function probeSupabaseConnection() {
     const result = {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: true,
       accountLinked: true,
       syncReady: sync?.ok === true,
@@ -209,6 +219,7 @@ export async function probeSupabaseConnection() {
     return {
       configured: true,
       backendReachable: true,
+      dataApiReachable,
       authenticated: true,
       accountLinked: true,
       syncReady: false,
@@ -1315,3 +1326,102 @@ export async function quoteServerLabourEngagement({ engagementId, decision, agre
     engagementId, decision, agreedTotalInr: total
   });
 }
+
+export async function createServerP2PDelivery({
+  pickupLocation, dropoffLocation, parcelDetails, vehicleClass, zoneId = "adilabad_master", idempotencyKey
+}) {
+  const allowedVehicles = new Set(["2W", "3W", "4W"]);
+  if (!allowedVehicles.has(String(vehicleClass))) throw new Error("Choose Bike, Auto or 4W parcel vehicle.");
+  const pickup = pickupLocation && typeof pickupLocation === "object" ? pickupLocation : {};
+  const dropoff = dropoffLocation && typeof dropoffLocation === "object" ? dropoffLocation : {};
+  const details = parcelDetails && typeof parcelDetails === "object" ? parcelDetails : {};
+  const weight = Number(details.weightKg);
+  const key = String(idempotencyKey || "");
+  if (!pickup.address || !dropoff.address) throw new Error("Enter both pickup and delivery addresses.");
+  const maxWeightByVehicle = { "2W": 45, "3W": 300, "4W": 2000 };
+  const maxWeight = maxWeightByVehicle[String(vehicleClass)] || 0;
+  if (!Number.isFinite(weight) || weight <= 0 || !maxWeight || weight > maxWeight) {
+    throw new Error(maxWeight ? `${vehicleClass} vehicle capacity is ${maxWeight} kg. Choose a larger vehicle for this parcel.` : "Choose a valid delivery vehicle.");
+  }
+  if (key.length < 8 || key.length > 160) throw new Error("A valid retry-safe request key is required.");
+  return invokeWe4AllOperations("create_p2p_delivery", {
+    pickupLocation: pickup, dropoffLocation: dropoff, parcelDetails: details,
+    vehicleClass, zoneId, idempotencyKey: key
+  });
+}
+
+
+/** Issue an optional in-app test code for an already-assigned delivery. No SMS is sent. */
+export async function issueDeliveryTestOtp({ deliveryType, deliveryId }) {
+  if (!["M2C", "P2P", "TAXI"].includes(String(deliveryType))) throw new Error("Unsupported delivery type.");
+  if (!deliveryId) throw new Error("A delivery reference is required.");
+  return invokeWe4AllOperations("issue_delivery_test_otp", { deliveryType, deliveryId });
+}
+
+/** Assigned rider verifies the optional test code. This never completes a trip or pays out. */
+export async function verifyDeliveryTestOtp({ deliveryType, deliveryId, code }) {
+  if (!["M2C", "P2P", "TAXI"].includes(String(deliveryType))) throw new Error("Unsupported delivery type.");
+  if (!deliveryId || !/^\d{6}$/.test(String(code || ""))) throw new Error("Enter the six-digit customer test code.");
+  return invokeWe4AllOperations("verify_delivery_test_otp", { deliveryType, deliveryId, code: String(code) });
+}
+
+export async function loadPublishedDynamicModules({ portalTarget, zoneCode = "*" } = {}) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  let query = supabase.from("we4all_dynamic_modules")
+    .select("id,module_key,title,description,icon,category_key,portal_target,zone_codes,visibility_roles,sort_order,version,module_config")
+    .eq("status", "published")
+    .eq("is_public", true);
+  if (portalTarget) query = query.eq("portal_target", portalTarget);
+  const { data, error } = await query.order("sort_order", { ascending: true });
+  if (error) throw error;
+  return (data || []).filter((module) =>
+    !Array.isArray(module.zone_codes) || module.zone_codes.includes("*") || module.zone_codes.includes(zoneCode)
+  );
+}
+
+/** Founder-only list. The Edge Function validates the trusted app_metadata claim. */
+export async function listFounderDynamicModules() {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", { body: { action: "list" } });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Founder module access denied.");
+  return Array.isArray(data.modules) ? data.modules : [];
+}
+
+export async function saveFounderDynamicModule(moduleDraft) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", {
+    body: { action: "save_draft", ...moduleDraft }
+  });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Could not save module draft.");
+  return data.result;
+}
+
+export async function setFounderDynamicModuleStatus(moduleId, action) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  if (!["publish", "disable"].includes(action)) throw new Error("Unsupported module action.");
+  const { data, error } = await supabase.functions.invoke("we4all-module-admin", {
+    body: { action, moduleId }
+  });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error || "Could not update module status.");
+  return data.result;
+}
+
+/** Upload a rider's GPS fix only after the rider explicitly enables server sharing. */
+export async function submitRiderLocationPing({ longitude, latitude, accuracyM, headingDeg, speedMps }) {
+  const lon = Number(longitude), lat = Number(latitude);
+  if (!Number.isFinite(lon) || lon < -180 || lon > 180 || !Number.isFinite(lat) || lat < -90 || lat > 90) {
+    throw new Error("Invalid GPS coordinates.");
+  }
+  return invokeWe4AllOperations("rider_location_ping", {
+    longitude: lon, latitude: lat,
+    accuracyM: accuracyM != null && Number.isFinite(Number(accuracyM)) ? Number(accuracyM) : null,
+    headingDeg: headingDeg != null && Number.isFinite(Number(headingDeg)) ? Number(headingDeg) : null,
+    speedMps: speedMps != null && Number.isFinite(Number(speedMps)) ? Number(speedMps) : null
+  });
+}
+
+
+/** Public, column-limited approved Labour & Mistri Adda directory. */

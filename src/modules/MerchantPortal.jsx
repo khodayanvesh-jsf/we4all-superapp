@@ -178,34 +178,6 @@ export default function MerchantPortal({
     return renderAccountTab();
   }
 
-  const handleToggleLiveStock = async (product) => {
-    if (!currentUser?.partnerId || !product?.catalogItemId) {
-      onTriggerToast("This product is not linked to a verified live catalogue record.");
-      return;
-    }
-    const currentQuantity = Number(product.stockQuantity || 0);
-    const targetQuantity = currentQuantity > 0 ? 0 : 1;
-    const delta = targetQuantity - currentQuantity;
-    const idempotencyKey = globalThis.crypto?.randomUUID?.() || `stock-${product.catalogItemId}-${Date.now()}`;
-    try {
-      const result = await adjustMarketplaceStock({
-        partnerId: currentUser.partnerId,
-        catalogItemId: product.catalogItemId,
-        quantityDelta: delta,
-        idempotencyKey
-      });
-      const quantity = Number(result.stock_quantity);
-      setProducts((items) => (items || []).map((item) =>
-        item.catalogItemId === product.catalogItemId
-          ? { ...item, stockQuantity: quantity, inStock: quantity > 0 }
-          : item
-      ));
-      onTriggerToast(`Online stock saved. ${quantity > 0 ? "Available" : "Out of stock"} in the shared WE4ALL catalogue.`);
-    } catch (error) {
-      onTriggerToast(error?.message || "Stock update failed. No local success was recorded.");
-    }
-  };
-
   const handleConfirmHeavyAndLaborBill = (ord) => {
     const fees = heavyLaborFees[ord.id] || { heavyTransportFee: 0, laborFee: 0 };
     const heavyFee = Number(fees.heavyTransportFee || 0);

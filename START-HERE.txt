@@ -2,8 +2,8 @@ WE4ALL 3.3.1 development source — Windows setup
 
 For ongoing sync, download this repository (including the offline folder), then
 double-click offline\Sync-WE4ALL.cmd. It creates a separate Git clone under
-Documents\WE4ALL-Workspace, downloads the current review branch, and preserves
-your uncommitted changes. Open that folder in VS Code.
+Documents\WE4ALL-Workspace, downloads the current main branch, and stops if it finds
+uncommitted changes. Open that folder in VS Code.
 
 For a one-time GitHub Actions source ZIP: extract fully, open that folder in VS
 Code and run npm ci followed by npm run dev. A ZIP snapshot has no Git history;

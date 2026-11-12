@@ -1,14 +1,14 @@
 # WE4ALL Windows source sync and local backup
 
-The current review source is version **3.3.1** on branch `codex/we4all-real-trial`. It includes the stacked accounts, shop/rides, Windows sync, merchant trial, and KYC approval changes. The separate Labour and services branch is available in Git under origin. Its changes still need to be reconciled with this branch. The installed APK, production database and live website may still be on older versions. Nothing here publishes a release or changes production data.
+The WE4ALL source includes the web app, Android app, Supabase migrations and Edge Functions, and GitHub Actions workflows. The Windows launcher tracks the GitHub `main` branch by default. Live deployments and APKs are released separately.
 
 ## One-click Windows setup
 
 Install [Git for Windows](https://git-scm.com/download/win), [Node.js 22](https://nodejs.org/), and Visual Studio Code. Download this repository's source ZIP once, extract it fully, then double-click **`offline\Sync-WE4ALL.cmd`**. The script clones the current review source to `Documents\WE4ALL-Workspace` and runs `npm ci`. It prints the exact Git commit. Open that workspace folder in VS Code.
 
-For later updates, double-click the same command again from the updated workspace's `offline` folder. It fetches all GitHub branches and only fast-forwards the selected local branch. In VS Code, use the branch picker to see the other branches under origin. Existing copies created by the older sync script are upgraded to fetch all branches on their next sync. Local edits stop the sync with an explanation; save or commit them first. The latest launcher upgrades a clean `codex/we4all-offline-sync` checkout to `codex/we4all-real-trial` after verifying that its commit is in the trial branch history. If your existing checkout lives elsewhere, pass its path with `-Destination "C:\path\to\WE4ALL"`. Keep a separate destination for unrelated branches. If you prefer stable approved code after merge, run `offline\Sync-WE4ALL.ps1 -Branch main -Destination "$HOME\Documents\WE4ALL-Stable"` in PowerShell; keep the two copies separate.
+For later updates, run the same command from the updated workspace’s `offline` folder. It fetches all remote branches and only fast-forwards the selected local branch. A clean checkout on either older WE4ALL review branch can switch to `main` if its commit is already in the main branch history. The launcher stops when it finds local edits or separate commits. Use `-Destination "C:\path\to\WE4ALL"` for an existing clone outside the default folder. VS Code lists the other GitHub branches under `origin`.
 
-The GitHub Actions **Export WE4ALL offline source package** workflow also creates a commit-stamped ZIP and SHA-256 checksum for updates to this trial PR and pushes to `main`. Download from **Actions → Export WE4ALL offline source package → latest successful run → Artifacts**. This ZIP contains a source snapshot without Git history; use the sync command for future pulls. Artifacts expire after 30 days; the repository remains the long-term source.
+The GitHub Actions **Export WE4ALL offline source package** workflow also creates a commit-stamped ZIP and SHA-256 checksum for pull requests targeting `main` and pushes to `main`. Download from **Actions → Export WE4ALL offline source package → latest successful run → Artifacts**. This ZIP contains a source snapshot without Git history; use the sync command for future pulls. Artifacts expire after 30 days; the repository remains the long-term source.
 
 ## Work and test
 

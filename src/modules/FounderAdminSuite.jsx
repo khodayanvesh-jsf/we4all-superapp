@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import { validateFeePolicy } from "./workflows/feePolicies";
+import { listFounderDynamicModules, saveFounderDynamicModule, setFounderDynamicModuleStatus } from "../supabaseClient";
 import { listSubcategories } from "./workflows/subcategoryKeys";
 import {
   saveCloudAndLocalState,
@@ -125,6 +126,15 @@ export default function FounderAdminSuite({
   const safeSplitScreens = Array.isArray(splitScreens) ? splitScreens : [];
 
   const [adminDisplayMode, setAdminDisplayMode] = useState("web");
+  const [dynamicModules, setDynamicModules] = useState([]);
+  const [dynamicModulesLoading, setDynamicModulesLoading] = useState(false);
+  const [dynamicModulesError, setDynamicModulesError] = useState("");
+  const [dynamicModuleBusy, setDynamicModuleBusy] = useState(false);
+  const [dynamicModuleForm, setDynamicModuleForm] = useState({
+    moduleKey: "", title: "", description: "", icon: "grid", categoryKey: "custom",
+    portalTarget: "customer", zoneCodes: "*", visibilityRoles: "customer",
+    moduleConfig: JSON.stringify({ layout: "grid", components: [] }, null, 2)
+  });
   const [founderTab, setFounderTab] = useState("approvals");
   const [adminCredentialForm, setAdminCredentialForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
   const [adminCredentialMessage, setAdminCredentialMessage] = useState("");
@@ -787,6 +797,7 @@ export default function FounderAdminSuite({
     { id: "database", label: "2. 8-Table Master Database CRUD", badge: "Edit All Data" },
     { id: "categories", label: "3. Categories, Sub-Pills & Stock", badge: `${safeCategories.length} Cats` },
     { id: "founder_profile", label: "4. Founder Profile", badge: "My Details" },
+    { id: "modules", label: "Published Modules", badge: `${dynamicModules.length} Modules` },
     { id: "portal_users", label: "5. Portal Accounts", badge: `${managedUsers.filter((user) => user.portal_status === "active").length} Active` },
     { id: "geo_managers", label: "6. Geo Managers & Markets", badge: `${geoManagers.length} Managers` },
     { id: "security_server", label: "7. Admin Credentials & Data Server", badge: "PIN + Cloud" },
@@ -800,6 +811,69 @@ export default function FounderAdminSuite({
   useEffect(() => {
     if (adminAccess?.role === "city_manager" && founderTab !== "approvals") setFounderTab("approvals");
   }, [adminAccess?.role, founderTab]);
+
+  const refreshDynamicModules = async () => {
+    setDynamicModulesLoading(true);
+    setDynamicModulesError("");
+    try {
+      const rows = await listFounderDynamicModules();
+      setDynamicModules(rows);
+    } catch (error) {
+      setDynamicModulesError(error?.message || "Could not load Founder module registry.");
+    } finally {
+      setDynamicModulesLoading(false);
+    }
+  };
+
+  const handleSaveDynamicModuleDraft = async () => {
+    let moduleConfig;
+    try {
+      moduleConfig = JSON.parse(dynamicModuleForm.moduleConfig || "{}");
+    } catch {
+      setDynamicModulesError("Module configuration must be valid JSON.");
+      return;
+    }
+    setDynamicModuleBusy(true);
+    setDynamicModulesError("");
+    try {
+      await saveFounderDynamicModule({
+        moduleKey: dynamicModuleForm.moduleKey,
+        title: dynamicModuleForm.title,
+        description: dynamicModuleForm.description,
+        icon: dynamicModuleForm.icon,
+        categoryKey: dynamicModuleForm.categoryKey,
+        portalTarget: dynamicModuleForm.portalTarget,
+        zoneCodes: dynamicModuleForm.zoneCodes.split(",").map((value) => value.trim()).filter(Boolean),
+        visibilityRoles: dynamicModuleForm.visibilityRoles.split(",").map((value) => value.trim()).filter(Boolean),
+        isPublic: true,
+        moduleConfig
+      });
+      onTriggerToast("Dynamic module saved as a versioned draft. It is not public until you publish it.");
+      await refreshDynamicModules();
+    } catch (error) {
+      setDynamicModulesError(error?.message || "Could not save module draft.");
+    } finally {
+      setDynamicModuleBusy(false);
+    }
+  };
+
+  const handleDynamicModuleStatus = async (moduleId, action) => {
+    setDynamicModuleBusy(true);
+    setDynamicModulesError("");
+    try {
+      await setFounderDynamicModuleStatus(moduleId, action);
+      onTriggerToast(action === "publish" ? "Dynamic module published to eligible customers." : "Dynamic module disabled.");
+      await refreshDynamicModules();
+    } catch (error) {
+      setDynamicModulesError(error?.message || "Could not update module status.");
+    } finally {
+      setDynamicModuleBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (founderTab === "modules") refreshDynamicModules();
+  }, [founderTab]);
 
   const renderPartnerApprovalCard = (partner, partnerType) => {
     if (!partner) return null;
@@ -1098,6 +1172,7 @@ export default function FounderAdminSuite({
                 const kyc = payload.kyc || {};
                 const documentKeys = Object.keys(kyc.files || {});
                 const checklist = serverKycChecklist[application.id] || {};
+                const reason = (serverReviewReasons[application.id] || "").trim();
                 const allChecksComplete = ["identity", "role_proof", "payout_proof", "terms", "signature"].every((key) => checklist[key] === true);
                 const reviewItems = [
                   ["identity", "Identity document matches applicant"],
@@ -2010,7 +2085,7 @@ export default function FounderAdminSuite({
                 if (!quickStockForm.subCategoryBrand.trim()) return;
                 const newProd = {
                   id: `prod_${Date.now()}`,
-                  zoneId: item.marketId || item.zoneId || "local_market",
+                  zoneId: selectedZoneFilter || "local_market",
                   categoryId: quickStockForm.categoryId,
                   subCategoryBrand: quickStockForm.subCategoryBrand.trim(),
                   shopName: quickStockForm.shopName.trim() || "Sri Laxmi Supermart",

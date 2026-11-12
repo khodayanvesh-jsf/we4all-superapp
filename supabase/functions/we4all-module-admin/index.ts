@@ -21,6 +21,10 @@ const handler = withSupabase({ auth: "user" }, async (req: Request, ctx) => {
     return json({ ok: false, error: "FOUNDER_AUTHORIZATION_REQUIRED" }, 403);
   }
 
+  if (claims.aal !== "aal2" || claims.app_metadata?.we4all_bootstrap_required === true) {
+    return json({ ok: false, error: "FOUNDER_STEP_UP_REQUIRED" }, 403);
+  }
+
   let body: Record<string, unknown>;
   try { body = await req.json(); }
   catch { return json({ ok: false, error: "INVALID_JSON_BODY" }, 400); }

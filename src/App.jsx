@@ -33,6 +33,7 @@ import MerchantPortal from "./modules/MerchantPortal";
 import ServiceProviderPortal from "./modules/ServiceProviderPortal";
 import DecoratorPortal from "./modules/DecoratorPortal";
 import RiderCaptainPortal from "./modules/RiderCaptainPortal";
+import DynamicModuleRenderer from "./modules/DynamicModuleRenderer";
 const RideWorkspace = React.lazy(() => import("./modules/rides/RideWorkspace"));
 import { canOpenPartnerPortal, isCustomerVisibleListing, calculateDecoratorAdvance } from "./modules/workflows/portalRules";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
@@ -49,6 +50,9 @@ import {
   performZeroLossOtaUpdate,
   createMarketplaceOrder,
   createServerBooking,
+  createServerP2PDelivery,
+  issueDeliveryTestOtp,
+  loadPublishedDynamicModules,
   loadServerOperations,
   loadPublicLabourProviders,
   loadPublicServiceProviders,
@@ -719,8 +723,6 @@ function AppContent() {
     dropPin: "",
     distanceKm: 2.5
   });
-  const [taxiBookingBusy, setTaxiBookingBusy] = useState(false);
-  const [serviceBookingBusyId, setServiceBookingBusyId] = useState("");
 
 
   const [p2pParcelForm, setP2pParcelForm] = useState({
@@ -731,7 +733,6 @@ function AppContent() {
 
 
   const [orders, setOrders] = useState(savedCloud?.orders || []);
-  const checkoutIdempotencyKeyRef = useRef(null);
   const [activeOrderId, setActiveOrderId] = useState(null);
   const [liveOrderDrawerOpen, setLiveOrderDrawerOpen] = useState(false);
   const [serviceBookings, setServiceBookings] = useState(savedCloud?.serviceBookings || []);
@@ -954,142 +955,21 @@ function AppContent() {
 
   useEffect(() => {
     let active = true;
-    let channel = null;
-
-    const refreshCatalog = async () => {
+    const zoneCode = selectedZoneFilter || "*";
+    const refresh = async () => {
       try {
-        const liveProducts = await loadMarketplaceCatalog();
-        if (active) setProducts(liveProducts);
-      } catch (error) {
-        console.warn("WE4ALL live catalogue load failed:", error?.message || error);
-      }
-    };
-
-    const refreshServiceDirectory = async () => {
-      try {
-        const directory = await loadPublicServiceProviders();
-        if (active) setServiceProviders(directory);
-      } catch (error) {
-        console.warn("WE4ALL public service directory load failed:", error?.message || error);
-      }
-    };
-
-    const refreshLabourDirectory = async () => {
-      try {
-        const directory = await loadPublicLabourProviders();
-        if (active) setLabourWorkers(directory);
-      } catch (error) {
-        console.warn("WE4ALL approved Labour directory load failed:", error?.message || error);
-      }
-    };
-
-    const refreshDynamicModules = async () => {
-      try {
-        const modules = await loadPublishedDynamicModules({
-          portalTarget: "customer",
-          zoneCode: activeAddressObj?.zoneCode || activeAddressObj?.zoneId || "adilabad"
-        });
+        const modules = await loadPublishedDynamicModules({ portalTarget: "customer", zoneCode });
         if (active) setPublishedDynamicModules(modules.filter((module) =>
           !Array.isArray(module.visibility_roles) || module.visibility_roles.includes("customer") || module.visibility_roles.includes("*")
         ));
-      } catch (error) {
-        console.warn("WE4ALL published dynamic modules load failed:", error?.message || error);
+      } catch {
+        if (active) setPublishedDynamicModules([]);
       }
     };
-    const refreshOrders = async () => {
-      if (!currentUser?.authUserId) return;
-      try {
-        const liveOrders = await loadMarketplaceOrders(currentUser);
-        if (active) setOrders(liveOrders);
-      } catch (error) {
-        console.warn("WE4ALL shared orders load failed:", error?.message || error);
-      }
-    };
-
-    const refreshServerOperations = async () => {
-      if (!currentUser?.authUserId) return;
-      try {
-        const live = await loadServerOperations();
-        if (!active) return;
-        const inIndiaDate = (value) => value ? new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit"
-        }).format(new Date(value)) : "";
-        const inIndiaTime = (value) => value ? new Date(value).toLocaleTimeString("en-IN", {
-          timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true
-        }) : "";
-        setServiceBookings((live.bookings || []).filter((row) => row.booking_type === "service").map((row) => ({
-          id: row.id, serverBookingId: row.id, providerId: row.partner_id,
-          customerId: row.customer_user_id, status: row.status, paymentStatus: row.payment_status,
-          bookedDate: inIndiaDate(row.requested_start_at),
-          bookedSlot: `${inIndiaTime(row.requested_start_at)} - ${inIndiaTime(row.requested_end_at)}`,
-          customerName: currentUser.fullName || "WE4ALL Customer",
-          address: row.metadata?.address || "", bookingType: row.booking_type
-        })));
-        const labourRows = (live.labourEngagements || []).map((row) => {
-          const worker = (labourWorkers || []).find((item) => item.partnerId === row.labour_partner_id);
-          const duration = Number(row.requested_duration_hours || 8.5);
-          const site = row.worksite_address || {};
-          return {
-            id: row.id, workerId: row.labour_partner_id,
-            workerUserId: currentUser.role === "labour" ? currentUser.authUserId : null,
-            workerName: worker?.name || "Approved Labour Partner",
-            tradeId: row.trade_key, tradeName: worker?.tradeName || row.trade_key,
-            customerId: row.customer_user_id,
-            customerName: row.customer_user_id === currentUser.authUserId ? (currentUser.fullName || "Customer") : "Customer",
-            siteAddress: site.address || site.full_address || "",
-            workDate: inIndiaDate(row.requested_start_at),
-            shift: duration >= 8 ? "FULL_DAY" : "HALF_DAY",
-            workerCount: Number(row.worker_count || 1),
-            totalWage: row.agreed_total_inr == null ? null : Number(row.agreed_total_inr),
-            status: row.status, paymentStatus: row.payment_status,
-            requestedAt: row.created_at, serverRecord: true
-          };
-        });
-        const uniqueLabourRows = Array.from(new Map(labourRows.map((row) => [row.id, row])).values());
-        setLabourBookings(uniqueLabourRows);
-        setTaxiCart((live.rides || []).map((ride) => ({
-          id: ride.id, serverRideBookingId: ride.id, vehicle: ride.vehicle_class,
-          pickup: ride.pickup_location?.address || "", drop: ride.dropoff_location?.address || "",
-          status: ride.status, paymentStatus: ride.payment_status, fare: ride.quoted_total_inr || null
-        })));
-      } catch (error) {
-        console.warn("WE4ALL operational records refresh failed:", error?.message || error);
-      }
-    };
-
-    refreshCatalog();
-    refreshServiceDirectory();
-    refreshLabourDirectory();
-    refreshOrders();
-    refreshServerOperations();
-    refreshDynamicModules();
-
-    if (supabase) {
-      channel = supabase
-        .channel("we4all-marketplace-live")
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_catalog_items" }, refreshCatalog)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_partners" }, () => {
-          refreshServiceDirectory();
-          refreshLabourDirectory();
-        })
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_orders" }, refreshOrders)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_order_items" }, refreshOrders)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_bookings" }, refreshServerOperations)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_ride_bookings" }, refreshServerOperations)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_labour_engagements" }, refreshServerOperations)
-        .on("postgres_changes", { event: "*", schema: "public", table: "we4all_dynamic_modules" }, refreshDynamicModules)
-        .subscribe();
-    }
-
-    return () => {
-      active = false;
-      if (channel && supabase) supabase.removeChannel(channel);
-    };
-  }, [currentUser?.authUserId, currentUser?.role, currentUser?.partnerId]);
-
-  useEffect(() => {
-    checkoutIdempotencyKeyRef.current = null;
-  }, [merchantCart]);
+    refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [selectedZoneFilter]);
 
   useEffect(() => {
     return subscribeToRealtimeUpdates((remoteState) => {
@@ -1126,54 +1006,6 @@ function AppContent() {
     setAdminAccess(null);
     setViewMode("founder_web");
   };
-  const handleFounderAdminLogin = async () => {
-    const suppliedUsername = String(adminLoginForm.username || "").trim();
-    // Preserve the familiar Founder username while authenticating against the dedicated Supabase Auth identity.
-    const email = suppliedUsername.toLowerCase() === "admin"
-      ? "admin@we4all.com"
-      : suppliedUsername.toLowerCase();
-    const password = String(adminLoginForm.password || "");
-    setAdminLoginError("");
-    if (!email.includes("@") || password.length < 8) {
-      setAdminLoginError("Enter username admin (or the Founder email) and the current Supabase Founder password.");
-      return;
-    }
-    if (!supabase) {
-      setAdminLoginError("Supabase is not configured. Founder login cannot be verified.");
-      return;
-    }
-    setAdminLoginError("Checking secure Founder authorization…");
-    try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      if (authError) throw authError;
-      if (!authData?.session?.access_token || !authData?.user?.id) {
-        throw new Error("Supabase did not return a valid authenticated session.");
-      }
-      // The server verifies the signed JWT app_metadata.we4all_role claim.
-      const { data: founderCheck, error: founderError } = await supabase.functions.invoke("we4all-admin-review", {
-        body: { action: "list" }
-      });
-      if (founderError) throw founderError;
-      if (founderCheck?.ok !== true || !Array.isArray(founderCheck.applications)) {
-        throw new Error(founderCheck?.error || "This Supabase account is not authorized as a WE4ALL Founder.");
-      }
-      setIsAdminAuthenticated(true);
-      setAdminAuthStep(1);
-      setAdminLoginError("");
-      setAdminLoginForm({ username: email, password: "" });
-      triggerToast("Founder authorization verified by Supabase. Admin console unlocked.");
-    } catch (error) {
-      const message = error?.message || "Founder login failed.";
-      setIsAdminAuthenticated(false);
-      setAdminLoginError(
-        /founder server authorization|403|not authorized/i.test(message)
-          ? "This email/password is valid, but this account has not been provisioned as a Founder. A trusted administrator must assign app_metadata.we4all_role = founder, then sign in again."
-          : message
-      );
-    }
-  };
-
-
   const getProductBestOffer = (product) => {
     const offers =
       product.merchantOffers && (product.merchantOffers || []).length > 0
@@ -1523,6 +1355,39 @@ function AppContent() {
                   ))}
               </div>
 
+              {publishedDynamicModules.length > 0 && (
+                <section className="bg-slate-900/80 border border-cyan-500/40 rounded-xl p-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-black text-cyan-200">New WE4ALL Modules</h3>
+                    <span className="text-[8px] text-slate-400">Founder published</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {publishedDynamicModules.map((module) => (
+                      <button key={module.id} type="button" onClick={() => setSelectedDynamicModule(module.id)}
+                        className={"min-h-[58px] rounded-lg border px-1.5 py-2 flex flex-col items-center justify-center gap-1 " + (selectedDynamicModule === module.id ? "bg-cyan-900 border-cyan-400 text-white" : "bg-slate-950 border-slate-700 text-slate-100")}>
+                        <span className="text-base">{module.icon || "▦"}</span>
+                        <span className="text-[8px] leading-tight text-center font-bold">{module.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {publishedDynamicModules.some((module) => module.id === selectedDynamicModule) && (
+                    <DynamicModuleRenderer
+                      module={publishedDynamicModules.find((module) => module.id === selectedDynamicModule)}
+                      onClose={() => setSelectedDynamicModule(null)}
+                      onNavigate={(destination) => {
+                        if (destination?.type === "category" && destination.categoryId) {
+                          setSelectedCategory(destination.categoryId);
+                          setCustomerHomeSubTab("stores");
+                        }
+                        if (destination?.type === "tab" && ["services","taxi","parcel","events","labour","stores"].includes(destination.tab)) {
+                          setCustomerHomeSubTab(destination.tab);
+                        }
+                        setSelectedDynamicModule(null);
+                      }}
+                    />
+                  )}
+                </section>
+              )}
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
                   <section className="w4-shop-hero" aria-label="Your local market">

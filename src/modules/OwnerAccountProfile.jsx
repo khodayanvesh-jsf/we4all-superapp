@@ -87,8 +87,6 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [regForm, setRegForm] = useState({
     fullName: "",
     businessName: "",
-    email: "",
-    password: "",
     phone: "",
     email: "",
     upiId: "",

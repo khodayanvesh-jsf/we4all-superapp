@@ -1,6 +1,6 @@
 param(
     [string]$Destination = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WE4ALL-Workspace'),
-    [string]$Branch = 'codex/we4all-real-trial',
+    [string]$Branch = 'main',
     [string]$RepoUrl = 'https://github.com/khodayanvesh-jsf/we4all-superapp.git',
     [switch]$Install,
     [switch]$Verify
@@ -28,8 +28,8 @@ if (-not (Test-Path $Destination)) {
         $origin = (& git remote get-url origin).Trim()
         $current = (& git branch --show-current).Trim()
         if ($origin -ne $RepoUrl) { throw "Unexpected Git origin: $origin. No files changed." }
-        $upgradeFromOfflineSync = $current -eq 'codex/we4all-offline-sync' -and $Branch -eq 'codex/we4all-real-trial'
-        if ($current -ne $Branch -and -not $upgradeFromOfflineSync) {
+        $upgradeFromLegacyBranch = $Branch -eq 'main' -and $current -in @('codex/we4all-offline-sync', 'codex/we4all-real-trial')
+        if ($current -ne $Branch -and -not $upgradeFromLegacyBranch) {
             throw "This copy is on $current; expected $Branch. Choose that branch explicitly or use a separate destination."
         }
         if ((& git status --porcelain).Length -gt 0) {
@@ -38,15 +38,15 @@ if (-not (Test-Path $Destination)) {
         Run git @('config', '--replace-all', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*')
         Run git @('fetch', '--prune', 'origin')
         $remoteBranch = "refs/remotes/origin/$Branch"
-        if ($upgradeFromOfflineSync) {
+        if ($upgradeFromLegacyBranch) {
             & git merge-base --is-ancestor HEAD $remoteBranch
             if ($LASTEXITCODE -ne 0) {
-                throw 'The older workspace has commits outside the trial branch. Keep this workspace and clone into a separate destination.'
+                throw 'The older workspace has commits outside the target branch. Keep this workspace and clone into a separate destination.'
             }
             & git show-ref --verify --quiet "refs/heads/$Branch"
             if ($LASTEXITCODE -eq 0) {
                 & git merge-base --is-ancestor "refs/heads/$Branch" $remoteBranch
-                if ($LASTEXITCODE -ne 0) { throw 'The local trial branch has separate commits. Review it before switching.' }
+                if ($LASTEXITCODE -ne 0) { throw 'The local target branch has separate commits. Review it before switching.' }
                 Run git @('switch', $Branch)
             } else {
                 Run git @('switch', '--track', '-c', $Branch, "origin/$Branch")

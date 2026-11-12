@@ -101,7 +101,9 @@ const handleOperations = withSupabase({ auth: "user" }, async (req: Request, ctx
   if(!validIdem)return fail("IDEMPOTENCY_KEY_REQUIRED");
   const pickup=obj(body.pickupLocation),dropoff=obj(body.dropoffLocation),details=obj(body.parcelDetails),vehicle=String(body.vehicleClass||"");
   const weight=Number(details.weightKg||0);
-  if(!["2W","3W","4W"].includes(vehicle)||!Object.keys(pickup).length||!Object.keys(dropoff).length||!Number.isFinite(weight)||weight<=0||weight>2000)return fail("INVALID_P2P_REQUEST");
+  const maxWeightByVehicle:Record<string,number>={"2W":45,"3W":300,"4W":2000};
+  const maxWeight=maxWeightByVehicle[vehicle]||0;
+  if(!maxWeight||!Object.keys(pickup).length||!Object.keys(dropoff).length||!Number.isFinite(weight)||weight<=0||weight>maxWeight)return fail("INVALID_P2P_VEHICLE_CAPACITY");
   const {data:existing}=await admin.from("we4all_p2p_deliveries").select("id,status").eq("customer_user_id",user.id).eq("idempotency_key",idem).maybeSingle();
   if(existing)return json(200,{ok:true,duplicate:true,delivery_id:existing.id,status:existing.status});
   const {data,error}=await admin.from("we4all_p2p_deliveries").insert({customer_user_id:user.id,zone_id:String(body.zoneId||"adilabad_master"),vehicle_class:vehicle,pickup_location:pickup,dropoff_location:dropoff,parcel_details:details,idempotency_key:idem}).select("id,status,vehicle_class").single();

@@ -7,7 +7,7 @@ on:
       - codex/we4all-offline-sync
   pull_request:
     branches:
-      - codex/we4all-offline-sync
+      - main
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
@@ -16,7 +16,6 @@ permissions:
 
 jobs:
   export-source:
-    if: github.event_name != 'pull_request' || github.head_ref == 'codex/we4all-real-trial'
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout requested commit
@@ -32,7 +31,7 @@ jobs:
           export_dir="$RUNNER_TEMP/we4all-export"
           mkdir -p "$export_dir"
           git archive --format=tar HEAD | tar -xf - -C "$export_dir"
-          rm -f "$export_dir/WE4ALL-v3.0.1-Production.apk" "$export_dir/SOURCE-COMMIT.txt"
+          rm -f "$export_dir/WE4ALL-v3.0.1-Production.apk" "$export_dir/WE4ALL-Latest-Test.apk" "$export_dir/SOURCE-COMMIT.txt"
           printf 'Repository: %s\nBranch: %s\nCommit: %s\nExported: %s\n' \
             "$GITHUB_REPOSITORY" "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" \
             > "$export_dir/SOURCE-COMMIT.txt"
@@ -53,26 +52,26 @@ jobs:
           retention-days: 30
 
   verify-windows-upgrade:
-    if: github.event_name == 'pull_request' && github.head_ref == 'codex/we4all-real-trial'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 2
       - name: Upgrade an older checkout and preserve its files
         shell: powershell
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           $copy = Join-Path $env:RUNNER_TEMP 'WE4ALL-copy'
           $origin = $env:GITHUB_WORKSPACE
           git branch codex/we4all-offline-sync HEAD^
           if ($LASTEXITCODE -ne 0) { throw 'Could not create old branch fixture.' }
-          git branch codex/we4all-real-trial HEAD
-          if ($LASTEXITCODE -ne 0) { throw 'Could not create trial branch fixture.' }
+          git branch -f main HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create main branch fixture.' }
           git clone --single-branch --branch codex/we4all-offline-sync $origin $copy
           if ($LASTEXITCODE -ne 0) { throw 'Could not clone old branch fixture.' }
           $settings = Join-Path $copy '.env.local'
@@ -88,8 +87,8 @@ jobs:
           if ((Get-Content $edit -Raw).Trim() -ne 'keep') { throw 'Local edit was lost.' }
           Remove-Item $edit
           & ./offline/Sync-WE4ALL.ps1 -Destination $copy -RepoUrl $origin
-          if ((& git -C $copy rev-parse HEAD).Trim() -ne $env:EXPECTED_HEAD) { throw 'Wrong trial commit.' }
-          if ((& git -C $copy branch --show-current).Trim() -ne 'codex/we4all-real-trial') { throw 'Wrong trial branch.' }
+          if ((& git -C $copy rev-parse HEAD).Trim() -ne $env:EXPECTED_HEAD) { throw 'Wrong main commit.' }
+          if ((& git -C $copy branch --show-current).Trim() -ne 'main') { throw 'Wrong main branch.' }
           if ((Get-Content $settings -Raw).Trim() -ne 'VITE_TEST_SETTING=preserve') { throw 'Local settings changed.' }
           git -C $copy show-ref --verify refs/heads/codex/we4all-offline-sync
           if ($LASTEXITCODE -ne 0) { throw 'Old local branch was lost.' }
