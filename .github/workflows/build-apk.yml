@@ -12,10 +12,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - name: Auto-Increment Version in Gradle
+      - name: Auto-Increment Version in Gradle and UI
         run: |
           sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/g" android/app/build.gradle
           sed -i "s/versionName \"[^\"]*\"/versionName \"1.1.${{ github.run_number }}\"/g" android/app/build.gradle
+          echo "export const APP_VERSION = \"1.1.${{ github.run_number }}\";" > src/version.ts
       - run: npm install && npm run build
       - run: npx cap sync android
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
