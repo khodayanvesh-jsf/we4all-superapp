@@ -2,12 +2,30 @@ import React, { useState } from "react";
 import { LABOUR_TRADE_CATEGORIES } from "../data";
 
 export default function LabourWorksitePortal({
-  labourWorkers = [],
+  mode = "worker",
+  labourWorkers,
   setLabourWorkers,
-  labourBookings = [],
+  labourBookings,
   setLabourBookings,
-  onTriggerToast
+  workers,
+  setWorkers,
+  bookings,
+  setBookings,
+  currentUser,
+  onTriggerToast,
+  onToast
 }) {
+  const resolvedWorkers = Array.isArray(labourWorkers) ? labourWorkers : (workers || []);
+  const resolvedBookings = Array.isArray(labourBookings) ? labourBookings : (bookings || []);
+  const updateWorkers = setLabourWorkers || setWorkers || (() => {});
+  const updateBookings = setLabourBookings || setBookings || (() => {});
+  const notify = onTriggerToast || onToast || (() => {});
+  const myWorkerIds = new Set(
+    resolvedWorkers.filter((worker) => worker.ownerUserId === currentUser?.id).map((worker) => worker.id)
+  );
+  const visibleBookings = mode === "customer"
+    ? resolvedBookings.filter((booking) => booking.customerId === currentUser?.id)
+    : resolvedBookings.filter((booking) => myWorkerIds.has(booking.workerId) || booking.workerUserId === currentUser?.id);
   const [newWorkerForm, setNewWorkerForm] = useState({
     name: "",
     tradeId: "lab_mason",
@@ -18,9 +36,15 @@ export default function LabourWorksitePortal({
     toolsIncluded: "Trowel, Spirit Level, Measuring Tape"
   });
   const [otpInputMap, setOtpInputMap] = useState({});
+  const [customerRequestForm, setCustomerRequestForm] = useState({
+    siteAddress: "",
+    workDate: new Date().toISOString().slice(0, 10),
+    shift: "FULL_DAY"
+  });
 
   return (
     <div className="space-y-3 text-xs text-white">
+      {mode !== "customer" && (
       <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-3 space-y-2">
         <h3 className="font-black text-amber-400 text-sm">
           \uD83E\uDDF1 Labour & Mistri Work-Site Adda (Daily-Wage & Toli Portal)
@@ -100,11 +124,11 @@ export default function LabourWorksitePortal({
                 id: `lab_${Date.now()}`,
                 ...newWorkerForm,
                 tradeName: tradeObj ? tradeObj.name : "Mason / Helper",
-                status: "AVAILABLE_AT_ADDA"
+                status: "PENDING_ADMIN_APPROVAL", ownerUserId: currentUser?.id || null
               };
-              setLabourWorkers([created, ...labourWorkers]);
+              updateWorkers([created, ...resolvedWorkers]);
               setNewWorkerForm({ ...newWorkerForm, name: "", phone: "" });
-              if (onTriggerToast) onTriggerToast(`Registered ${created.name} in Labour Adda!`);
+              notify(`Worker registration submitted for approval: ${created.name}.`);
             }}
             className="w-full bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
           >
@@ -113,17 +137,100 @@ export default function LabourWorksitePortal({
         </div>
       </div>
 
+      )}
+
+      {mode === "customer" && (
+        <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-3 space-y-2">
+          <h3 className="font-black text-emerald-300">Find Labour & Mistri Teams</h3>
+          <p className="text-[10px] text-slate-300">
+            Requests are sent to the worker for confirmation. Attendance and wage release remain pending until secure server verification is available.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-slate-950 border border-slate-800 rounded-xl p-2">
+            <input
+              value={customerRequestForm.siteAddress}
+              onChange={(e) => setCustomerRequestForm({ ...customerRequestForm, siteAddress: e.target.value })}
+              placeholder="Worksite full address *"
+              className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white"
+            />
+            <input
+              type="date"
+              min={new Date().toISOString().slice(0, 10)}
+              value={customerRequestForm.workDate}
+              onChange={(e) => setCustomerRequestForm({ ...customerRequestForm, workDate: e.target.value })}
+              className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white"
+            />
+            <select
+              value={customerRequestForm.shift}
+              onChange={(e) => setCustomerRequestForm({ ...customerRequestForm, shift: e.target.value })}
+              className="bg-slate-900 border border-slate-700 rounded-lg p-2 text-white"
+            >
+              <option value="FULL_DAY">Full day · 9:00 AM–5:30 PM</option>
+              <option value="HALF_DAY">Half day</option>
+            </select>
+          </div>
+          {resolvedWorkers.filter((worker) => ["Approved", "ACTIVE", "AVAILABLE_AT_ADDA"].includes(worker.status)).map((worker) => (
+            <div key={worker.id} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex justify-between items-center gap-2">
+              <div>
+                <p className="font-bold text-white">{worker.name}</p>
+                <p className="text-[10px] text-slate-400">{worker.tradeName} · {worker.mode === "TOLI_GROUP" ? `Toli of ${worker.toliSize}` : "Individual"}</p>
+                <p className="text-[10px] text-emerald-300">₹{Number(worker.fullDayWage || 0).toLocaleString("en-IN")} / day</p>
+              </div>
+              <button
+                type="button"
+                disabled={resolvedBookings.some((b) => b.workerId === worker.id && b.customerId === currentUser?.id && !["CANCELLED","REJECTED","WAGE_RELEASED_COMPLETED"].includes(b.status))}
+                onClick={() => {
+                  if (!currentUser || currentUser.isGuest || !currentUser.authUserId) {
+                    notify("Sign in before requesting a worker. Your request has not been created.");
+                    return;
+                  }
+                  if (!customerRequestForm.siteAddress.trim() || !customerRequestForm.workDate) {
+                    notify("Enter the worksite address and date before requesting a worker.");
+                    return;
+                  }
+                  if (customerRequestForm.workDate < new Date().toISOString().slice(0, 10)) {
+                    notify("The work date cannot be in the past.");
+                    return;
+                  }
+                  const booking = {
+                    id: `LAB-${globalThis.crypto?.randomUUID?.() || Date.now()}`,
+                    workerId: worker.id,
+                    workerName: worker.name,
+                    tradeId: worker.tradeId,
+                    tradeName: worker.tradeName,
+                    customerId: currentUser.id,
+                    customerName: currentUser.fullName || currentUser.name || "Customer",
+                    siteAddress: customerRequestForm.siteAddress.trim(),
+                    workDate: customerRequestForm.workDate,
+                    shift: customerRequestForm.shift,
+                    totalWage: Number(worker.fullDayWage || 0) * (customerRequestForm.shift === "HALF_DAY" ? 0.5 : 1),
+                    requestedAt: new Date().toISOString(),
+                    status: "REQUESTED_PENDING_WORKER_CONFIRMATION",
+                    attendanceVerification: "NOT_STARTED",
+                    wagePaymentStatus: "NOT_PAID"
+                  };
+                  updateBookings([booking, ...resolvedBookings]);
+                  notify("Worker request saved in this app state and awaiting worker response. Server notification, attendance and payment are not confirmed.");
+                }}
+                className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black px-3 py-2 rounded-lg text-[10px]"
+              >
+                Request worker
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 2-Step Muster Roll Bookings */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
         <h4 className="font-black text-emerald-400">
-          Active Work-Site Muster Roll Bookings ({(labourBookings || []).length})
+          Active Work-Site Muster Roll Bookings ({(visibleBookings || []).length})
         </h4>
-        {(labourBookings || []).length === 0 ? (
+        {(visibleBookings || []).length === 0 ? (
           <p className="text-[11px] text-slate-400 py-2">
             No active work-site bookings yet. Customers can hire workers from the Customer Portal.
           </p>
         ) : (
-          labourBookings.map((lb) => (
+          visibleBookings.map((lb) => (
             <div
               key={lb.id}
               className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2"
@@ -135,14 +242,47 @@ export default function LabourWorksitePortal({
                 <span className="text-emerald-400">Rs.{lb.totalWage}/day</span>
               </div>
               <p className="text-[10px] text-slate-400">
-                Site: {lb.siteAddress} | Shift: 9:00 AM - 5:30 PM | Status: {lb.status}
+                Site: {lb.siteAddress} · Work date: {lb.workDate || "Not set"} · Shift: {lb.shift || "FULL_DAY"} · Status: {lb.status}
               </p>
+
+              {mode !== "customer" && lb.status === "REQUESTED_PENDING_WORKER_CONFIRMATION" && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateBookings(resolvedBookings.map((booking) =>
+                        booking.id === lb.id
+                          ? { ...booking, status: "WORKER_ACCEPTANCE_RECORDED_PENDING_SERVER", workerRespondedAt: new Date().toISOString() }
+                          : booking
+                      ));
+                      notify("Worker response saved locally. Customer notification and booking confirmation require server sync.");
+                    }}
+                    className="bg-emerald-500 text-slate-950 font-black px-3 py-2 rounded-lg text-[10px]"
+                  >
+                    Confirm availability
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateBookings(resolvedBookings.map((booking) =>
+                        booking.id === lb.id
+                          ? { ...booking, status: "REJECTED_BY_WORKER", workerRespondedAt: new Date().toISOString() }
+                          : booking
+                      ));
+                      notify("Request marked declined in the current app state. Server notification is not confirmed.");
+                    }}
+                    className="bg-rose-700 text-white font-black px-3 py-2 rounded-lg text-[10px]"
+                  >
+                    Decline
+                  </button>
+                </div>
+              )}
 
               {lb.status === "BOOKED_AWAITING_MORNING_OTP" && (
                 <div className="flex gap-1.5">
                   <input
                     type="text"
-                    placeholder={`Morning Start OTP (${lb.morningStartOtp})`}
+                    placeholder="Secure morning OTP is issued by server"
                     value={otpInputMap[lb.id] || ""}
                     onChange={(e) => setOtpInputMap({ ...otpInputMap, [lb.id]: e.target.value })}
                     className="flex-1 bg-slate-900 border border-amber-400 rounded-lg p-1.5 text-center font-mono text-white"
@@ -150,19 +290,10 @@ export default function LabourWorksitePortal({
                   <button
                     type="button"
                     onClick={() => {
-                      if (otpInputMap[lb.id] === lb.morningStartOtp) {
-                        setLabourBookings(
-                          labourBookings.map((b) =>
-                            b.id === lb.id ? { ...b, status: "WORK_IN_PROGRESS_ON_SITE" } : b
-                          )
-                        );
-                        setOtpInputMap({ ...otpInputMap, [lb.id]: "" });
-                        if (onTriggerToast) onTriggerToast("Morning Attendance Verified! Work Started.");
-                      } else {
-                        alert(`Morning Start OTP is ${lb.morningStartOtp}`);
-                      }
+                      notify("Morning attendance requires a server-issued, order-bound OTP. Local codes are not accepted.");
                     }}
-                    className="bg-amber-400 text-slate-950 font-black px-3 rounded-lg cursor-pointer"
+                    disabled
+                    className="bg-slate-700 text-slate-300 font-black px-3 rounded-lg cursor-not-allowed"
                   >
                     Start Shift
                   </button>
@@ -173,7 +304,7 @@ export default function LabourWorksitePortal({
                 <div className="flex gap-1.5">
                   <input
                     type="text"
-                    placeholder={`Evening Wage OTP (${lb.eveningReleaseOtp})`}
+                    placeholder="Secure evening OTP is issued by server"
                     value={otpInputMap[lb.id] || ""}
                     onChange={(e) => setOtpInputMap({ ...otpInputMap, [lb.id]: e.target.value })}
                     className="flex-1 bg-slate-900 border border-emerald-400 rounded-lg p-1.5 text-center font-mono text-white"
@@ -181,19 +312,10 @@ export default function LabourWorksitePortal({
                   <button
                     type="button"
                     onClick={() => {
-                      if (otpInputMap[lb.id] === lb.eveningReleaseOtp) {
-                        setLabourBookings(
-                          labourBookings.map((b) =>
-                            b.id === lb.id ? { ...b, status: "WAGE_RELEASED_COMPLETED" } : b
-                          )
-                        );
-                        if (onTriggerToast)
-                          onTriggerToast("Evening OTP Verified! Daily Wage Released to Worker.");
-                      } else {
-                        alert(`Evening Wage Release OTP is ${lb.eveningReleaseOtp}`);
-                      }
+                      notify("Wage release requires server-verified attendance and a confirmed payment settlement.");
                     }}
-                    className="bg-emerald-400 text-slate-950 font-black px-3 rounded-lg cursor-pointer"
+                    disabled
+                    className="bg-slate-700 text-slate-300 font-black px-3 rounded-lg cursor-not-allowed"
                   >
                     Release Wage
                   </button>

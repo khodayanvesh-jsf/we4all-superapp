@@ -1,0 +1,23 @@
+# WE4ALL account and OTA staging review
+
+This candidate is Android **3.3.1**, build **331**. It retains the pinned native updater and its offline packer. Release traffic goes to WE4ALL's staging Supabase project. Normal builds leave the updater off until a WE4ALL endpoint and trust key are embedded. The APK upgrade needs an Android signing certificate compatible with the installed app.
+
+## Accounts
+
+- Public sign-up uses Supabase email/password registration with email confirmation, a six-digit PIN, and an email code. A registration contact phone stays in the profile and does not become an Auth sign-in identifier.
+- Existing Auth phone accounts can sign in by mobile and PIN if phone sign-in is enabled. Previously provisioned private trial accounts with their synthetic aliases can use the trial fallback when the preview service is enabled. New trial OTPs require the preview flags and an explicit test number allowlist.
+- Forgot PIN uses the Supabase recovery email template. Find my login uses the passwordless email template with user creation disabled. Each verifies the code against the exact submitted address in a temporary session. A verified mobile can be displayed only after verification. Staff administration keeps its separate Founder workflow.
+- Signed-in users can confirm an email in Account Details. Supabase may require confirmation at both the old and new addresses. A private trial account with an unreachable placeholder address should enroll backup codes or ask the Founder for an identity-checked migration.
+- Generating backup codes requires a current user token and PIN. The service stores only SHA-256 digests of 128-bit random codes. It deletes a code before using Auth Admin to reset the PIN. If the reset fails after deletion, use another code. A successful reset revokes refresh sessions. Existing access JWTs may remain usable until their configured expiry.
+- Enable email confirmations and use a sender you control on the staging project. Set **Confirm signup**, **Reset password**, **Magic link**, and **Change email address** templates to include `{{ .Token }}` as the verification code. Supabase's default email sender is limited to organization team addresses. No SMS provider is required for the email or backup-code paths.
+- Keep the trial service disabled on public staging. A separate private trial requires `WE4ALL_TRIAL_OTP_ENABLED=true`, `WE4ALL_TRIAL_OTP_ENV=preview`, a server-only `WE4ALL_TRIAL_OTP_PEPPER`, and comma-separated E.164 numbers in `WE4ALL_TRIAL_OTP_ALLOWED_PHONES`.
+
+## Enable staged releases after approval
+
+1. Reconcile the candidate migration history with a separate Supabase staging project before applying migrations. Apply the recovery and OTA migration there and deploy the three candidate Edge Functions. Never copy real user data to staging.
+2. Generate a dedicated 2048-bit RSA OTA key pair. Keep the private key in the protected GitHub environment only. The staging APK needs the matching public key. The Edge Function needs the same public key in SPKI PEM form in `WE4ALL_OTA_MANIFEST_PUBLIC_KEY`. OpenSSL `rsa -in private.pem -pubout` derives SPKI from the private key.
+3. In the protected GitHub Environment `supabase-ota-staging`, set vars `WE4ALL_STAGING_SUPABASE_URL`, `WE4ALL_STAGING_PUBLISHABLE_KEY`, and `WE4ALL_OTA_PUBLIC_KEY`. Set secrets `WE4ALL_STAGING_SUPABASE_SERVICE_KEY` and `WE4ALL_OTA_PRIVATE_KEY`. Limit the environment to the candidate branch and require a reviewer. Set the repository variable `WE4ALL_STAGING_RELEASE_ENABLED=true` only when the environment and staging server are ready.
+4. Candidate pushes run tests and build a signed fixture offline. With the staging release gate enabled, CI then packages an Android QA APK and a signed web bundle. It checks the bundle key against the APK key, uploads a unique encrypted ZIP, checks the uploaded bytes, and advances the signed staging pointer. The Edge Function restricts release selection to the correct Android package and native version, checks the signature, and refuses downgrades.
+5. Test sign-up, reset, identifier recovery, backup code replay, partner approval gating, and old Android APK upgrade with dedicated test accounts. Open the app, confirm that the staged web bundle is downloaded and activated, and verify rollback when the startup acknowledgement is absent. Publish older known-good web content under a **new** bundle version to roll back the staging channel. Track storage and egress against the Supabase plan.
+
+The staging publish job rejects the live project URL. The existing Capgo cloud releases on previously installed APKs are controlled by their embedded configuration until those APKs are upgraded.

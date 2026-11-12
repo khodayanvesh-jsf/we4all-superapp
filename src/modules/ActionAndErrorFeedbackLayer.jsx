@@ -23,7 +23,6 @@ export default function ActionAndErrorFeedbackLayer({ children }) {
       localStorage.setItem("we4all_install_permissions_granted_v1", "true");
     } catch (e) {}
     setPermissionsGranted(true);
-    showActionReflection("Guest Visitor Mode Enabled ✓", "READY ✓");
   };
 
   const isPaymentTrigger = (text) => {
@@ -177,33 +176,10 @@ export default function ActionAndErrorFeedbackLayer({ children }) {
               <button
                 type="button"
                 onClick={() => {
-                  if (!checkoutForm.phone || checkoutForm.phone.length !== 10 || checkoutForm.pin.length !== 4) {
-                    alert("Please enter a 10-digit mobile number and 4-digit PIN.");
-                    return;
-                  }
-                  const user = {
-                    id: `cust_${Date.now()}`,
-                    fullName: checkoutForm.fullName.trim() || "Consumer Shopper",
-                    name: checkoutForm.fullName.trim() || "Consumer Shopper",
-                    phone: checkoutForm.phone,
-                    role: "customer",
-                    portal: "customer",
-                    upiId: `${checkoutForm.phone}@ybl`,
-                    pin: checkoutForm.pin,
-                    isGuest: false,
-                    status: "Approved"
-                  };
-                  try {
-                    localStorage.setItem("we4all_persistent_user_session_v8", JSON.stringify(user));
-                  } catch (e) {}
-                  const snap = loadCloudAndLocalState() || {};
-                  const existingUsers = Array.isArray(snap.registeredUsers) ? snap.registeredUsers : [];
-                  saveCloudAndLocalState({
-                    currentUser: user,
-                    registeredUsers: [user, ...existingUsers]
-                  });
-                  setCheckoutAuthModal(null);
-                  showActionReflection("Logged In! Payment Unlocked ✓", "SUCCESS ✓");
+                  showActionReflection(
+                    "Secure checkout sign-in is not configured. No account or session was created; your cart remains unchanged.",
+                    "AUTHENTICATION UNAVAILABLE"
+                  );
                 }}
                 style={{ flex: 1, background: "#10b981", color: "#022c22", border: "none", borderRadius: "14px", padding: "12px", fontWeight: 900, fontSize: "12px", cursor: "pointer" }}
               >
@@ -254,15 +230,12 @@ export default function ActionAndErrorFeedbackLayer({ children }) {
             <h2 style={{ margin: "10px 0 4px", fontSize: "18px", fontWeight: 900, color: "#fff" }}>
               Allow App Permissions to Start
             </h2>
-            <p style={{ margin: "0 0 14px", fontSize: "12px", color: "#94a3b8" }}>
-              You start in <strong>Guest Visitor Mode</strong> where you can browse and add items or services to your cart freely. Login or registration is required only before payment.
-            </p>
             <button
               type="button"
               onClick={handleGrantAllInstallPermissions}
               style={{ width: "100%", background: "#10b981", color: "#022c22", border: "none", borderRadius: "16px", padding: "13px", fontWeight: 900, fontSize: "13px", cursor: "pointer" }}
             >
-              ✓ Allow &amp; Start as Guest Visitor →
+              ✓ Allow &amp; Start →
             </button>
           </div>
         </div>

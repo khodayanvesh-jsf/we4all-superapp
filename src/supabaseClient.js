@@ -1,11 +1,18 @@
+import { createClient } from "@supabase/supabase-js";
+import { Capacitor } from "@capacitor/core";
+import { CapacitorUpdater } from "@capgo/capacitor-updater";
+import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
+import { quoteMarketplaceFees } from "./modules/workflows/feePolicies.js";
 const LIVE_CLOUD_ORIGIN = "https://we-4-all-super-app.vercel.app";
-const CURRENT_SCHEMA_VERSION = "3.2.7";
+const CURRENT_SCHEMA_VERSION = "3.3.0";
 const STORAGE_KEY = "we4all_master_cloud_state_v5_prod";
 const BACKUP_KEY = "we4all_zero_loss_user_backup_v5_prod";
 const INSTALLED_VER_KEY = "we4all_device_installed_version_v5";
 const SCHEMA_MIGRATED_KEY = "we4all_schema_restored_apk_v323";
 const SERVER_CONFIG_KEY = "we4all_custom_server_config_v1";
 const ADMIN_CREDS_KEY = "we4all_founder_credentials_v1";
+const ACTIVE_SUPABASE_USER_KEY = "we4all_active_supabase_user_v1";
+const USER_CACHE_PREFIX = `${STORAGE_KEY}_user_`;
 const ZONE_MASTER_ID = "adilabad_master";
 
 export function normalizeSupabaseBaseUrl(rawUrl) {
@@ -16,87 +23,200 @@ export function normalizeSupabaseBaseUrl(rawUrl) {
     .replace(/\/+$/, "");
 }
 
+const SUPABASE_URL = normalizeSupabaseBaseUrl(
+  import.meta.env.VITE_SUPABASE_URL || "https://bdmbziwazpuzbukazmug.supabase.co"
+);
+const localPublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+const SUPABASE_PUBLISHABLE_KEY = String(
+  (localPublishableKey === "YOUR_SUPABASE_PUBLISHABLE_KEY" ? "" : localPublishableKey) ||
+  "sb_publishable_nNPwaseb81B8V05aVwmleg_JkBVNvzl"
+).trim();
+
+export const supabase = SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce"
+      }
+    })
+  : null;
+
+// Recovery sessions never replace the normal signed-in session on this device.
+export function createIsolatedSupabaseClient() {
+  if (!supabase) return null;
+  return createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: "we4all-isolated-auth"
+    }
+  });
+}
+
 export function getServerConfig() {
-  let saved = {};
-  if (typeof window !== "undefined") {
-    try {
-      saved = JSON.parse(localStorage.getItem(SERVER_CONFIG_KEY) || "{}");
-    } catch (e) {}
-  }
-  const rawSupaUrl =
-    saved.supabaseUrl ||
-    import.meta.env.VITE_SUPABASE_URL ||
-    "https://rjwxsjdayublcmcciuww.supabase.co";
-  const supabaseUrl = normalizeSupabaseBaseUrl(rawSupaUrl);
-  const supabaseAnonKey = String(
-    saved.supabaseAnonKey || import.meta.env.VITE_SUPABASE_ANON_KEY || ""
-  ).trim();
-  const relayEndpoint = String(
-    saved.relayEndpoint || `${LIVE_CLOUD_ORIGIN}/api/sync`
-  ).trim();
   return {
-    supabaseUrl,
-    supabaseAnonKey,
-    relayEndpoint,
-    hasSupabaseKey: Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith("https://"))
+    supabaseUrl: SUPABASE_URL,
+    supabaseAnonKey: SUPABASE_PUBLISHABLE_KEY,
+    relayEndpoint: `${SUPABASE_URL}/functions/v1/we4all-sync`,
+    hasSupabaseKey: Boolean(supabase)
   };
 }
 
-export function saveServerConfig(newConfig = {}) {
-  if (typeof window === "undefined") return;
-  try {
-    const current = getServerConfig();
-    const merged = {
-      ...current,
-      ...newConfig,
-      supabaseUrl: normalizeSupabaseBaseUrl(newConfig.supabaseUrl || current.supabaseUrl),
-      updatedAt: new Date().toISOString()
-    };
-    localStorage.setItem(SERVER_CONFIG_KEY, JSON.stringify(merged));
-  } catch (e) {}
+export function saveServerConfig() {
+  // Connection settings are environment-controlled; never accept a key from browser storage.
+  return getServerConfig();
 }
 
 export function getFounderCredentials() {
-  const defaults = {
-    username: "KhodayAnvesh",
-    password: "22061969s!",
-    pin: "9999",
-    recoveryPhone: "9848011223",
-    updatedAt: null
+  // Founder credentials must never be stored in the browser or shared state.
+  // Keep this compatibility function for the Founder UI, but expose no secret.
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem(ADMIN_CREDS_KEY);
+    } catch (e) {}
+  }
+  return {
+    username: "",
+    password: "",
+    pin: "",
+    recoveryPhone: "",
+    updatedAt: null,
+    configured: false
   };
-  if (typeof window === "undefined") return defaults;
-  try {
-    const raw = localStorage.getItem(ADMIN_CREDS_KEY);
-    if (!raw) return defaults;
-    const parsed = JSON.parse(raw);
+}
+
+export function saveFounderCredentials() {
+  return {
+    ...getFounderCredentials(),
+    error:
+      "Founder credentials must be provisioned and verified by the server. Browser-side credential editing is disabled."
+  };
+}
+
+export const isLiveSupabaseConfigured = Boolean(supabase);
+
+let lastCloudSyncState = {
+  status: "not-signed-in",
+  message: "Sign in to enable private cloud synchronization.",
+  lastSyncedAt: null
+};
+
+export function getCloudSyncState() {
+  return { ...lastCloudSyncState };
+}
+
+/**
+ * Checks the public Auth API and, when the current session is linked to this
+ * device account, verifies the authenticated per-user sync endpoint.
+ * This never uses or requests a secret/service-role key.
+ */
+export async function probeSupabaseConnection() {
+  if (!supabase || !SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     return {
-      username: String(parsed.username || defaults.username),
-      password: String(parsed.password || defaults.password),
-      pin: String(parsed.pin || defaults.pin),
-      recoveryPhone: String(parsed.recoveryPhone || defaults.recoveryPhone),
-      updatedAt: parsed.updatedAt || null
+      configured: false,
+      backendReachable: false,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: "Supabase URL or publishable key is missing."
     };
-  } catch (e) {
-    return defaults;
+  }
+
+  let backendReachable = false;
+  try {
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/health`, {
+      method: "GET",
+      headers: { apikey: SUPABASE_PUBLISHABLE_KEY },
+      cache: "no-store"
+    });
+    backendReachable = response.ok;
+  } catch (error) {
+    return {
+      configured: true,
+      backendReachable: false,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: error?.message || "Could not reach the Supabase Auth API."
+    };
+  }
+
+  if (!backendReachable) {
+    return {
+      configured: true,
+      backendReachable: false,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: "Supabase Auth API responded with an unsuccessful status."
+    };
+  }
+
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    return {
+      configured: true,
+      backendReachable: true,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: sessionError.message || "Could not read the Supabase session."
+    };
+  }
+
+  if (!session?.user?.id || !session.access_token) {
+    return {
+      configured: true,
+      backendReachable: true,
+      authenticated: false,
+      accountLinked: false,
+      syncReady: false,
+      message: "Supabase is reachable. Sign in with SMS OTP to enable private account sync."
+    };
+  }
+
+  const activeUserId = getActiveSupabaseUserId();
+  const accountLinked = activeUserId === session.user.id;
+  if (!accountLinked) {
+    return {
+      configured: true,
+      backendReachable: true,
+      authenticated: true,
+      accountLinked: false,
+      syncReady: false,
+      message: "A Supabase session exists, but this app has not activated the matching account cache yet."
+    };
+  }
+
+  try {
+    const sync = await invokeUserSync("GET", undefined, activeUserId);
+    const result = {
+      configured: true,
+      backendReachable: true,
+      authenticated: true,
+      accountLinked: true,
+      syncReady: sync?.ok === true,
+      userId: activeUserId,
+      message: sync?.ok === true
+        ? "Supabase connected. This signed-in account can read its private cloud state."
+        : "Supabase is reachable, but the account sync endpoint did not confirm a read."
+    };
+    return result;
+  } catch (error) {
+    return {
+      configured: true,
+      backendReachable: true,
+      authenticated: true,
+      accountLinked: true,
+      syncReady: false,
+      userId: activeUserId,
+      message: error?.message || "Authenticated cloud sync verification failed."
+    };
   }
 }
-
-export function saveFounderCredentials(newCreds = {}) {
-  if (typeof window === "undefined") return getFounderCredentials();
-  const current = getFounderCredentials();
-  const updated = {
-    ...current,
-    ...newCreds,
-    updatedAt: new Date().toLocaleString()
-  };
-  try {
-    localStorage.setItem(ADMIN_CREDS_KEY, JSON.stringify(updated));
-    saveCloudAndLocalState({ founderCredentials: updated });
-  } catch (e) {}
-  return updated;
-}
-
-export const isLiveSupabaseConfigured = true;
 
 const syncChannel =
   typeof window !== "undefined" && "BroadcastChannel" in window
@@ -121,79 +241,192 @@ function computeStateFingerprint(stateObj) {
   }
 }
 
-export function getDeviceInstalledVersion(fallback = "3.2.3") {
+export function getDeviceInstalledVersion(fallback = "3.2.8") {
   if (typeof window === "undefined") return fallback;
   return localStorage.getItem(INSTALLED_VER_KEY) || fallback;
 }
 
 export async function uploadFileToSupabaseStorage(fileOrDataUrl, folder = "uploads") {
-  const cfg = getServerConfig();
-  if (!cfg.hasSupabaseKey) {
-    return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
-  }
+  if (!supabase) return "";
   try {
-    let bodyToUpload = fileOrDataUrl;
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return "";
+    let file = fileOrDataUrl;
     let contentType = "image/jpeg";
-    let ext = "jpg";
+    let extension = "jpg";
     if (typeof fileOrDataUrl === "string" && fileOrDataUrl.startsWith("data:")) {
       const match = fileOrDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (!match) return fileOrDataUrl;
+      if (!match) return "";
       contentType = match[1];
-      ext = contentType.split("/")[1] || "png";
-      const byteCharacters = atob(match[2]);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      bodyToUpload = new Blob([new Uint8Array(byteNumbers)], { type: contentType });
-    } else if (fileOrDataUrl instanceof File) {
-      contentType = fileOrDataUrl.type || "image/jpeg";
-      ext = fileOrDataUrl.name.split(".").pop() || "jpg";
+      extension = contentType.split("/")[1] || "jpg";
+      const bytes = Uint8Array.from(atob(match[2]), (ch) => ch.charCodeAt(0));
+      file = new Blob([bytes], { type: contentType });
+    } else if (typeof File !== "undefined" && fileOrDataUrl instanceof File) {
+      contentType = fileOrDataUrl.type || contentType;
+      extension = fileOrDataUrl.name.split(".").pop() || extension;
     } else {
-      return String(fileOrDataUrl || "");
+      return "";
     }
-    const safeFileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const objectPath = `${folder}/${safeFileName}`;
-    const res = await fetch(`${cfg.supabaseUrl}/storage/v1/object/we4all-media/${objectPath}`, {
-      method: "POST",
-      headers: {
-        apikey: cfg.supabaseAnonKey,
-        Authorization: `Bearer ${cfg.supabaseAnonKey}`,
-        "Content-Type": contentType,
-        "x-upsert": "true"
-      },
-      body: bodyToUpload
+    const objectPath = `${user.id}/${folder}/${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage.from("we4all-media").upload(objectPath, file, {
+      contentType,
+      upsert: false
     });
-    if (!res.ok) return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
-    return `${cfg.supabaseUrl}/storage/v1/object/public/we4all-media/${objectPath}`;
-  } catch (e) {
-    return typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
+    if (error) throw error;
+    const { data } = supabase.storage.from("we4all-media").getPublicUrl(objectPath);
+    return data?.publicUrl || "";
+  } catch (error) {
+    console.error("WE4ALL storage upload failed:", error?.message || error);
+    return "";
   }
 }
 
-async function pushPayloadToCloudServers(payload, nowIso) {
-  const cfg = getServerConfig();
-  try {
-    const relayUrl =
-      typeof window !== "undefined" && window.location.origin.includes("vercel.app")
-        ? `${window.location.origin}/api/sync`
-        : cfg.relayEndpoint;
-    await fetch(relayUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+async function invokeUserSync(method, payload, expectedUserId = null) {
+  if (!supabase) return { ok: false, reason: "Supabase is not configured" };
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  const activeUserId = getActiveSupabaseUserId();
+  if (
+    sessionError ||
+    !session?.access_token ||
+    !activeUserId ||
+    session.user?.id !== activeUserId ||
+    (expectedUserId && expectedUserId !== activeUserId)
+  ) {
+    throw new Error("A matching verified Supabase account is required for cloud sync.");
+  }
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/we4all-sync`, {
+    method,
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json"
+    },
+    ...(method === "GET" ? {} : {
       body: JSON.stringify({
-        zone_id: ZONE_MASTER_ID,
-        state_payload: payload,
         app_version: CURRENT_SCHEMA_VERSION,
-        updated_at: nowIso,
-        customSupabaseUrl: cfg.supabaseUrl,
-        customSupabaseKey: cfg.supabaseAnonKey
+        state_payload: payload
       })
-    });
-  } catch (e) {}
+    })
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.ok !== true) {
+    throw new Error(result.error || `Authenticated sync returned HTTP ${response.status}`);
+  }
+  return result;
+}
+
+export function getActiveSupabaseUserId() {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(ACTIVE_SUPABASE_USER_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function activateSupabaseAccount(userId) {
+  if (!supabase || typeof userId !== "string" || !userId) {
+    return { ok: false, changed: false, reason: "A verified Supabase user is required" };
+  }
+  const previousUserId = getActiveSupabaseUserId();
+  const changed = previousUserId !== userId;
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(ACTIVE_SUPABASE_USER_KEY, userId);
+      if (changed) {
+        const cached = localStorage.getItem(USER_CACHE_PREFIX + userId);
+        if (cached) {
+          localStorage.setItem(STORAGE_KEY, cached);
+          localStorage.setItem(BACKUP_KEY, cached);
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(BACKUP_KEY);
+        }
+      }
+    } catch (error) {
+      console.warn("WE4ALL local account cache activation failed:", error?.message || error);
+    }
+  }
+  lastPushedFingerprint = "";
+  try {
+    const remote = await invokeUserSync("GET");
+    if (remote?.ok !== true) {
+      throw new Error(remote?.reason || "Supabase account restore failed.");
+    }
+    const payload = remote?.state_payload;
+    if (payload && typeof payload === "object" && Object.keys(payload).length > 0 && typeof window !== "undefined") {
+      const serialized = JSON.stringify({
+        ...payload,
+        lastSyncedAt: remote.updated_at || payload.lastSyncedAt
+      });
+      localStorage.setItem(STORAGE_KEY, serialized);
+      localStorage.setItem(BACKUP_KEY, serialized);
+      localStorage.setItem(USER_CACHE_PREFIX + userId, serialized);
+    }
+    return { ok: true, changed, hasRemoteState: Boolean(payload && Object.keys(payload).length) };
+  } catch (error) {
+    console.warn("WE4ALL account cloud restore unavailable:", error?.message || error);
+    try {
+      if (typeof window !== "undefined") {
+        if (previousUserId) {
+          localStorage.setItem(ACTIVE_SUPABASE_USER_KEY, previousUserId);
+        } else {
+          localStorage.removeItem(ACTIVE_SUPABASE_USER_KEY);
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(BACKUP_KEY);
+        }
+      }
+    } catch (rollbackError) {
+      console.warn("WE4ALL account activation rollback failed:", rollbackError?.message || rollbackError);
+    }
+    lastPushedFingerprint = "";
+    return { ok: false, changed: false, reason: error?.message || "Cloud restore unavailable" };
+  }
+}
+
+export function clearActiveSupabaseAccount() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(ACTIVE_SUPABASE_USER_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(BACKUP_KEY);
+  } catch (error) {
+    console.warn("WE4ALL active account cache clear failed:", error?.message || error);
+  }
+  lastPushedFingerprint = "";
+}
+
+async function pushPayloadToCloudServers(payload, nowIso, ownerUserId) {
+  try {
+    const activeUserId = getActiveSupabaseUserId();
+    if (!ownerUserId || !activeUserId || activeUserId !== ownerUserId) {
+      const result = { ok: false, reason: "Save belongs to a different or unauthenticated account" };
+      lastCloudSyncState = { status: "local-only", message: result.reason, lastSyncedAt: null };
+      return result;
+    }
+    const safePayload = { ...payload, lastSyncedAt: nowIso };
+    delete safePayload.founderCredentials;
+    delete safePayload.supabaseSecretKey;
+    delete safePayload.serviceRoleKey;
+    const result = await invokeUserSync("PUT", safePayload, ownerUserId);
+    lastCloudSyncState = {
+      status: "synced",
+      message: "Saved to this authenticated Supabase account.",
+      lastSyncedAt: result.updated_at || nowIso
+    };
+    return result;
+  } catch (error) {
+    const reason = error?.message || "Cloud save failed";
+    lastCloudSyncState = { status: "error", message: reason, lastSyncedAt: null };
+    console.error("WE4ALL authenticated cloud save failed:", reason);
+    return { ok: false, reason };
+  }
 }
 
 export async function wipeAllOnlineAndOfflineData() {
+  const ownerUserId = getActiveSupabaseUserId();
   const freshTimestamp = new Date().toISOString();
   const cleanState = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -222,14 +455,32 @@ export async function wipeAllOnlineAndOfflineData() {
       BACKUP_KEY
     ].forEach((k) => localStorage.removeItem(k));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanState));
+    const activeUserId = getActiveSupabaseUserId();
+    if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, JSON.stringify(cleanState));
   }
   lastPushedFingerprint = computeStateFingerprint(cleanState);
-  await pushPayloadToCloudServers(cleanState, freshTimestamp);
+  if (ownerUserId) await pushPayloadToCloudServers(cleanState, freshTimestamp, ownerUserId);
   if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", payload: cleanState });
   return cleanState;
 }
 
 export const wipeAllPreinstalledServerData = wipeAllOnlineAndOfflineData;
+
+export async function syncCurrentUserStateNow() {
+  const ownerUserId = getActiveSupabaseUserId();
+  if (!ownerUserId) {
+    const result = { ok: false, reason: "Sign in with a verified Supabase account before syncing." };
+    lastCloudSyncState = { status: "local-only", message: result.reason, lastSyncedAt: null };
+    return result;
+  }
+  if (cloudSyncDebounceTimer) {
+    clearTimeout(cloudSyncDebounceTimer);
+    cloudSyncDebounceTimer = null;
+  }
+  const payload = loadCloudAndLocalState() || {};
+  return pushPayloadToCloudServers(payload, new Date().toISOString(), ownerUserId);
+}
+
 
 export function saveCloudAndLocalState(stateSlice) {
   if (typeof window === "undefined" || isApplyingRemoteState) return;
@@ -237,19 +488,25 @@ export function saveCloudAndLocalState(stateSlice) {
     const existing = loadCloudAndLocalState() || {};
     const nowIso = new Date().toISOString();
     const merged = { ...existing, ...stateSlice, lastSyncedAt: nowIso };
-    if (merged.founderCredentials) {
-      try {
-        localStorage.setItem(ADMIN_CREDS_KEY, JSON.stringify(merged.founderCredentials));
-      } catch (e) {}
-    }
+    // Never persist founder credentials in local storage, backups or the cloud
+    // state snapshot. This also scrubs legacy records on the next write.
+    delete merged.founderCredentials;
+    try {
+      localStorage.removeItem(ADMIN_CREDS_KEY);
+    } catch (e) {}
 
+    const ownerUserId = getActiveSupabaseUserId();
     const serialized = JSON.stringify(merged);
     try {
       localStorage.setItem(STORAGE_KEY, serialized);
       localStorage.setItem(BACKUP_KEY, serialized);
+      const activeUserId = getActiveSupabaseUserId();
+      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
     } catch (quotaErr) {
       localStorage.removeItem(BACKUP_KEY);
       localStorage.setItem(STORAGE_KEY, serialized);
+      const activeUserId = getActiveSupabaseUserId();
+      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
     }
 
     // Only push over network if business data actually changed (stops 1-second infinite POST loop)
@@ -260,10 +517,22 @@ export function saveCloudAndLocalState(stateSlice) {
     lastPushedFingerprint = nextFingerprint;
     lastAppliedCloudTimestamp = nowIso;
 
-    if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", payload: merged }); localWindowSubscribers.forEach((fn) => { try { fn(merged); } catch (e) {} });
+    if (syncChannel) syncChannel.postMessage({ type: "STATE_UPDATED", userId: getActiveSupabaseUserId(), payload: merged }); localWindowSubscribers.forEach((fn) => { try { fn(merged); } catch (e) {} });
     if (cloudSyncDebounceTimer) clearTimeout(cloudSyncDebounceTimer);
-    cloudSyncDebounceTimer = setTimeout(() => {
-      pushPayloadToCloudServers(merged, nowIso);
+    if (!ownerUserId) {
+      lastCloudSyncState = {
+        status: "local-only",
+        message: "Guest changes are kept on this device and are not uploaded.",
+        lastSyncedAt: null
+      };
+      return; // Guest/local edits must never sync into the next signed-in user's account.
+    }
+    cloudSyncDebounceTimer = setTimeout(async () => {
+      const result = await pushPayloadToCloudServers(merged, nowIso, ownerUserId);
+      if (!result?.ok && lastPushedFingerprint === nextFingerprint) {
+        // Allow the next save/probe to retry the same payload after transient failure.
+        lastPushedFingerprint = "";
+      }
     }, 650);
   } catch (e) {}
 }
@@ -278,6 +547,20 @@ export function loadCloudAndLocalState() {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(BACKUP_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      const hadLegacyFounderCredentials = Object.prototype.hasOwnProperty.call(parsed, "founderCredentials");
+      delete parsed.founderCredentials;
+      try {
+        localStorage.removeItem(ADMIN_CREDS_KEY);
+        if (hadLegacyFounderCredentials) {
+          const sanitized = JSON.stringify(parsed);
+          localStorage.setItem(STORAGE_KEY, sanitized);
+          localStorage.setItem(BACKUP_KEY, sanitized);
+          const activeUserId = getActiveSupabaseUserId();
+          if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, sanitized);
+        }
+      } catch (e) {}
+    }
     if (parsed && parsed.appUpdateInfo) {
       parsed.appUpdateInfo.currentVersion = CURRENT_SCHEMA_VERSION;
       parsed.appUpdateInfo.latestAvailableVersion = CURRENT_SCHEMA_VERSION;
@@ -290,31 +573,55 @@ export function loadCloudAndLocalState() {
 }
 
 export async function checkLiveCloudOtaManifest(callback) {
-  try {
-    const res = await fetch(`${LIVE_CLOUD_ORIGIN}/ota-manifest.json?_cb=${Date.now()}`, {
-      method: "GET",
-      cache: "no-store"
-    });
-    if (!res.ok) return null;
-    const remoteOta = await res.json();
-    const installedVer = getDeviceInstalledVersion(CURRENT_SCHEMA_VERSION);
-    if (remoteOta?.latestAvailableVersion) {
-      const hasNewer =
-        remoteOta.latestAvailableVersion !== installedVer &&
-        remoteOta.latestAvailableVersion > installedVer;
-      const updatedInfo = {
-        ...remoteOta,
-        currentVersion: installedVer,
-        latestAvailableVersion: remoteOta.latestAvailableVersion,
-        updateAvailable: Boolean(hasNewer)
-      };
-      if (callback) callback({ appUpdateInfo: updatedInfo });
-      return updatedInfo;
-    }
-  } catch (e) {
-    return null;
+  const installedInfo = {
+    installedAppVersion: APP_VERSION,
+    installedBuildNumber: APP_BUILD_NUMBER,
+    currentVersion: APP_VERSION,
+    currentBundleVersion: "BUILT-IN",
+    nativeUpdater: Capacitor.isNativePlatform() ? "WE4ALL" : "Not installed"
+  };
+
+  if (!Capacitor.isNativePlatform()) {
+    const info = {
+      ...installedInfo,
+      latestAvailableVersion: APP_VERSION,
+      updateAvailable: false,
+      nativeUpdaterRequired: true,
+      releaseNotes: "Automatic updates are available in the installed Android/iOS app."
+    };
+    if (callback) callback({ appUpdateInfo: info });
+    return info;
   }
-  return null;
+
+  try {
+    const [latest, current] = await Promise.all([
+      CapacitorUpdater.getLatest(),
+      CapacitorUpdater.current()
+    ]);
+    const currentBundleVersion = current?.bundle?.version || "BUILT-IN";
+    const currentVersion = APP_VERSION;
+    const latestVersion = latest?.version || currentBundleVersion;
+    const available = Boolean(latest?.url && latest?.version && latest?.checksum && latest?.sessionKey && latest.version !== currentBundleVersion);
+    const info = {
+      ...installedInfo,
+      currentVersion,
+      currentBundleVersion,
+      latestAvailableVersion: latestVersion,
+      updateAvailable: available,
+      releaseNotes: available ? latest?.comment || "" : "",
+      downloadUrl: available ? latest.url : "",
+      nativeUpdater: "WE4ALL"
+    };
+    if (callback) callback({ appUpdateInfo: info });
+    return info;
+  } catch (error) {
+    return {
+      ...installedInfo,
+      latestAvailableVersion: APP_VERSION,
+      updateAvailable: false,
+      error: error?.message || "Could not check the WE4ALL update channel."
+    };
+  }
 }
 
 export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetryPush) {
@@ -404,26 +711,32 @@ export function startRealtimeMobileSensorStream(getIdentityCallback, onTelemetry
 }
 
 export async function pullRemoteSupabaseState(applyIncomingPayload) {
-  const cfg = getServerConfig();
+  if (!supabase) return null;
   try {
-    const relayUrl =
-      typeof window !== "undefined" && window.location.origin.includes("vercel.app")
-        ? `${window.location.origin}/api/sync`
-        : cfg.relayEndpoint;
-    const r = await fetch(`${relayUrl}?_cb=${Date.now()}`, {
-      method: "GET",
-      cache: "no-store"
-    });
-    if (r.ok) {
-      const data = await r.json();
-      const remotePayload = data?.state_payload;
-      if (remotePayload && Object.keys(remotePayload).length > 0) {
-        if (applyIncomingPayload) applyIncomingPayload(remotePayload);
-        return remotePayload;
+    const activeUserId = getActiveSupabaseUserId();
+    if (!activeUserId) return null;
+    const remote = await invokeUserSync("GET", undefined, activeUserId);
+    if (getActiveSupabaseUserId() !== activeUserId) return null;
+    const payload = remote?.state_payload;
+    if (payload && typeof payload === "object" && Object.keys(payload).length) {
+      const nextPayload = { ...payload, lastSyncedAt: remote.updated_at || payload.lastSyncedAt };
+      if (typeof window !== "undefined") {
+        const serialized = JSON.stringify(nextPayload);
+        localStorage.setItem(STORAGE_KEY, serialized);
+        localStorage.setItem(BACKUP_KEY, serialized);
+        localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
       }
+      if (applyIncomingPayload) applyIncomingPayload(nextPayload);
+      return nextPayload;
     }
-  } catch (e) {}
-  return null;
+    return null;
+  } catch (error) {
+    // A guest or a first-time account has no saved cloud row yet.
+    if (!String(error?.message || "").includes("Sign in")) {
+      console.warn("WE4ALL authenticated restore unavailable:", error?.message || error);
+    }
+    return null;
+  }
 }
 
 export function subscribeToRealtimeUpdates(callback) {
@@ -444,17 +757,21 @@ export function subscribeToRealtimeUpdates(callback) {
       lastAppliedCloudTimestamp = remotePayload.lastSyncedAt;
     }
     lastPushedFingerprint = incomingFp;
-    if (remotePayload.founderCredentials) {
-      try {
-        localStorage.setItem(
-          ADMIN_CREDS_KEY,
-          JSON.stringify(remotePayload.founderCredentials)
-        );
-      } catch (e) {}
+    // Reject legacy founder credentials arriving through old shared snapshots.
+    if (Object.prototype.hasOwnProperty.call(remotePayload, "founderCredentials")) {
+      remotePayload = { ...remotePayload };
+      delete remotePayload.founderCredentials;
     }
     try {
+      localStorage.removeItem(ADMIN_CREDS_KEY);
+    } catch (e) {}
+    try {
       isApplyingRemoteState = true;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(remotePayload));
+      const serialized = JSON.stringify(remotePayload);
+      localStorage.setItem(STORAGE_KEY, serialized);
+      localStorage.setItem(BACKUP_KEY, serialized);
+      const activeUserId = getActiveSupabaseUserId();
+      if (activeUserId) localStorage.setItem(USER_CACHE_PREFIX + activeUserId, serialized);
       callback(remotePayload);
     } catch (e) {
     } finally {
@@ -465,7 +782,7 @@ export function subscribeToRealtimeUpdates(callback) {
   };
   localWindowSubscribers.add(applyIncomingPayload); pullRemoteSupabaseState(applyIncomingPayload);
   const handler = (event) => {
-    if (event.data && event.data.type === "STATE_UPDATED") {
+    if (event.data && event.data.type === "STATE_UPDATED" && (event.data.userId || null) === getActiveSupabaseUserId()) {
       applyIncomingPayload(event.data.payload);
     }
   };
@@ -478,48 +795,318 @@ export function subscribeToRealtimeUpdates(callback) {
   };
   if (syncChannel) syncChannel.addEventListener("message", handler);
   window.addEventListener("storage", storageHandler);
+
+  const activeUserId = getActiveSupabaseUserId();
+  let realtimeChannel = null;
+  if (supabase && activeUserId) {
+    realtimeChannel = supabase
+      .channel(`we4all-user-state-${activeUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "we4all_user_state",
+          filter: `user_id=eq.${activeUserId}`
+        },
+        (event) => {
+          if (getActiveSupabaseUserId() !== activeUserId) return;
+          const row = event.new;
+          if (!row?.state_payload || typeof row.state_payload !== "object") return;
+          applyIncomingPayload({
+            ...row.state_payload,
+            lastSyncedAt: row.updated_at || row.state_payload.lastSyncedAt
+          });
+        }
+      )
+      .subscribe((status, error) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("WE4ALL Supabase Realtime unavailable; polling fallback remains active.", error?.message || status);
+        }
+      });
+  }
   const cloudPollTimer = setInterval(() => {
     localWindowSubscribers.add(applyIncomingPayload); pullRemoteSupabaseState(applyIncomingPayload);
   }, 8000);
   return () => {
     if (syncChannel) syncChannel.removeEventListener("message", handler);
     window.removeEventListener("storage", storageHandler);
-    localWindowSubscribers.delete(applyIncomingPayload); clearInterval(cloudPollTimer);
+    localWindowSubscribers.delete(applyIncomingPayload);
+    if (realtimeChannel && supabase) supabase.removeChannel(realtimeChannel);
+    clearInterval(cloudPollTimer);
   };
 }
 
-export function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress, onComplete) {
-  const ver = targetVersion || CURRENT_SCHEMA_VERSION;
-  const currentData = loadCloudAndLocalState() || {};
-  const updatedAppInfo = {
-    ...(currentData.appUpdateInfo || {}),
-    currentVersion: ver,
-    latestAvailableVersion: ver,
-    updateAvailable: false,
-    releaseNotes
-  };
-  localStorage.setItem(INSTALLED_VER_KEY, ver);
-  localStorage.setItem(SCHEMA_MIGRATED_KEY, ver);
-  if (typeof window !== "undefined" && "caches" in window) {
-    caches.keys().then((names) => names.forEach((n) => caches.delete(n))).catch(() => {});
+export async function performZeroLossOtaUpdate(targetVersion, releaseNotes, onProgress, onComplete) {
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error("OTA bundle installation is supported only inside the native WE4ALL app.");
   }
-  let step = 0;
-  const stages = [
-    { pct: 25, msg: "1/4: Backing up Orders, Escrow & KYC Vault..." },
-    { pct: 60, msg: `2/4: Downloading WE4ALL v${ver} Modules In-App...` },
-    { pct: 90, msg: "3/4: Applying Update Inside App WebView..." },
-    { pct: 100, msg: `4/4: WE4ALL v${ver} Installed! Restarting In-App...` }
-  ];
-  const interval = setInterval(() => {
-    if (step < stages.length) {
-      if (onProgress) onProgress(stages[step]);
-      step++;
-    } else {
-      clearInterval(interval);
-      if (onComplete) onComplete(updatedAppInfo);
-      setTimeout(() => {
-        if (typeof window !== "undefined") window.location.reload();
-      }, 300);
+
+  const latest = await CapacitorUpdater.getLatest();
+  if (!latest?.url || !latest?.version || !latest?.checksum || !latest?.sessionKey) {
+    throw new Error(latest?.message || "No verified WE4ALL update is available for this device.");
+  }
+  if (targetVersion && latest.version !== targetVersion) {
+    throw new Error("The available OTA version changed. Check for updates again before installing.");
+  }
+
+  onProgress?.({ pct: 20, msg: "Downloading update from WE4ALL staging..." });
+  const bundle = await CapacitorUpdater.download({
+    url: latest.url,
+    version: latest.version,
+    checksum: latest.checksum,
+    sessionKey: latest.sessionKey
+  });
+  if (!bundle?.id) {
+    throw new Error("The updater did not return a valid downloaded bundle identifier.");
+  }
+
+  onProgress?.({ pct: 80, msg: "Bundle downloaded. Queueing it for safe activation..." });
+  await CapacitorUpdater.next({ id: bundle.id });
+
+  const current = await CapacitorUpdater.current();
+  const updatedInfo = {
+    currentVersion: current?.bundle?.version || current?.native || CURRENT_SCHEMA_VERSION,
+    latestAvailableVersion: latest.version,
+    updateAvailable: false,
+    releaseNotes: releaseNotes || latest.message || "",
+    status: "QUEUED_FOR_NEXT_BACKGROUND",
+    nativeUpdater: "WE4ALL"
+  };
+  onProgress?.({ pct: 100, msg: "Update queued. It will activate on the next safe app background/relaunch." });
+  onComplete?.(updatedInfo);
+  return updatedInfo;
+}
+
+export async function createMarketplaceOrder({
+  partnerId,
+  items,
+  zoneId,
+  deliveryAddress,
+  idempotencyKey,
+  feePolicyVersions = {}
+}) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) {
+    throw new Error("Sign in with a verified WE4ALL customer account before checkout.");
+  }
+  if (!partnerId || !Array.isArray(items) || !items.length) {
+    throw new Error("A live approved merchant and at least one catalogue item are required.");
+  }
+  if (!idempotencyKey || String(idempotencyKey).length < 8) {
+    throw new Error("A stable checkout idempotency key is required.");
+  }
+  const safeItems = items.map((item) => ({
+    catalog_item_id: String(item.catalogItemId || ""),
+    quantity: Number(item.quantity)
+  }));
+  if (safeItems.some((item) => !/^[0-9a-f-]{36}$/i.test(item.catalog_item_id) ||
+    !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 100)) {
+    throw new Error("Your cart contains an item that has not been published to the live WE4ALL catalogue.");
+  }
+  const { data, error } = await supabase.functions.invoke("we4all-create-order", {
+    body: {
+      partnerId,
+      items: safeItems.map((item) => ({ catalogItemId: item.catalog_item_id, quantity: item.quantity })),
+      zoneId,
+      deliveryAddress,
+      idempotencyKey: String(idempotencyKey),
+      feePolicyVersions
     }
-  }, 350);
+  });
+  if (error) throw new Error(error.message || "The server could not create your order.");
+  if (!data?.ok || !data?.order_id || data?.payment_status !== "pending") {
+    throw new Error("Order creation did not return a valid pending-payment record.");
+  }
+  return data;
+}
+
+export async function getMarketplaceFeeQuote({ items, zoneId }) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) throw new Error("Sign in before reviewing checkout fees.");
+  if (!Array.isArray(items) || items.length < 1 || items.length > 50) throw new Error("A valid cart is required to review fees.");
+  const itemIds = items.map((item) => String(item.catalogItemId || ""));
+  if (itemIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) throw new Error("The cart contains an item that is not linked to the live catalogue.");
+
+  const [{ data: catalogue, error: catalogueError }, { data: policies, error: policyError }] = await Promise.all([
+    supabase.from("we4all_catalog_items").select("id,title,category_key,price_inr,metadata").in("id", itemIds),
+    supabase.from("we4all_fee_policies")
+      .select("id,fee_type,scope_type,scope_key,rate_percent,fixed_inr,fee_basis,display_name,disclosure_text,active,effective_at,ends_at,version")
+      .eq("fee_type", "customer_platform_fee")
+      .eq("active", true)
+      .lte("effective_at", new Date().toISOString())
+      .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
+  ]);
+  if (catalogueError) throw new Error("Could not verify live catalogue prices. No order was placed.");
+  if (policyError) throw new Error("Checkout fee details are unavailable. Retry once the server is connected.");
+  const byId = new Map((catalogue || []).map((item) => [item.id, item]));
+  if (itemIds.some((id) => !byId.has(id))) throw new Error("A cart item is no longer available in the live catalogue.");
+  const pricedItems = items.map((item) => ({
+    ...byId.get(String(item.catalogItemId)),
+    catalog_item_id: String(item.catalogItemId),
+    quantity: Number(item.quantity)
+  }));
+  return quoteMarketplaceFees(pricedItems, policies || [], zoneId);
+}
+
+export async function createUPIPaymentIntent(orderId) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const safeOrderId = String(orderId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
+    throw new Error("A valid server order is required before payment.");
+  }
+  const { data, error } = await supabase.functions.invoke("we4all-create-upi-intent", {
+    body: { orderId: safeOrderId }
+  });
+  if (error) {
+    let serverCode = "";
+    try { serverCode = (await error.context?.json?.())?.error || ""; } catch {}
+    if (serverCode === "UPI_INTENT_NOT_ENABLED") {
+      throw new Error("UPI payments are not enabled yet. WE4ALL must first connect a trusted payment verification method.");
+    }
+    if (serverCode === "UPI_PAYEE_NOT_CONFIGURED") {
+      throw new Error("UPI payment is not configured yet. The WE4ALL payee UPI ID must be added on the server.");
+    }
+    throw new Error(error.message || "The server could not prepare UPI payment.");
+  }
+  if (!data?.ok || data.provider !== "upi_intent" || !data.intentUri ||
+      !Number.isSafeInteger(Number(data.amountPaise)) || Number(data.amountPaise) < 1 || data.currency !== "INR") {
+    throw new Error(data?.error || "The server did not return a valid UPI payment request.");
+  }
+  return data;
+}
+
+export async function createCashfreeCheckoutOrder(orderId) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const safeOrderId = String(orderId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
+    throw new Error("A valid server order is required before payment.");
+  }
+  const { data, error } = await supabase.functions.invoke("we4all-create-cashfree-order", {
+    body: { orderId: safeOrderId }
+  });
+  if (error) throw new Error(error.message || "The server could not prepare Cashfree checkout.");
+  if (!data?.ok || data.provider !== "cashfree" || !data.paymentSessionId ||
+      !["sandbox", "production"].includes(data.mode) || !Number.isSafeInteger(Number(data.amountPaise)) ||
+      Number(data.amountPaise) < 100 || data.currency !== "INR") {
+    throw new Error(data?.error || "The server did not return a valid Cashfree checkout session.");
+  }
+  return data;
+}
+
+export async function verifyCashfreeCheckoutPayment(orderId) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const safeOrderId = String(orderId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
+    throw new Error("A valid server order is required for payment verification.");
+  }
+  const { data, error } = await supabase.functions.invoke("we4all-verify-cashfree-payment", {
+    body: { orderId: safeOrderId }
+  });
+  if (error) throw new Error(error.message || "WE4ALL could not verify Cashfree payment status.");
+  if (!data || typeof data.verified !== "boolean") {
+    throw new Error(data?.error || "The server returned no verified payment status.");
+  }
+  return data;
+}
+
+export async function confirmMarketplaceOrder(orderId) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const safeOrderId = String(orderId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
+    throw new Error("A valid server order is required before confirmation.");
+  }
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) {
+    throw new Error("Sign in with the approved merchant account before confirming an order.");
+  }
+  const { data, error } = await supabase.functions.invoke("we4all-merchant-confirm-order", {
+    body: { orderId: safeOrderId }
+  });
+  if (error) throw new Error(error.message || "The server could not confirm this order.");
+  if (!data?.ok || data.order_id !== safeOrderId || !["merchant_confirmed", "accepted"].includes(data.status)) {
+    throw new Error(data?.error || "The server did not return a valid order confirmation.");
+  }
+  return data;
+}
+
+export async function cancelMarketplaceOrder(orderId) {
+  if (!supabase) throw new Error("WE4ALL backend is not configured.");
+  const safeOrderId = String(orderId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(safeOrderId)) {
+    throw new Error("A valid server order is required before cancellation.");
+  }
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) {
+    throw new Error("Sign in to the customer or merchant account that owns this order.");
+  }
+  const { data, error } = await supabase.functions.invoke("we4all-cancel-order", {
+    body: { orderId: safeOrderId }
+  });
+  if (error) {
+    let serverCode = "";
+    try { serverCode = (await error.context?.json?.())?.error || ""; } catch {}
+    if (serverCode === "REFUND_PROVIDER_REQUIRED") {
+      throw new Error("This order is paid or payment-authorized. Cancellation is blocked until the provider can verify a refund or void.");
+    }
+    if (serverCode === "ORDER_NOT_CANCELLABLE") {
+      throw new Error("This order cannot be cancelled in its current status.");
+    }
+    if (serverCode === "ORDER_NOT_FOUND") {
+      throw new Error("This order was not found for the signed-in account.");
+    }
+    throw new Error(error.message || "The server could not cancel this order.");
+  }
+  if (!data?.ok || data.order_id !== safeOrderId || data.status !== "cancelled") {
+    throw new Error(data?.error || "The server did not return a valid cancellation.");
+  }
+  return data;
+}
+
+export async function listMarketplaceOrders({ partnerId = "" } = {}) {
+  if (!supabase) return [];
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  const authUser = authData?.user;
+  if (authError || !authUser?.id) return [];
+
+  let query = supabase
+    .from("we4all_orders")
+    .select("id,order_number,partner_id,status,payment_status,subtotal_inr,tax_inr,delivery_fee_inr,total_inr,delivery_address,created_at,items:we4all_order_items(item_title_snapshot,quantity,unit_price_inr)")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (partnerId) query = query.eq("partner_id", String(partnerId));
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message || "Could not refresh server orders.");
+  return (data || []).map((order) => {
+    const address = order.delivery_address && typeof order.delivery_address === "object"
+      ? order.delivery_address
+      : {};
+    return {
+      id: order.order_number || order.id,
+      serverOrderId: order.id,
+      isServerManaged: true,
+      merchantId: authUser.id,
+      merchantOwnerId: authUser.id,
+      partnerId: order.partner_id,
+      shopName: "Marketplace Order",
+      customerName: "WE4ALL Customer",
+      address: address.fullAddress || address.address || address.label || "Address on order",
+      status: order.status,
+      paymentStatus: String(order.payment_status || "pending").toUpperCase(),
+      itemsTotal: Number(order.subtotal_inr || 0),
+      deliveryFee: Number(order.delivery_fee_inr || 0),
+      gst: Number(order.tax_inr || 0),
+      grandTotal: Number(order.total_inr || 0),
+      dateStr: String(order.created_at || "").slice(0, 10),
+      createdAt: order.created_at,
+      items: (order.items || []).map((item) => ({
+        name: item.item_title_snapshot,
+        qty: Number(item.quantity || 0),
+        price: Number(item.unit_price_inr || 0)
+      }))
+    };
+  });
 }

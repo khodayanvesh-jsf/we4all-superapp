@@ -1,7 +1,20 @@
 import React from "react";
+import { Capacitor } from "@capacitor/core";
+import { CapacitorUpdater } from "@capgo/capacitor-updater";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import ActionAndErrorFeedbackLayer from "./modules/ActionAndErrorFeedbackLayer.jsx";
+
+function NativeBundleReady() {
+  React.useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorUpdater.notifyAppReady().catch((error) => {
+        console.error("WE4ALL OTA app-ready acknowledgement failed:", error);
+      });
+    }
+  }, []);
+  return null;
+}
 
 class RootErrorBoundary extends React.Component {
   constructor(props) {
@@ -60,6 +73,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <RootErrorBoundary>
       <ActionAndErrorFeedbackLayer>
         <App />
+        <NativeBundleReady />
       </ActionAndErrorFeedbackLayer>
     </RootErrorBoundary>
   </React.StrictMode>

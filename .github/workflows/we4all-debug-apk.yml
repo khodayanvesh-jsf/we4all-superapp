@@ -1,0 +1,66 @@
+name: WE4ALL Debug APK
+on:
+  push:
+    branches:
+      - codex/we4all-partner-registration-kyc-20261107
+  pull_request:
+    branches:
+      - codex/we4all-offline-sync
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  debug-apk:
+    if: github.event_name != 'pull_request' || github.head_ref == 'codex/we4all-real-trial'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify application workflows
+        run: npm test
+      - name: Build production web assets
+        run: npm run build
+      - name: Sync Android app
+        run: npx cap sync android
+      - name: Install Android SDK 36
+        run: |
+          sdkmanager_path="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager_path"
+          yes | "$sdkmanager_path" --licenses >/dev/null
+          "$sdkmanager_path" --install "platforms;android-36" "build-tools;36.0.0"
+      - name: Build Android debug APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew --no-daemon --stacktrace assembleDebug
+      - name: Verify APK signature and record checksum
+        run: |
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          "$sdk/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
+          sha256sum "$apk"
+      - name: Upload shareable test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: WE4ALL-debug-${{ github.event.pull_request.head.sha || github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

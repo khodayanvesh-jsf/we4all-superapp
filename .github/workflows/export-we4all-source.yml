@@ -1,0 +1,95 @@
+name: Export WE4ALL offline source package
+
+on:
+  push:
+    branches:
+      - main
+      - codex/we4all-offline-sync
+  pull_request:
+    branches:
+      - codex/we4all-offline-sync
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    if: github.event_name != 'pull_request' || github.head_ref == 'codex/we4all-real-trial'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout requested commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Create source-only archive from tracked files
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_dir="$RUNNER_TEMP/we4all-export"
+          mkdir -p "$export_dir"
+          git archive --format=tar HEAD | tar -xf - -C "$export_dir"
+          rm -f "$export_dir/WE4ALL-v3.0.1-Production.apk" "$export_dir/SOURCE-COMMIT.txt"
+          printf 'Repository: %s\nBranch: %s\nCommit: %s\nExported: %s\n' \
+            "$GITHUB_REPOSITORY" "${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" \
+            > "$export_dir/SOURCE-COMMIT.txt"
+          (cd "$export_dir" && zip -qr "$RUNNER_TEMP/WE4ALL-offline-source.zip" .)
+          unzip -Z1 "$RUNNER_TEMP/WE4ALL-offline-source.zip" | grep -qx 'package-lock.json'
+          unzip -Z1 "$RUNNER_TEMP/WE4ALL-offline-source.zip" | grep -qx 'supabase/config.toml'
+          unzip -Z1 "$RUNNER_TEMP/WE4ALL-offline-source.zip" | grep -qx 'android/gradlew'
+          sha256sum "$RUNNER_TEMP/WE4ALL-offline-source.zip" > "$RUNNER_TEMP/WE4ALL-offline-source.zip.sha256"
+
+      - name: Upload source and checksum
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: WE4ALL-offline-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/WE4ALL-offline-source.zip
+            ${{ runner.temp }}/WE4ALL-offline-source.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  verify-windows-upgrade:
+    if: github.event_name == 'pull_request' && github.head_ref == 'codex/we4all-real-trial'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - name: Upgrade an older checkout and preserve its files
+        shell: powershell
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $copy = Join-Path $env:RUNNER_TEMP 'WE4ALL-copy'
+          $origin = $env:GITHUB_WORKSPACE
+          git branch codex/we4all-offline-sync HEAD^
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create old branch fixture.' }
+          git branch codex/we4all-real-trial HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create trial branch fixture.' }
+          git clone --single-branch --branch codex/we4all-offline-sync $origin $copy
+          if ($LASTEXITCODE -ne 0) { throw 'Could not clone old branch fixture.' }
+          $settings = Join-Path $copy '.env.local'
+          Set-Content -Path $settings -Value 'VITE_TEST_SETTING=preserve'
+          $edit = Join-Path $copy 'local-note.txt'
+          Set-Content -Path $edit -Value 'keep'
+          try {
+            & ./offline/Sync-WE4ALL.ps1 -Destination $copy -RepoUrl $origin
+            throw 'Dirty checkout was accepted.'
+          } catch {
+            if ($_.Exception.Message -notmatch 'Local changes found') { throw }
+          }
+          if ((Get-Content $edit -Raw).Trim() -ne 'keep') { throw 'Local edit was lost.' }
+          Remove-Item $edit
+          & ./offline/Sync-WE4ALL.ps1 -Destination $copy -RepoUrl $origin
+          if ((& git -C $copy rev-parse HEAD).Trim() -ne $env:EXPECTED_HEAD) { throw 'Wrong trial commit.' }
+          if ((& git -C $copy branch --show-current).Trim() -ne 'codex/we4all-real-trial') { throw 'Wrong trial branch.' }
+          if ((Get-Content $settings -Raw).Trim() -ne 'VITE_TEST_SETTING=preserve') { throw 'Local settings changed.' }
+          git -C $copy show-ref --verify refs/heads/codex/we4all-offline-sync
+          if ($LASTEXITCODE -ne 0) { throw 'Old local branch was lost.' }

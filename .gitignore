@@ -6,3 +6,8 @@ dist
 .DS_Store
 .vercel
 .env*
+
+# Supabase CLI metadata and local OTA signing material
+supabase/.temp/
+.capgo_key_v2
+.capgo_key_v2.pub

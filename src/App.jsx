@@ -1,9 +1,13 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
+import { APP_VERSION, APP_BUILD_NUMBER } from "./appVersion.js";
+import { marketCellId } from "./modules/workflows/marketLocation.js";
 import {
   INITIAL_APP_UPDATE_INFO,
-  GEO_ZONES,
   INITIAL_GEO_ADS,
   INITIAL_CATEGORIES,
+  CUSTOMER_QUICK_LINKS,
+  mergeRequiredCategories,
   SERVICE_CATEGORIES,
   LABOUR_TRADE_CATEGORIES,
   INITIAL_MERCHANTS,
@@ -25,18 +29,29 @@ import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
 import OrdersHistoryAndInvoice from "./modules/OrdersHistoryAndInvoice";
 import OwnerAccountProfile from "./modules/OwnerAccountProfile";
+import MerchantPortal from "./modules/MerchantPortal";
+import ServiceProviderPortal from "./modules/ServiceProviderPortal";
+import DecoratorPortal from "./modules/DecoratorPortal";
+import RiderCaptainPortal from "./modules/RiderCaptainPortal";
+const RideWorkspace = React.lazy(() => import("./modules/rides/RideWorkspace"));
+import { canOpenPartnerPortal, isCustomerVisibleListing, calculateDecoratorAdvance } from "./modules/workflows/portalRules";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
+import AdminSecurityGate from "./modules/AdminSecurityGate";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
-import { verifyModulePipelineIntegrity } from "./modules/security/CodeSecurityGuard";
 import {
   saveCloudAndLocalState,
   loadCloudAndLocalState,
   wipeAllPreinstalledServerData,
   subscribeToRealtimeUpdates,
   checkLiveCloudOtaManifest,
-  performZeroLossOtaUpdate
+  performZeroLossOtaUpdate,
+  createMarketplaceOrder,
+  getMarketplaceFeeQuote,
+  supabase,
+  activateSupabaseAccount,
+  clearActiveSupabaseAccount
 } from "./supabaseClient";
 
 function FounderLogoBadge({ logoUrl }) {
@@ -56,6 +71,14 @@ function FounderLogoBadge({ logoUrl }) {
       )}
     </div>
   );
+}
+
+function checkoutFingerprintFor(cart = []) {
+  return JSON.stringify(cart.map((item) => ({
+    catalogItemId: String(item.catalogItemId || item.productId),
+    partnerId: String(item.partnerId),
+    quantity: Number(item.qty)
+  })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
 }
 
 function calculateOrderLogistics(items = [], consumerDistanceKm = 1.8, heavyFee = 0, laborFee = 0) {
@@ -152,6 +175,21 @@ function MobilePhoneShell({
           )}
         </div>
       </div>
+      <div
+        className={
+          "px-3 py-1 flex items-center justify-between text-[9px] font-bold tracking-wide border-b shrink-0 " +
+          (brightTheme
+            ? "bg-emerald-50 text-emerald-950 border-emerald-100"
+            : "bg-[#0a171d] text-emerald-200 border-slate-800")
+        }
+        aria-label="Installed application version"
+        data-testid="installed-app-version"
+      >
+        <span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span>
+        <span className="truncate ml-2 opacity-80">
+          OTA BUNDLE {appUpdateInfo?.currentBundleVersion || "BUILT-IN"}
+        </span>
+      </div>
 
       {personalShoppingFromPartner && (
         <div className="bg-indigo-600 text-white px-3 py-1.5 flex justify-between items-center text-[10px] font-black shrink-0">
@@ -194,7 +232,7 @@ function MobilePhoneShell({
         {children}
       </div>
 
-      {floatingLiveOrder && showFooter && (
+      {floatingLiveOrder && showFooter && !floatingLiveOrder.isServerManaged && (
         <div className="absolute bottom-14 left-3 right-3 z-30">
           <button
             type="button"
@@ -203,7 +241,7 @@ function MobilePhoneShell({
           >
             <div className="text-left">
               <p className="text-[10px] font-black leading-tight">
-                LIVE ORDER #{floatingLiveOrder.id}: {StringString((floatingLiveOrder?.status ?? "") ?? "").replace(/_/g, " ")}
+                LIVE ORDER #{floatingLiveOrder.id}: {String(floatingLiveOrder?.status ?? "").replace(/_/g, " ")}
               </p>
               <p className="text-[9px] font-bold text-amber-200">
                 Captain: {floatingLiveOrder.riderName} | Tap for Live Route Map & OTP
@@ -240,14 +278,23 @@ function AppContent() {
 
   const [viewMode, setViewMode] = useState(isDirectAdminUrl ? "founder_web" : "mobile_app");
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-  const [adminAuthStep, setAdminAuthStep] = useState(1);
-  const [adminLoginForm, setAdminLoginForm] = useState({ username: "", password: "" });
-  const [adminPinInput, setAdminPinInput] = useState("");
-  const [adminLoginError, setAdminLoginError] = useState("");
+  const [adminAccess, setAdminAccess] = useState(null);
 
   const [lang, setLang] = useState(savedCloud?.lang || "EN");
   const t = getLangText(lang);
   const [brightTheme, setBrightTheme] = useState(true);
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+        setIsAdminAuthenticated(false);
+        setAdminAccess(null);
+        setViewMode("mobile_app");
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   const [founderLogoUrl, setFounderLogoUrl] = useState(
     () => localStorage.getItem("we4all_founder_original_photo") || ""
@@ -288,45 +335,94 @@ function AppContent() {
   const footerTab = globalFooterTab;
   const setFooterTab = setGlobalFooterTab;
 
+  const openPersonalShop = (partnerRole) => {
+    const allowedPartnerRoles = ["merchant", "service_provider", "decorator", "rider", "labour"];
+    if (!allowedPartnerRoles.includes(partnerRole) || authenticatedPartnerRole !== partnerRole) {
+      triggerToast("Personal shopping could not verify the active partner session.");
+      return;
+    }
+    setPersonalShoppingFromPartner(partnerRole);
+    setActivePortal("customer");
+    setFooterTab("home");
+  };
+
+  const returnToPartnerDesk = () => {
+    const partnerRole = personalShoppingFromPartner;
+    const allowedPartnerRoles = ["merchant", "service_provider", "decorator", "rider", "labour"];
+    if (
+      allowedPartnerRoles.includes(partnerRole) &&
+      authenticatedPartnerRole === partnerRole &&
+      currentUser?.authUserId &&
+      currentUser?.role === partnerRole
+    ) {
+      setActivePortal(partnerRole);
+    } else {
+      setActivePortal("customer");
+      setPersonalShoppingFromPartner(null);
+      triggerToast("Partner session expired. You are staying in Customer mode.");
+      return;
+    }
+    setPersonalShoppingFromPartner(null);
+    setFooterTab("home");
+  };
+
   const [appUpdateInfo, setAppUpdateInfo] = useState(
     savedCloud?.appUpdateInfo || INITIAL_APP_UPDATE_INFO
   );
   const [otaProgress, setOtaProgress] = useState(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const otaLaunchCheckStarted = useRef(false);
 
   const handleManualCheckForUpdate = async () => {
     setCheckingUpdate(true);
-    triggerToast("Checking WE4ALL Cloud Server for OTA updates...");
-    const latest = await checkLiveCloudOtaManifest((payload) => {
-      if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
-    });
-    setTimeout(() => {
+    try {
+      const latest = await checkLiveCloudOtaManifest((payload) => {
+        if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+      });
+      if (latest?.error) throw new Error(latest.error);
+      triggerToast(latest?.updateAvailable
+        ? "A WE4ALL update is available for this device."
+        : latest?.nativeUpdaterRequired
+          ? "OTA updates run inside the installed Android/iOS app."
+          : "WE4ALL is up to date on its update channel.");
+    } catch (error) {
+      triggerToast(error?.message || "Could not check the WE4ALL update channel.");
+    } finally {
       setCheckingUpdate(false);
-      const targetVer =
-        latest?.latestAvailableVersion || appUpdateInfo?.latestAvailableVersion || "3.1.0";
-      setAppUpdateInfo((prev) => ({
-        ...prev,
-        ...(latest || {}),
-        latestAvailableVersion: targetVer
-      }));
-      triggerToast("Verified WE4ALL v" + targetVer + " with Code Security Guard!");
-    }, 500);
+    }
   };
 
-  const handleRunOtaUpdate = () => {
-    const integrity = verifyModulePipelineIntegrity(savedCloud || {});
-    if (!integrity.valid) return;
-    performZeroLossOtaUpdate(
-      appUpdateInfo.latestAvailableVersion,
-      appUpdateInfo.releaseNotes,
-      (stage) => setOtaProgress(stage),
-      (updatedInfo) => {
-        setAppUpdateInfo(updatedInfo);
-        setOtaProgress(null);
-        triggerToast("Updated to v" + updatedInfo.currentVersion + " with zero data loss!");
-      }
-    );
+  const handleRunOtaUpdate = async () => {
+    setOtaProgress({ pct: 5, msg: "Preparing verified WE4ALL update..." });
+    try {
+      const updatedInfo = await performZeroLossOtaUpdate(
+        appUpdateInfo.latestAvailableVersion,
+        appUpdateInfo.releaseNotes,
+        (stage) => setOtaProgress(stage),
+        (info) => setAppUpdateInfo(info)
+      );
+      setOtaProgress(null);
+      triggerToast("Update downloaded and queued. It will activate at the next safe app background/relaunch.");
+    } catch (error) {
+      setOtaProgress(null);
+      triggerToast(error?.message || "OTA update failed. The current app bundle remains active.");
+    }
   };
+
+  // The native updater owns automatic download, activation, and rollback.
+  // This launch check only refreshes the About App display.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || otaLaunchCheckStarted.current) return undefined;
+    otaLaunchCheckStarted.current = true;
+    let active = true;
+    void checkLiveCloudOtaManifest(({ appUpdateInfo }) => {
+      if (active) setAppUpdateInfo(appUpdateInfo);
+    });
+    return () => {
+      active = false;
+      otaLaunchCheckStarted.current = false;
+    };
+  }, []);
 
   const [accountSecurity, setAccountSecurity] = useState(
     savedCloud?.accountSecurity || {
@@ -337,17 +433,20 @@ function AppContent() {
   );
   const [currentUser, setCurrentUser] = useState(
     savedCloud?.currentUser || {
-      id: "usr_clean",
-      fullName: "WE4ALL User",
+      id: "guest_visitor",
+      fullName: "Guest Visitor",
       phone: "",
       role: "customer",
+      portal: "customer",
+      isGuest: true,
       bankName: "",
       accountNumber: "",
       ifscCode: "",
-      upiId: "",
-      fastPin: "1234"
+      upiId: ""
     }
   );
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
   const [registeredUsers, setRegisteredUsers] = useState(savedCloud?.registeredUsers || []);
   if (typeof window !== "undefined") { window.__WE4ALL_USERS = registeredUsers; }
   if (typeof window !== "undefined") { window.__WE4ALL_USERS = registeredUsers; }
@@ -359,15 +458,127 @@ function AppContent() {
     setTimeout(() => setMobileToast(""), 4200);
   };
 
-  const [selectedZoneFilter, setSelectedZoneFilter] = useState("ALL_INDIA");
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let active = true;
+
+    const restoreVerifiedSession = async () => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (!active) return;
+      if (authError || !user) {
+        if (currentUserRef.current?.authUserId) {
+          clearActiveSupabaseAccount();
+          setAuthenticatedPartnerRole(null);
+          setCurrentUser({
+            id: "guest_visitor",
+            fullName: "Guest Visitor",
+            phone: "",
+            role: "customer",
+            portal: "customer",
+            isGuest: true
+          });
+          setActivePortal("customer");
+          window.setTimeout(() => window.location.reload(), 0);
+        }
+        return;
+      }
+
+      const activation = await activateSupabaseAccount(user.id);
+      if (!active) return;
+      if (!activation.ok) throw new Error(activation.reason || "Supabase account restore failed.");
+      if (activation.changed) {
+        // The activation step replaced any prior user's local snapshot with this user's private cloud snapshot.
+        window.location.reload();
+        return;
+      }
+
+      const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
+        supabase.from("we4all_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+        supabase.from("we4all_user_roles").select("role,status").eq("user_id", user.id)
+      ]);
+      if (profileError) throw profileError;
+      if (rolesError) throw rolesError;
+
+      const currentSnapshot = currentUserRef.current;
+      const preferredRole = currentSnapshot?.authUserId === user.id ? currentSnapshot.role : "customer";
+      const roleRecord = (roles || []).find((item) => item.role === preferredRole && item.status === "approved");
+      const resolvedRole = roleRecord?.role || "customer";
+      let activePartner = null;
+      if (resolvedRole !== "customer") {
+        const { data: partner, error: partnerError } = await supabase.from("we4all_partners")
+          .select("id,market_id,zone_id,approval_status")
+          .eq("owner_user_id", user.id).eq("partner_type", resolvedRole).eq("approval_status", "approved").maybeSingle();
+        if (partnerError) throw partnerError;
+        activePartner = partner;
+      }
+      const signedInUser = {
+        id: user.id,
+        authUserId: user.id,
+        phone: user.phone || profile?.phone || "",
+        fullName: profile?.full_name || user.user_metadata?.full_name || "",
+        businessName: profile?.business_name || "",
+        area: profile?.area || "",
+        partnerId: activePartner?.id || null,
+        marketId: activePartner?.market_id || activePartner?.zone_id || "",
+        role: resolvedRole,
+        status: "Approved",
+        isGuest: false
+      };
+      if (!active) return;
+      setCurrentUser(signedInUser);
+      if (resolvedRole === "customer") {
+        setAuthenticatedPartnerRole(null);
+        setActivePortal("customer");
+      } else {
+        setAuthenticatedPartnerRole(resolvedRole);
+        setActivePortal(resolvedRole);
+      }
+    };
+
+    restoreVerifiedSession().catch((error) => {
+      console.warn("WE4ALL Supabase session restore failed:", error?.message || error);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      // The Account flow verifies OTP and activates the user cache before setting app state.
+      if (event === "SIGNED_OUT") {
+        clearActiveSupabaseAccount();
+        setAuthenticatedPartnerRole(null);
+        setActivePortal("customer");
+        setCurrentUser({
+          id: "guest_visitor",
+          fullName: "Guest Visitor",
+          phone: "",
+          role: "customer",
+          portal: "customer",
+          isGuest: true
+        });
+        window.setTimeout(() => window.location.reload(), 0);
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState(savedCloud?.selectedZoneFilter && savedCloud.selectedZoneFilter !== "ALL_INDIA" ? savedCloud.selectedZoneFilter : "");
+  const [geoMarkets, setGeoMarkets] = useState([]);
+  const [marketCatalogProducts, setMarketCatalogProducts] = useState([]);
+  const [geoLocationBusy, setGeoLocationBusy] = useState(false);
+  const [geoLocationMessage, setGeoLocationMessage] = useState("");
   const [killedCategoriesByZone] = useState({});
   const [geoAds, setGeoAds] = useState(savedCloud?.geoAds || INITIAL_GEO_ADS);
-  const [categories, setCategories] = useState(savedCloud?.categories || INITIAL_CATEGORIES);
+  const [categories, setCategories] = useState(() =>
+    mergeRequiredCategories(INITIAL_CATEGORIES, savedCloud?.categories)
+  );
   const [merchants, setMerchants] = useState(savedCloud?.merchants || INITIAL_MERCHANTS);
   const [serviceProviders, setServiceProviders] = useState(
     savedCloud?.serviceProviders || INITIAL_SERVICE_PROVIDERS
   );
-  const [decorators] = useState(savedCloud?.decorators || INITIAL_DECORATORS);
+  const [decorators, setDecorators] = useState(savedCloud?.decorators || INITIAL_DECORATORS);
   const [labourWorkers, setLabourWorkers] = useState(
     savedCloud?.labourWorkers || INITIAL_LABOUR_WORKERS
   );
@@ -375,11 +586,11 @@ function AppContent() {
   const [functionHalls, setFunctionHalls] = useState(
     savedCloud?.functionHalls || INITIAL_FUNCTION_HALLS
   );
-  const [riders] = useState(savedCloud?.riders || INITIAL_RIDERS);
+  const [riders, setRiders] = useState(savedCloud?.riders || INITIAL_RIDERS);
 
-  const [pendingMerchants] = useState(savedCloud?.pendingMerchants || []);
-  const [pendingSubCategories] = useState(savedCloud?.pendingSubCategories || []);
-  const [rejectedItems] = useState(savedCloud?.rejectedItems || []);
+  const [pendingMerchants, setPendingMerchants] = useState(savedCloud?.pendingMerchants || []);
+  const [pendingSubCategories, setPendingSubCategories] = useState(savedCloud?.pendingSubCategories || []);
+  const [rejectedItems, setRejectedItems] = useState(savedCloud?.rejectedItems || []);
   const [monetizationConfig, setMonetizationConfig] = useState(
     savedCloud?.monetizationConfig || {
       globalPlatformFee: 0,
@@ -397,18 +608,83 @@ function AppContent() {
     { id: 6, role: "labour" }
   ]);
 
-  const [addressBook, setAddressBook] = useState(
-    savedCloud?.addressBook || [
-      { id: "addr_default", label: "Primary", fullAddress: "Adilabad Town", distanceKm: 1.8, verified: true }
-    ]
-  );
-  const [selectedAddressId] = useState("addr_default");
+  const [addressBook, setAddressBook] = useState(savedCloud?.addressBook || []);
+  const [selectedAddressId, setSelectedAddressId] = useState(savedCloud?.selectedAddressId || "");
   const activeAddressObj =
     addressBook.find((a) => a.id === selectedAddressId) || addressBook[0] || {
-      label: "Primary",
-      fullAddress: "Adilabad Town",
-      distanceKm: 1.8
+      label: "Your location",
+      fullAddress: "Set your delivery location",
+      zoneId: ""
     };
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let active = true;
+    const refreshMarkets = async () => {
+      const { data, error } = await supabase.from("we4all_markets").select("id,display_name,state_name,center_lat,center_lng").eq("active", true).order("display_name");
+      if (!active) return;
+      if (!error) setGeoMarkets(Array.isArray(data) ? data : []);
+    };
+    refreshMarkets();
+    const timer = window.setInterval(refreshMarkets, 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !selectedZoneFilter) {
+      setMarketCatalogProducts([]);
+      return undefined;
+    }
+    let active = true;
+    const refreshMarketCatalog = async () => {
+      const { data, error } = await supabase.from("we4all_catalog_items")
+        .select("id,partner_id,title,category_key,price_inr,mrp_inr,stock_quantity,unit_label,metadata,partner:we4all_partners!inner(id,display_name,market_id,zone_id,approval_status)")
+        .eq("approval_status", "approved").eq("is_active", true)
+        .eq("partner.approval_status", "approved").eq("partner.market_id", selectedZoneFilter);
+      if (!active) return;
+      if (error) return;
+      setMarketCatalogProducts((data || []).map((item) => ({
+        id: item.id, catalogItemId: item.id, partnerId: item.partner_id,
+        ownerUserId: item.partner?.id, marketId: item.partner?.market_id || item.partner?.zone_id,
+        zoneId: item.partner?.market_id || item.partner?.zone_id,
+        categoryId: item.category_key, subCategoryBrand: item.title,
+        shopName: item.partner?.display_name || "Local shop", metadata: item.metadata || {},
+        subcategoryKey: item.metadata?.subcategory_key || "",
+        variants: [{ id: item.id, label: item.unit_label || "unit", price: Number(item.price_inr), mrp: Number(item.mrp_inr || item.price_inr), weightGrams: 1000 }],
+        stockQuantity: item.stock_quantity, inStock: Number(item.stock_quantity ?? 1) > 0,
+        status: "APPROVED", merchantOffers: [{ merchantId: item.partner_id, partnerId: item.partner_id, catalogItemId: item.id, merchantName: item.partner?.display_name || "Local shop", price: Number(item.price_inr), area: item.partner?.market_id || "Local market" }]
+      })));
+    };
+    refreshMarketCatalog();
+    const timer = window.setInterval(refreshMarketCatalog, 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [selectedZoneFilter]);
+
+  const locateLocalMarket = () => {
+    if (!navigator.geolocation) { setGeoLocationMessage("Location access is unavailable on this device."); return; }
+    setGeoLocationBusy(true);
+    setGeoLocationMessage("");
+    navigator.geolocation.getCurrentPosition((position) => {
+      const latitude = Number(position.coords.latitude);
+      const longitude = Number(position.coords.longitude);
+      const marketId = marketCellId(latitude, longitude);
+      const market = geoMarkets.find((item) => item.id === marketId);
+      if (!market) {
+        setGeoLocationMessage("No local market is open at this location yet. A market opens automatically when a business registers here.");
+        setGeoLocationBusy(false);
+        return;
+      }
+      const address = { id: `geo_${marketId}`, label: "My location", fullAddress: market.display_name, zoneId: marketId, marketId, latitude, longitude, verified: true };
+      setAddressBook((current) => [address, ...(current || []).filter((item) => item.id !== address.id)]);
+      setSelectedAddressId(address.id);
+      setSelectedZoneFilter(marketId);
+      setGeoLocationMessage(`Showing the ${market.display_name} local market.`);
+      setGeoLocationBusy(false);
+    }, (error) => {
+      setGeoLocationMessage(error?.code === 1 ? "Allow location access to find the market around you." : "Could not read your location. Try again with device location enabled.");
+      setGeoLocationBusy(false);
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  };
 
   const [globalCustomerSubTab, setGlobalCustomerSubTab] = useState("stores");
   const customerHomeSubTab = globalCustomerSubTab;
@@ -419,18 +695,22 @@ function AppContent() {
   const [selectedMerchantByProduct, setSelectedMerchantByProduct] = useState({});
   const [expandedCompareProdId, setExpandedCompareProdId] = useState(null);
 
-  const [serviceFilterDate, setServiceFilterDate] = useState("2026-11-05");
+  const [serviceFilterDate, setServiceFilterDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [serviceFilterSlot, setServiceFilterSlot] = useState("10:00 AM - 11:00 AM");
 
   const [merchantCart, setMerchantCart] = useState(savedCloud?.merchantCart || []);
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [checkoutQuote, setCheckoutQuote] = useState(null);
+  const checkoutAttemptRef = useRef(null);
   const [serviceCart, setServiceCart] = useState(savedCloud?.serviceCart || []);
   const [decorCart, setDecorCart] = useState(savedCloud?.decorCart || []);
   const [taxiCart, setTaxiCart] = useState(savedCloud?.taxiCart || []);
   const [activeCartViewTab, setActiveCartViewTab] = useState("merchant_cart");
+  const visibleCheckoutQuote = checkoutQuote?.fingerprint === checkoutFingerprintFor(merchantCart) ? checkoutQuote : null;
 
   const [taxiBookingForm, setTaxiBookingForm] = useState({
-    pickupPin: "Adilabad Bus Stand",
-    dropPin: "Collectorate Chowk, Adilabad",
+    pickupPin: "",
+    dropPin: "",
     distanceKm: 2.5
   });
 
@@ -439,6 +719,12 @@ function AppContent() {
   const [liveOrderDrawerOpen, setLiveOrderDrawerOpen] = useState(false);
   const [serviceBookings, setServiceBookings] = useState(savedCloud?.serviceBookings || []);
   const [labourBookings, setLabourBookings] = useState(savedCloud?.labourBookings || []);
+  const [decorBids, setDecorBids] = useState(savedCloud?.decorBids || []);
+  const [captainRadarJobs, setCaptainRadarJobs] = useState(savedCloud?.captainRadarJobs || []);
+  const [pendingServiceProviders, setPendingServiceProviders] = useState(savedCloud?.pendingServiceProviders || []);
+  const [pendingDecorators, setPendingDecorators] = useState(savedCloud?.pendingDecorators || []);
+  const [pendingRiders, setPendingRiders] = useState(savedCloud?.pendingRiders || []);
+
 
   const [newMerchantProd, setNewMerchantProd] = useState({
     categoryId: "daily_needs",
@@ -463,7 +749,7 @@ function AppContent() {
   });
 
   const [providerHappyCodeInput, setProviderHappyCodeInput] = useState("");
-  const [eventDate, setEventDate] = useState("2026-11-10");
+  const [eventDate, setEventDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [captainOtpInput, setCaptainOtpInput] = useState("");
 
   useEffect(() => {
@@ -488,13 +774,20 @@ function AppContent() {
       rejectedItems,
       monetizationConfig,
       addressBook,
+      selectedAddressId,
+      selectedZoneFilter,
       merchantCart,
       serviceCart,
       decorCart,
       taxiCart,
       orders,
       serviceBookings,
-      labourBookings
+      labourBookings,
+      decorBids,
+      captainRadarJobs,
+      pendingServiceProviders,
+      pendingDecorators,
+      pendingRiders
     });
   }, [
     lang,
@@ -517,13 +810,20 @@ function AppContent() {
     rejectedItems,
     monetizationConfig,
     addressBook,
+    selectedAddressId,
+    selectedZoneFilter,
     merchantCart,
     serviceCart,
     decorCart,
     taxiCart,
     orders,
     serviceBookings,
-    labourBookings
+    labourBookings,
+    decorBids,
+    captainRadarJobs,
+    pendingServiceProviders,
+    pendingDecorators,
+    pendingRiders
   ]);
 
   useEffect(() => {
@@ -531,6 +831,16 @@ function AppContent() {
       if (remoteState.orders) setOrders(remoteState.orders);
       if (remoteState.serviceBookings) setServiceBookings(remoteState.serviceBookings);
       if (remoteState.labourBookings) setLabourBookings(remoteState.labourBookings);
+      if (remoteState.decorBids) setDecorBids(remoteState.decorBids);
+      if (remoteState.captainRadarJobs) setCaptainRadarJobs(remoteState.captainRadarJobs);
+      if (remoteState.pendingServiceProviders) setPendingServiceProviders(remoteState.pendingServiceProviders);
+      if (remoteState.pendingDecorators) setPendingDecorators(remoteState.pendingDecorators);
+      if (remoteState.pendingRiders) setPendingRiders(remoteState.pendingRiders);
+      if (remoteState.decorators) setDecorators(remoteState.decorators);
+      if (remoteState.riders) setRiders(remoteState.riders);
+      if (remoteState.pendingMerchants) setPendingMerchants(remoteState.pendingMerchants);
+      if (remoteState.pendingSubCategories) setPendingSubCategories(remoteState.pendingSubCategories);
+      if (remoteState.rejectedItems) setRejectedItems(remoteState.rejectedItems);
       if (remoteState.products) setProducts(remoteState.products);
       if (remoteState.appUpdateInfo) setAppUpdateInfo(remoteState.appUpdateInfo);
     });
@@ -548,7 +858,7 @@ function AppContent() {
 
   const openFounderAdminGate = () => {
     setIsAdminAuthenticated(false);
-    setAdminAuthStep(1);
+    setAdminAccess(null);
     setViewMode("founder_web");
   };
 
@@ -561,7 +871,7 @@ function AppContent() {
               merchantId: 1,
               merchantName: product.shopName,
               price: product.variants?.[0]?.price || 100,
-              area: "Adilabad"
+              area: product.marketId || product.zoneId || "Local market"
             }
           ];
     const chosenId = selectedMerchantByProduct[product.id];
@@ -591,7 +901,10 @@ function AppContent() {
           ...merchantCart,
           {
             productId: product.id,
+            catalogItemId: activeOffer.catalogItemId || product.catalogItemId || product.id,
+            partnerId: activeOffer.partnerId || product.partnerId || "",
             categoryId: product.categoryId,
+            subcategoryKey: product.subcategoryKey || product.metadata?.subcategory_key || "",
             variantId: variant.id,
             name: product.subCategoryBrand + " (" + variant.label + ")",
             merchantId: activeOffer.merchantId,
@@ -605,81 +918,133 @@ function AppContent() {
     triggerToast("Added " + product.subCategoryBrand + " to Cart!");
   };
 
-  const handlePlaceOrderForCheckout = () => {
-    if ((merchantCart || []).length === 0) return;
-    const itemsTotal = merchantCart.reduce((s, i) => s + i.price * i.qty, 0);
-    const { totalWeightGrams, totalRouteKm, vehicle, deliveryFee } = calculateOrderLogistics(
-      merchantCart,
-      activeAddressObj.distanceKm,
-      0,
-      0
-    );
-    const silentFee = Number(monetizationConfig.globalPlatformFee || 0);
-    const gst = Number(((itemsTotal + deliveryFee + silentFee) * 0.05).toFixed(2));
-    const grandTotal = Number((itemsTotal + deliveryFee + silentFee + gst).toFixed(2));
+  const handlePlaceOrderForCheckout = async () => {
+    if (checkoutSubmitting || (merchantCart || []).length === 0) return;
+    if (!currentUser?.authUserId || currentUser?.isGuest) {
+      setFooterTab("account");
+      triggerToast("Sign in to a WE4ALL customer account before placing a server order.");
+      return;
+    }
+    const checkoutMarketId = activeAddressObj.marketId || activeAddressObj.zoneId || selectedZoneFilter;
+    if (!checkoutMarketId || checkoutMarketId === "ALL_INDIA") {
+      triggerToast("Choose your local market or use your device location before placing an order.");
+      return;
+    }
 
-    const newOrder = {
-      id: "VFL-" + Math.floor(1000 + Math.random() * 9000),
-      dateStr: new Date().toISOString().slice(0, 10),
-      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      periodTag: "TODAY",
-      customerName: currentUser.fullName,
-      address: activeAddressObj.fullAddress,
-      distanceKm: totalRouteKm,
-      totalWeightGrams,
-      vehicle,
-      shopName: Array.from(new Set(merchantCart.map((i) => i.merchantName))).join(" + "),
-      items: merchantCart,
-      itemsTotal,
-      deliveryFee,
-      gst,
-      grandTotal,
-      riderName: riders[0]?.name || "Assigned Captain",
-      status: "MERCHANT_APPROVED_AWAITING_PAYMENT",
-      secretOtp: String(Math.floor(1000 + Math.random() * 9000))
-    };
+    const catalogIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const partnerIds = [...new Set(merchantCart.map((item) => String(item.partnerId || "")))];
+    if (
+      merchantCart.some((item) => !catalogIdPattern.test(String(item.catalogItemId || item.productId || "")) ||
+        !Number.isInteger(Number(item.qty)) || Number(item.qty) < 1 || Number(item.qty) > 100) ||
+      partnerIds.length !== 1 || !catalogIdPattern.test(partnerIds[0])
+    ) {
+      triggerToast("This cart contains items that are not linked to one approved live merchant catalogue. No order was placed.");
+      return;
+    }
 
-    setOrders([newOrder, ...orders]);
-    setActiveOrderId(newOrder.id);
-    setMerchantCart([]);
-    setPendingUpiPayment({
-      type: "APPROVED_MERCHANT_ORDER",
-      orderId: newOrder.id,
-      title: "Order #" + newOrder.id,
-      amount: newOrder.grandTotal
-    });
-  };
+    const checkoutFingerprint = checkoutFingerprintFor(merchantCart);
+    if (checkoutQuote?.fingerprint !== checkoutFingerprint) {
+      setCheckoutSubmitting(true);
+      try {
+        const quote = await getMarketplaceFeeQuote({
+          items: merchantCart.map((item) => ({
+            catalogItemId: String(item.catalogItemId || item.productId),
+            quantity: Number(item.qty)
+          })),
+          zoneId: checkoutMarketId
+        });
+        setCheckoutQuote({ ...quote, fingerprint: checkoutFingerprint });
+      } catch (error) {
+        triggerToast(error?.message || "Could not verify the current order total. No order was placed.");
+      } finally {
+        setCheckoutSubmitting(false);
+      }
+      return;
+    }
+    const attemptStorageKey = `we4all_checkout_attempt_${currentUser.authUserId}`;
+    let attempt = checkoutAttemptRef.current;
+    if (!attempt || attempt.fingerprint !== checkoutFingerprint || attempt.userId !== currentUser.authUserId) {
+      try {
+        const savedAttempt = JSON.parse(sessionStorage.getItem(attemptStorageKey) || "null");
+        attempt = savedAttempt?.fingerprint === checkoutFingerprint &&
+          savedAttempt?.userId === currentUser.authUserId &&
+          typeof savedAttempt?.idempotencyKey === "string" &&
+          savedAttempt.idempotencyKey.length >= 8 &&
+          savedAttempt.idempotencyKey.length <= 160
+          ? savedAttempt
+          : null;
+      } catch {
+        attempt = null;
+      }
+      if (!attempt) {
+        const idempotencyKey = globalThis.crypto?.randomUUID?.();
+        if (!idempotencyKey) {
+          triggerToast("Secure checkout identifiers are unavailable on this device. Your cart was not submitted.");
+          return;
+        }
+        attempt = {
+          fingerprint: checkoutFingerprint,
+          userId: currentUser.authUserId,
+          idempotencyKey
+        };
+      }
+      checkoutAttemptRef.current = attempt;
+      try { sessionStorage.setItem(attemptStorageKey, JSON.stringify(attempt)); } catch {}
+    }
 
-  const handleCompleteUpiPayment = (chosenUpiAppName) => {
-    if (!pendingUpiPayment) return;
-    if (pendingUpiPayment.type === "APPROVED_MERCHANT_ORDER") {
-      setOrders(
-        orders.map((o) =>
-          o.id === pendingUpiPayment.orderId
-            ? { ...o, paidViaApp: chosenUpiAppName, status: "PAID_PACKING_STARTED" }
-            : o
-        )
-      );
-      setPendingUpiPayment(null);
+    setCheckoutSubmitting(true);
+    try {
+      const created = await createMarketplaceOrder({
+        partnerId: partnerIds[0],
+        items: merchantCart.map((item) => ({
+          catalogItemId: String(item.catalogItemId || item.productId),
+          quantity: Number(item.qty)
+        })),
+        zoneId: checkoutMarketId,
+        deliveryAddress: {
+          label: activeAddressObj.label || "Primary",
+          fullAddress: activeAddressObj.fullAddress || "",
+          area: activeAddressObj.area || ""
+        },
+        idempotencyKey: attempt.idempotencyKey,
+        feePolicyVersions: checkoutQuote.policy_versions || {}
+      });
+      const placedAt = new Date().toISOString();
+      const serverOrder = {
+        id: created.order_number || created.order_id,
+        serverOrderId: created.order_id,
+        isServerManaged: true,
+        customerId: currentUser.authUserId,
+        customerName: currentUser.fullName || "Customer",
+        partnerId: partnerIds[0],
+        shopName: merchantCart[0]?.merchantName || "WE4ALL Merchant",
+        address: activeAddressObj.fullAddress || "Address on order",
+        items: merchantCart,
+        itemsTotal: Number(created.subtotal_inr || created.total_inr || 0),
+        deliveryFee: Number(created.delivery_fee_inr || 0),
+        platformFee: Number(created.customer_platform_fee_inr || 0),
+        gst: Number(created.tax_inr || 0),
+        feeBreakdown: created.fee_breakdown || [],
+        grandTotal: Number(created.total_inr || 0),
+        status: created.status || "awaiting_payment",
+        paymentStatus: String(created.payment_status || "pending").toUpperCase(),
+        createdAt: placedAt,
+        dateStr: placedAt.slice(0, 10),
+        periodTag: "TODAY"
+      };
+      setOrders((currentOrders) => [serverOrder, ...(currentOrders || []).filter((order) => order.serverOrderId !== created.order_id)]);
+      setActiveOrderId(serverOrder.id);
+      setMerchantCart([]);
+      setCheckoutQuote(null);
+      checkoutAttemptRef.current = null;
+      try { sessionStorage.removeItem(attemptStorageKey); } catch {}
       setFooterTab("orders");
-      setLiveOrderDrawerOpen(true);
-      triggerToast("Paid via " + chosenUpiAppName + "! Sent to Merchant Packing Queue.");
-    } else if (pendingUpiPayment.type === "SERVICE_ESCROW") {
-      const created = serviceCart.map((sc) => ({
-        ...sc,
-        id: "SRV-" + Math.floor(1000 + Math.random() * 9000),
-        customerName: currentUser.fullName,
-        escrowVisitingAmount: sc.visitingFee + (monetizationConfig.serviceBookingSurcharge || 0),
-        paidViaApp: chosenUpiAppName,
-        happyCode: String(Math.floor(1000 + Math.random() * 9000)),
-        escrowStatus: "VISITING_FEE_HELD_IN_ESCROW",
-        status: "CONFIRMED_PROVIDER_EN_ROUTE"
-      }));
-      setServiceBookings([...created, ...serviceBookings]);
-      setServiceCart([]);
-      setPendingUpiPayment(null);
-      setFooterTab("orders");
-      triggerToast("Paid via " + chosenUpiAppName + "! Visiting Fee held in Escrow.");
+      triggerToast("Order created on the WE4ALL server. Merchant confirmation and payment status will appear in Orders.");
+    } catch (error) {
+      if (/FEE_POLICY_CHANGED/.test(String(error?.message || ""))) setCheckoutQuote(null);
+      triggerToast(error?.message || "Server checkout failed. Your cart was kept; retrying will reuse the same order request.");
+    } finally {
+      setCheckoutSubmitting(false);
     }
   };
 
@@ -687,14 +1052,13 @@ function AppContent() {
     // STRICT RBAC LOCK: Block any non-customer portal unless authenticated for that exact role (or in Founder Split Lab)
     if (
       portalRole !== "customer" &&
-      viewMode !== "multi_role_lab" &&
-      authenticatedPartnerRole !== portalRole
+      !canOpenPartnerPortal({ authenticatedPartnerRole, user: currentUser }, portalRole)
     ) {
       return (
         <div className="p-4 bg-white text-slate-900 rounded-2xl border border-rose-300 space-y-3 text-xs text-center shadow">
           <p className="font-black text-rose-700 text-sm">Partner Portal Locked</p>
           <p className="text-[11px] text-slate-600">
-            Access to the {portalRole.toUpperCase()} desk requires a verified Partner Mobile Number + 4-Digit Secret PIN.
+            Access to the {portalRole.toUpperCase()} desk requires a server-authenticated account, approved partner status and a verified session. Local PINs do not unlock partner portals.
           </p>
           <button
             type="button"
@@ -714,12 +1078,16 @@ function AppContent() {
       const visibleCategories = categories.filter(
         (c) => !(killedCategoriesByZone[selectedZoneFilter] || []).includes(c.id)
       );
-      const filteredProducts = products.filter((p) => {
+      const catalogIds = new Set(marketCatalogProducts.map((item) => String(item.id)));
+      const candidateProducts = [...marketCatalogProducts, ...products.filter((item) => !catalogIds.has(String(item.id)))];
+      const filteredProducts = candidateProducts.filter((p) => {
+        if (!isCustomerVisibleListing(p)) return false;
+        if (!selectedZoneFilter || String(p.marketId || p.zoneId || "") !== selectedZoneFilter) return false;
         const matchCat = selectedCategory === "all" || p.categoryId === selectedCategory;
         const matchSearch =
           !searchQuery.trim() ||
-          p.subCategoryBrand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.shopName.toLowerCase().includes(searchQuery.toLowerCase());
+          String(p.subCategoryBrand || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+          String(p.shopName || "").toLowerCase().includes(searchQuery.toLowerCase());
         return matchCat && matchSearch;
       });
 
@@ -756,25 +1124,34 @@ function AppContent() {
               </div>
             </div>
 
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" onClick={locateLocalMarket} disabled={geoLocationBusy} className="rounded-xl border border-emerald-700 bg-slate-900 px-2 py-1 text-[9px] font-black text-emerald-200 disabled:opacity-50">{geoLocationBusy ? "Finding market…" : "Use my location"}</button>
               <select
                 value={selectedZoneFilter}
-                onChange={(e) => setSelectedZoneFilter(e.target.value)}
+                onChange={(e) => {
+                  const marketId = e.target.value;
+                  setSelectedZoneFilter(marketId);
+                  const market = geoMarkets.find((item) => item.id === marketId);
+                  if (market) {
+                    const address = { id: `geo_${market.id}`, label: "Local market", fullAddress: market.display_name, zoneId: market.id, marketId: market.id };
+                    setAddressBook((current) => [address, ...(current || []).filter((item) => item.id !== address.id)]);
+                    setSelectedAddressId(address.id);
+                  }
+                }}
                 className="bg-slate-900 text-emerald-300 border border-emerald-700 rounded-xl px-2 py-1 text-[10px] font-bold"
               >
-                {GEO_ZONES.map((z) => (
-                  <option key={z.id} value={z.id}>
-                    {z.label}
-                  </option>
-                ))}
+                <option value="">Choose a local market</option>
+                {geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name}</option>)}
               </select>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search local products and shops"
                 placeholder={t.searchPlaceholder || "Search stores, items, services..."}
                 className="flex-1 bg-slate-900 text-white border border-slate-700 rounded-xl px-2.5 py-1 text-[11px]"
               />
+              {geoLocationMessage && <p role="status" className="w-full text-[9px] text-amber-200">{geoLocationMessage}</p>}
             </div>
           </div>
 
@@ -810,8 +1187,36 @@ function AppContent() {
                 ))}
               </div>
 
+              <div className="grid grid-cols-5 gap-1.5" aria-label="WE4ALL ten-category quick access">
+                {CUSTOMER_QUICK_LINKS
+                  .filter((link) =>
+                    !link.categoryId ||
+                    visibleCategories.some((category) => category.id === link.categoryId)
+                  )
+                  .map((link) => (
+                    <button
+                      key={link.id}
+                      type="button"
+                      aria-label={link.label}
+                      onClick={() => {
+                        setCustomerHomeSubTab(link.tab);
+                        if (link.categoryId) setSelectedCategory(link.categoryId);
+                      }}
+                      className="min-h-[68px] rounded-xl border border-emerald-700/50 bg-slate-900 px-1 py-2 text-white flex flex-col items-center justify-center gap-1 hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <span className="text-lg leading-none">{link.icon}</span>
+                      <span className="text-[9px] font-bold leading-tight text-center">{link.label}</span>
+                    </button>
+                  ))}
+              </div>
+
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
+                  <section className="w4-shop-hero" aria-label="Your local market">
+                    <div><p>NEARBY SHOPS · EVERYDAY NEEDS</p><h2>Your town.<br />Your market.</h2>
+                    <p>Discover local favourites, compare shops and keep your essentials in one cart.</p></div>
+                    <button type="button" onClick={() => { setActiveCartViewTab("merchant_cart"); setFooterTab("cart"); }}>View cart</button>
+                  </section>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
                     <button
                       type="button"
@@ -837,32 +1242,26 @@ function AppContent() {
                             : "bg-slate-800 text-white")
                         }
                       >
-                        {cat.icon} {translateCategoryName(cat.id, cat.name, lang)}
+                        {cat.icon} {translateCategoryName(cat, lang)}
                       </button>
                     ))}
                   </div>
 
                   {(filteredProducts || []).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
-                      <p className="font-black text-xs">
-                        Clean Production Server Catalog (0 Pre-Installed Items)
-                      </p>
-                      <p className="text-[10px] opacity-80">
-                        Verified Merchants can log in via Account &rarr; Partner KYC to publish live products.
-                      </p>
-                      <button
+                      <p className="font-black text-xs">{selectedZoneFilter ? "No products are published in this local market yet" : "Choose your local market to start browsing"}</p>
+                      <p className="text-[10px] opacity-80">{selectedZoneFilter ? "Approved local businesses appear here after publishing their products." : "Allow location access and WE4ALL will find the market around you."}</p>
+                      {!selectedZoneFilter ? <button type="button" onClick={locateLocalMarket} disabled={geoLocationBusy} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[10px] font-black text-white disabled:opacity-50">{geoLocationBusy ? "Finding market…" : "Find my local market"}</button> : <button
                         type="button"
                         onClick={() => {
                           setFooterTab("account");
                           triggerToast("Log in or complete Merchant KYC to publish products.");
                         }}
                         className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
-                      >
-                        Merchant Partner Login / KYC
-                      </button>
+                      >Merchant Partner Login / KYC</button>}
                     </div>
                   ) : (
-                    filteredProducts.map((prod) => {
+                    <div className="w4-shop-products">{filteredProducts.map((prod) => {
                       const chosenVarId = selectedVariantMap[prod.id] || prod.variants[0]?.id;
                       const activeVar =
                         prod.variants.find((v) => v.id === chosenVarId) || prod.variants[0];
@@ -872,6 +1271,7 @@ function AppContent() {
                           key={prod.id}
                           className="p-3 rounded-2xl border border-slate-300/80 bg-white text-slate-900 shadow-sm space-y-2"
                         >
+                          <div className="w4-product-motif" aria-hidden="true">{visibleCategories.find(category => category.id === prod.categoryId)?.icon || "🛍️"}</div>
                           <div className="flex justify-between items-start gap-2">
                             <div>
                               <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-900">
@@ -881,11 +1281,11 @@ function AppContent() {
                             </div>
                             <div className="text-right">
                               <p className="font-black text-sm text-emerald-700">
-                                Rs.{activeOffer.price || activeVar?.price}
+                                Rs.{activeOffer.price ?? activeVar?.price}
                               </p>
-                              <p className="text-[9px] line-through text-slate-400">
-                                MRP Rs.{activeVar?.mrp || (activeVar?.price || 100) + 25}
-                              </p>
+                              {Number(activeVar?.mrp) > Number(activeOffer.price ?? activeVar?.price) && <p className="text-[10px] line-through text-slate-500">
+                                MRP Rs.{activeVar.mrp}
+                              </p>}
                             </div>
                           </div>
 
@@ -924,6 +1324,7 @@ function AppContent() {
                             <button
                               type="button"
                               onClick={() => handleAddToUnifiedMerchantCart(prod)}
+                              aria-label={`Add ${prod.subCategoryBrand} to cart`}
                               className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                             >
                               + Add
@@ -952,7 +1353,7 @@ function AppContent() {
                           )}
                         </div>
                       );
-                    })
+                    })}</div>
                   )}
                 </div>
               )}
@@ -978,7 +1379,7 @@ function AppContent() {
                     </select>
                   </div>
 
-                  {(serviceProviders || []).length === 0 ? (
+                  {(serviceProviders || []).filter((provider) => provider.status === "Approved" && provider.isPublished !== false).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
                       <p className="font-black text-xs">No Active 1-Hr Service Providers Yet</p>
                       <button
@@ -993,7 +1394,17 @@ function AppContent() {
                       </button>
                     </div>
                   ) : (
-                    serviceProviders.map((sp) => (
+                    serviceProviders.filter((provider) => provider.status === "Approved" && provider.isPublished !== false).map((sp) => {
+                      const slotIsAvailable =
+                        Array.isArray(sp.availableSlots) &&
+                        sp.availableSlots.includes(serviceFilterSlot) &&
+                        !(serviceBookings || []).some((booking) =>
+                          booking.providerId === sp.id &&
+                          booking.bookedDate === serviceFilterDate &&
+                          booking.bookedSlot === serviceFilterSlot &&
+                          !["CANCELLED", "REJECTED", "COMPLETED"].includes(booking.status)
+                        );
+                      return (
                       <div
                         key={sp.id}
                         className="p-3 rounded-2xl border border-slate-200 bg-white text-slate-900 flex justify-between items-center"
@@ -1007,23 +1418,25 @@ function AppContent() {
                         </div>
                         <button
                           type="button"
+                          disabled={!slotIsAvailable}
                           onClick={() => {
                             setServiceCart([
                               ...serviceCart,
                               {
                                 ...sp,
+                                providerId: sp.id,
                                 bookingDate: serviceFilterDate,
                                 bookingSlot: serviceFilterSlot
                               }
                             ]);
-                            triggerToast("Booked " + sp.providerName + " into Service Cart!");
+                            triggerToast("Added an available provider slot to the service cart. It is not booked or paid yet.");
                           }}
-                          className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
+                          className="bg-amber-400 disabled:bg-slate-300 text-slate-950 px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                         >
-                          Book 1-Hr
+                          {slotIsAvailable ? "Add available slot" : "Slot unavailable"}
                         </button>
                       </div>
-                    ))
+                    )})
                   )}
                 </div>
               )}
@@ -1039,8 +1452,9 @@ function AppContent() {
                       className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold"
                     />
                   </div>
-                  {functionHalls.map((hall) => {
-                    const isBooked = (hall.bookedDates || []).includes(eventDate);
+                  {functionHalls.filter((hall) => hall.status === "Approved" && hall.isPublished !== false).map((hall) => {
+                    const advance = calculateDecoratorAdvance(hall.pricePerDay || hall.dailyRent, eventDate);
+                    const isBooked = (hall.bookedDates || []).some((entry) => (typeof entry === "string" ? entry : entry.date) === eventDate);
                     return (
                       <div
                         key={hall.id}
@@ -1049,7 +1463,10 @@ function AppContent() {
                         <div>
                           <h4 className="font-black text-xs">{hall.name}</h4>
                           <p className="text-[10px] text-slate-600">
-                            {hall.capacity} | Rs.{hall.pricePerDay}/day
+                            {hall.capacity} | Rs.{hall.pricePerDay || hall.dailyRent}/day
+                          </p>
+                          <p className="text-[10px] text-amber-700 font-bold">
+                            Required advance: {advance ? `${Math.round(advance.rate * 100)}% · ₹${advance.amount.toLocaleString("en-IN")}` : "Date unavailable"}
                           </p>
                         </div>
                         <button
@@ -1058,7 +1475,15 @@ function AppContent() {
                           onClick={() => {
                             setDecorCart([
                               ...decorCart,
-                              { id: hall.id, title: hall.name, eventDate, price: hall.pricePerDay }
+                              {
+                                id: hall.id,
+                                title: hall.name,
+                                eventDate,
+                                price: Number(hall.pricePerDay || hall.dailyRent || 0),
+                                advanceRate: advance?.rate ?? null,
+                                advanceAmount: advance?.amount ?? null,
+                                hallStatus: hall.status || "Approved"
+                              }
                             ]);
                             triggerToast("Reserved " + hall.name + " in Event Cart!");
                           }}
@@ -1106,59 +1531,10 @@ function AppContent() {
               )}
 
               {customerHomeSubTab === "taxi" && (
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-2">
-                  <h3 className="font-black text-xs">Instant Local Point-to-Point Ride</h3>
-                  <input
-                    type="text"
-                    value={taxiBookingForm.pickupPin}
-                    onChange={(e) =>
-                      setTaxiBookingForm({ ...taxiBookingForm, pickupPin: e.target.value })
-                    }
-                    placeholder="Pickup Location"
-                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-                  />
-                  <input
-                    type="text"
-                    value={taxiBookingForm.dropPin}
-                    onChange={(e) =>
-                      setTaxiBookingForm({ ...taxiBookingForm, dropPin: e.target.value })
-                    }
-                    placeholder="Drop Location"
-                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-                  />
-                  <div className="grid grid-cols-3 gap-1.5 pt-1">
-                    {[
-                      { type: "2W Bike", rate: 12 },
-                      { type: "3W Auto", rate: 22 },
-                      { type: "AC Cab", rate: 35 }
-                    ].map((v) => {
-                      const fare = Math.round(taxiBookingForm.distanceKm * v.rate + 20);
-                      return (
-                        <button
-                          key={v.type}
-                          type="button"
-                          onClick={() => {
-                            setTaxiCart([
-                              ...taxiCart,
-                              {
-                                id: "RIDE-" + Date.now(),
-                                vehicle: v.type,
-                                pickup: taxiBookingForm.pickupPin,
-                                drop: taxiBookingForm.dropPin,
-                                fare
-                              }
-                            ]);
-                            triggerToast(v.type + " (Rs." + fare + ") added to Ride Cart!");
-                          }}
-                          className="p-2 rounded-xl border border-emerald-600 bg-emerald-50 text-center cursor-pointer"
-                        >
-                          <p className="font-black text-[10px]">{v.type}</p>
-                          <p className="font-black text-xs text-emerald-800">Rs.{fare}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                <React.Suspense fallback={<p role="status">Opening rides…</p>}>
+                  <RideWorkspace key={currentUser?.authUserId || "guest"} currentUser={currentUser}
+                    onSignIn={() => setFooterTab("account")} onShop={() => setCustomerHomeSubTab("stores")} />
+                </React.Suspense>
               )}
 
               {customerHomeSubTab === "labour" && (
@@ -1224,12 +1600,28 @@ function AppContent() {
                           </p>
                         </div>
                       ))}
+                      {visibleCheckoutQuote && (
+                        <div className="rounded-xl border border-emerald-700 bg-emerald-950/40 p-3 text-[11px] space-y-1.5" aria-live="polite">
+                          <div className="flex justify-between"><span>Items subtotal</span><strong>Rs.{visibleCheckoutQuote.subtotal_inr.toFixed(2)}</strong></div>
+                          {visibleCheckoutQuote.breakdown.filter((line) => line.platform_fee_inr > 0).map((line) => (
+                            <div key={line.catalog_item_id} className="flex justify-between gap-3 text-amber-200">
+                              <div><span>{line.fee_label} · {line.title}</span><p className="text-[10px] text-slate-300">{line.disclosure_text}</p></div><strong>Rs.{line.platform_fee_inr.toFixed(2)}</strong>
+                            </div>
+                          ))}
+                          <div className="flex justify-between"><span>WE4ALL platform fee</span><strong>Rs.{visibleCheckoutQuote.customer_platform_fee_inr.toFixed(2)}</strong></div>
+                          <div className="flex justify-between border-t border-emerald-800 pt-1 font-black text-white"><span>Total before payment</span><strong>Rs.{visibleCheckoutQuote.total_inr.toFixed(2)}</strong></div>
+                          <p className="text-[10px] text-slate-300">This fee breakdown is shown before you confirm. If a fee schedule changes, WE4ALL will ask you to review the updated total.</p>
+                        </div>
+                      )}
                       <button
                         type="button"
+                        disabled={checkoutSubmitting}
                         onClick={handlePlaceOrderForCheckout}
-                        className="w-full bg-emerald-600 text-white font-black py-2.5 rounded-xl cursor-pointer"
+                        className="w-full bg-emerald-600 disabled:bg-slate-400 text-white font-black py-2.5 rounded-xl cursor-pointer"
                       >
-                        Approve & Pay via UPI
+                        {checkoutSubmitting
+                          ? (visibleCheckoutQuote ? "Creating secure order…" : "Checking current price and fees…")
+                          : (visibleCheckoutQuote ? "Confirm total & place secure order" : "Review total before placing order")}
                       </button>
                     </>
                   )}
@@ -1255,16 +1647,76 @@ function AppContent() {
                       <button
                         type="button"
                         onClick={() => {
-                          const total = serviceCart.reduce((s, x) => s + x.visitingFee, 0);
+                          if (!currentUser || currentUser.isGuest || !currentUser.authUserId) {
+                            triggerToast("Secure customer sign-in is required before requesting a service booking. Your cart is unchanged.");
+                            setFooterTab("account");
+                            return;
+                          }
+                          const total = serviceCart.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0);
+                          if (!Number.isFinite(total) || total <= 0) {
+                            triggerToast("The service cart has an invalid visiting-fee total.");
+                            return;
+                          }
+                          const grouped = new Map();
+                          for (const item of serviceCart) {
+                            const providerId = item.providerId || item.id || item.providerName;
+                            if (!providerId) continue;
+                            const current = grouped.get(providerId) || [];
+                            current.push(item);
+                            grouped.set(providerId, current);
+                          }
+                          if (!grouped.size) {
+                            triggerToast("The service cart does not contain a provider identity. No booking request was created.");
+                            return;
+                          }
+                          const pendingBookings = [];
+                          for (const [providerId, items] of grouped.entries()) {
+                            const bookingKey = JSON.stringify(
+                              items.map((item) => ({
+                                providerId,
+                                providerName: item.providerName || "",
+                                bookingDate: item.bookingDate || serviceFilterDate,
+                                bookingSlot: item.bookingSlot || "",
+                                visitingFee: Number(item.visitingFee || 0)
+                              })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+                            );
+                            const existing = (serviceBookings || []).find((booking) =>
+                              booking.customerId === currentUser.id &&
+                              booking.bookingKey === bookingKey &&
+                              ["AWAITING_VERIFIED_PAYMENT", "PAYMENT_SETUP_REQUIRED"].includes(booking.status)
+                            );
+                            pendingBookings.push(existing || {
+                              id: "SRV-" + (globalThis.crypto?.randomUUID?.() || Date.now() + "-" + providerId),
+                              bookingKey,
+                              customerId: currentUser.id,
+                              customerName: currentUser.fullName || currentUser.name || "Customer",
+                              bookingItems: items,
+                              providerId,
+                              providerName: items[0]?.providerName || "Service provider",
+                              bookedDate: items[0]?.bookingDate || serviceFilterDate,
+                              bookedSlot: items.map((item) => item.bookingSlot).join(", "),
+                              visitingFee: items.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0),
+                              escrowVisitingAmount: items.reduce((sum, item) => sum + Number(item.visitingFee || 0), 0),
+                              escrowStatus: "NOT_FUNDED",
+                              paymentStatus: "PENDING",
+                              happyCodeStatus: "NOT_ISSUED",
+                              status: "AWAITING_VERIFIED_PAYMENT",
+                              createdAt: new Date().toISOString()
+                            });
+                          }
+                          const knownIds = new Set((serviceBookings || []).map((booking) => booking.id));
+                          const newBookings = pendingBookings.filter((booking) => !knownIds.has(booking.id));
+                          if (newBookings.length) setServiceBookings([...newBookings, ...(serviceBookings || [])]);
                           setPendingUpiPayment({
                             type: "SERVICE_ESCROW",
-                            title: "1-Hr Service Escrow Visiting Fee",
+                            orderId: pendingBookings.map((booking) => booking.id).join(","),
+                            title: "Service visiting-fee payment",
                             amount: total
                           });
                         }}
                         className="w-full bg-amber-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
                       >
-                        Pay Visiting Fee into Escrow
+                        Continue to secure visiting-fee payment
                       </button>
                     </>
                   )}
@@ -1285,39 +1737,71 @@ function AppContent() {
                     <button
                       type="button"
                       onClick={() => {
-                        setDecorCart([]);
-                        triggerToast("Event & Hall Reservation Confirmed!");
+                        if (!currentUser || currentUser.isGuest || !currentUser.authUserId) {
+                          triggerToast("Secure customer sign-in is required before sending an event request. Your cart is unchanged.");
+                          setFooterTab("account");
+                          return;
+                        }
+                        const total = decorCart.reduce((sum, item) => sum + Number(item.price || 0), 0);
+                        const advanceTotal = decorCart.reduce((sum, item) => sum + Number(item.advanceAmount || 0), 0);
+                        if (!decorCart.length || !Number.isFinite(total) || total <= 0 || !Number.isFinite(advanceTotal)) {
+                          triggerToast("The event cart has invalid hall/package pricing.");
+                          return;
+                        }
+                        const requestKey = JSON.stringify({
+                          customerId: currentUser.id,
+                          events: decorCart.map((item) => ({
+                            hallId: item.id,
+                            eventDate: item.eventDate,
+                            amount: Number(item.price || 0),
+                            advanceAmount: Number(item.advanceAmount || 0)
+                          }))
+                        });
+                        const existing = (decorBids || []).find((request) =>
+                          request.recordType === "DECOR_REQUEST" &&
+                          request.requestKey === requestKey &&
+                          request.status === "PENDING_FOUNDER_AVAILABILITY_REVIEW"
+                        );
+                        if (existing) {
+                          triggerToast("This event request is already awaiting founder availability review.");
+                          return;
+                        }
+                        const request = {
+                          id: "DEC-" + (globalThis.crypto?.randomUUID?.() || Date.now()),
+                          recordType: "DECOR_REQUEST",
+                          requestKey,
+                          customerId: currentUser.id,
+                          customerName: currentUser.fullName || currentUser.name || "Customer",
+                          title: decorCart.map((item) => item.title).join(", "),
+                          events: decorCart,
+                          eventDate: decorCart[0]?.eventDate || eventDate,
+                          amount: total,
+                          requestedAdvanceAmount: advanceTotal,
+                          status: "PENDING_FOUNDER_AVAILABILITY_REVIEW",
+                          paymentStatus: "NOT_PAID",
+                          escrowStatus: "NOT_FUNDED",
+                          createdAt: new Date().toISOString()
+                        };
+                        setDecorBids([request, ...(decorBids || [])]);
+                        triggerToast("Event request saved pending Founder availability review. The hall is not reserved and no payment has been taken.");
                       }}
                       className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
                     >
-                      Confirm Event Booking
+                      Check booking requirements
                     </button>
                   )}
                 </div>
               )}
 
               {activeCartViewTab === "taxi_cart" && (
-                <div className="space-y-2">
-                  {taxiCart.map((r, i) => (
-                    <div key={i} className="flex justify-between border-b pb-1">
-                      <span>
-                        {r.vehicle}: {r.pickup} to {r.drop}
-                      </span>
-                      <span className="font-black">Rs.{r.fare}</span>
-                    </div>
-                  ))}
-                  {(taxiCart || []).length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTaxiCart([]);
-                        triggerToast("Captain Dispatched for Your Ride!");
-                      }}
-                      className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-                    >
-                      Dispatch Ride Captain Now
-                    </button>
-                  )}
+                <div className="space-y-3">
+                  <p>Request rides directly from the Rides screen and follow their progress there.</p>
+                  {!!taxiCart.length && <p>Your older ride cart contains {taxiCart.length} saved selections. These were never dispatched; confirm pickup again when booking.</p>}
+                  {(taxiCart || []).map((ride, index) => <div key={`${ride.id || "saved"}-${index}`} className="rounded-xl border border-slate-300 p-2">
+                    {ride.vehicle}: {ride.pickup} → {ride.drop} · saved estimate Rs.{ride.fare}
+                  </div>)}
+                  <button type="button" onClick={() => { setCustomerHomeSubTab("taxi"); setFooterTab("home"); }}
+                    className="bg-emerald-700 text-white px-4 py-3 rounded-xl font-bold">Open rides</button>
                 </div>
               )}
             </div>
@@ -1351,11 +1835,22 @@ function AppContent() {
               activePortal={activePortal}
               authenticatedPartnerRole={authenticatedPartnerRole}
               onPartnerAuthenticated={(role, partnerObj) => {
+                const allowedRoles = ["merchant", "service_provider", "decorator", "rider", "labour"];
+                if (
+                  !allowedRoles.includes(role) ||
+                  partnerObj?.role !== role ||
+                  partnerObj?.status !== "Approved" ||
+                  !partnerObj?.authUserId
+                ) {
+                  setAuthenticatedPartnerRole(null);
+                  triggerToast("Partner access denied: server identity, approved role and authenticated session are required.");
+                  return;
+                }
                 setAuthenticatedPartnerRole(role);
                 setCurrentUser({ ...currentUser, ...partnerObj });
                 setActivePortal(role);
                 setFooterTab("home");
-                triggerToast("Verified & Unlocked " + role.toUpperCase() + " Portal!");
+                triggerToast("Server-authenticated " + role.toUpperCase() + " portal session opened.");
               }}
               onLogoutPartner={() => {
                 setAuthenticatedPartnerRole(null);
@@ -1369,6 +1864,7 @@ function AppContent() {
               onRunOtaUpdate={handleRunOtaUpdate}
               otaProgress={otaProgress}
               founderLogoUrl={founderLogoUrl}
+              adminAccess={adminAccess}
               onUploadFounderPhoto={handleUploadFounderPhoto}
               apkIconUrl={apkIconUrl}
               onUploadApkIcon={handleUploadApkIcon}
@@ -1382,306 +1878,103 @@ function AppContent() {
       );
     }
 
+    const renderPartnerAccountTab = () => (
+      <div className="bg-slate-900 text-white rounded-2xl p-4 space-y-3">
+        <h3 className="font-black text-emerald-300">Partner Account</h3>
+        <p className="text-xs">Signed-in role: {portalRole}</p>
+        <p className="text-xs text-slate-400">{currentUser?.fullName || currentUser?.businessName || "Partner"}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setAuthenticatedPartnerRole(null);
+            setCurrentUser({ ...currentUser, isGuest: true });
+            setActivePortal("customer");
+            setFooterTab("home");
+            triggerToast("Partner session ended. Returned to Customer Super-App.");
+          }}
+          className="w-full bg-rose-600 text-white font-black py-2 rounded-xl"
+        >
+          Lock & Exit Partner Portal
+        </button>
+      </div>
+    );
+
     if (portalRole === "merchant") {
       return (
-        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <div className="flex justify-between items-center">
-            <h2 className="font-black text-emerald-900 text-sm">Product Merchant Desk</h2>
-            <button
-              type="button"
-              onClick={() => {
-                setPersonalShoppingFromPartner("merchant");
-                setActivePortal("customer");
-              }}
-              className="bg-indigo-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-            >
-              Shop as Customer
-            </button>
-          </div>
-
-          <div className="space-y-2 border-t pt-2">
-            <h3 className="font-black text-xs">Publish New Product to Live Catalog</h3>
-            <select
-              value={newMerchantProd.categoryId}
-              onChange={(e) =>
-                setNewMerchantProd({ ...newMerchantProd, categoryId: e.target.value })
-              }
-              className="w-full border rounded-xl p-1.5 text-xs font-bold"
-            >
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={newMerchantProd.subCategoryBrand}
-              onChange={(e) =>
-                setNewMerchantProd({ ...newMerchantProd, subCategoryBrand: e.target.value })
-              }
-              placeholder="Product / Brand Title (e.g., Aashirvaad Atta)"
-              className="w-full border rounded-xl p-1.5 text-xs"
-            />
-            <input
-              type="text"
-              value={newMerchantProd.shopName}
-              onChange={(e) =>
-                setNewMerchantProd({ ...newMerchantProd, shopName: e.target.value })
-              }
-              placeholder="Your Shop Name (e.g., Sri Laxmi Kirana)"
-              className="w-full border rounded-xl p-1.5 text-xs"
-            />
-            <div className="grid grid-cols-2 gap-1.5">
-              <input
-                type="number"
-                value={newMerchantProd.price}
-                onChange={(e) =>
-                  setNewMerchantProd({ ...newMerchantProd, price: e.target.value })
-                }
-                placeholder="Selling Price (Rs.)"
-                className="border rounded-xl p-1.5 text-xs"
-              />
-              <input
-                type="number"
-                value={newMerchantProd.mrp}
-                onChange={(e) => setNewMerchantProd({ ...newMerchantProd, mrp: e.target.value })}
-                placeholder="MRP (Rs.)"
-                className="border rounded-xl p-1.5 text-xs"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (!newMerchantProd.subCategoryBrand || !newMerchantProd.price) return;
-                const priceNum = Number(newMerchantProd.price);
-                const created = {
-                  id: "prod_" + Date.now(),
-                  categoryId: newMerchantProd.categoryId,
-                  subCategoryBrand: newMerchantProd.subCategoryBrand,
-                  shopName: newMerchantProd.shopName || currentUser?.businessName || "Adilabad Store",
-                  variants: [
-                    {
-                      id: "v_" + Date.now(),
-                      label: newMerchantProd.variantLabel || "Standard Pack",
-                      price: priceNum,
-                      mrp: Number(newMerchantProd.mrp || priceNum + 20),
-                      weightGrams: 1000
-                    }
-                  ],
-                  merchantOffers: [
-                    {
-                      merchantId: Date.now(),
-                      merchantName: newMerchantProd.shopName || currentUser?.businessName || "Adilabad Store",
-                      price: priceNum,
-                      area: "Adilabad"
-                    }
-                  ]
-                };
-                setProducts([created, ...products]);
-                setNewMerchantProd({
-                  ...newMerchantProd,
-                  subCategoryBrand: "",
-                  price: "",
-                  mrp: ""
-                });
-                triggerToast("Product published live to Customer Super-App!");
-              }}
-              className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-            >
-              + Publish Live Product
-            </button>
-          </div>
-
-          <div className="space-y-2 border-t pt-2">
-            <h3 className="font-black text-xs">Incoming Customer Orders ({(orders || []).length})</h3>
-            {orders.map((o) => (
-              <div key={o.id} className="p-2 border rounded-xl flex justify-between items-center">
-                <div>
-                  <p className="font-black text-xs">
-                    #{o.id} | Rs.{o.grandTotal}
-                  </p>
-                  <p className="text-[10px] text-slate-500">{o.status}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOrders(
-                      orders.map((ord) =>
-                        ord.id === o.id
-                          ? { ...ord, status: "PACKED_HANDED_TO_CAPTAIN" }
-                          : ord
-                      )
-                    );
-                    triggerToast("Order #" + o.id + " handed over to Delivery Captain!");
-                  }}
-                  className="bg-amber-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-                >
-                  Mark Packed & Hand to Rider
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        <MerchantPortal
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          currentUser={currentUser}
+          categories={categories}
+          products={products}
+          setProducts={setProducts}
+          pendingSubCategories={pendingSubCategories}
+          setPendingSubCategories={setPendingSubCategories}
+          rejectedItems={rejectedItems}
+          orders={orders}
+          setOrders={setOrders}
+          onSwitchToPersonalShop={() => openPersonalShop("merchant")}
+          onTriggerToast={triggerToast}
+          renderAccountTab={renderPartnerAccountTab}
+        />
       );
     }
 
     if (portalRole === "service_provider") {
       return (
-        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <h2 className="font-black text-emerald-900 text-sm">1-Hr Service Provider Desk</h2>
-          <input
-            type="text"
-            value={newSpForm.providerName}
-            onChange={(e) => setNewSpForm({ ...newSpForm, providerName: e.target.value })}
-            placeholder="Provider / Technician Name"
-            className="w-full border rounded-xl p-1.5 text-xs"
-          />
-          <input
-            type="text"
-            value={newSpForm.specialization}
-            onChange={(e) => setNewSpForm({ ...newSpForm, specialization: e.target.value })}
-            placeholder="Specialization (e.g., AC Repair, Master Plumber)"
-            className="w-full border rounded-xl p-1.5 text-xs"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (!newSpForm.providerName) return;
-              setServiceProviders([
-                { id: "sp_" + Date.now(), ...newSpForm },
-                ...serviceProviders
-              ]);
-              setNewSpForm({ ...newSpForm, providerName: "", specialization: "" });
-              triggerToast("Listed in 1-Hr Service Directory!");
-            }}
-            className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-          >
-            + Go Live in 1-Hr Services
-          </button>
-
-          <div className="space-y-2 border-t pt-2">
-            <h3 className="font-black text-xs">Escrow Bookings ({(serviceBookings || []).length})</h3>
-            {serviceBookings.map((sb) => (
-              <div key={sb.id} className="p-2 border rounded-xl space-y-1.5">
-                <p className="font-black text-xs">
-                  {sb.id} | Escrow: Rs.{sb.escrowVisitingAmount} ({sb.escrowStatus})
-                </p>
-                <div className="flex gap-1.5">
-                  <input
-                    type="text"
-                    value={providerHappyCodeInput}
-                    onChange={(e) => setProviderHappyCodeInput(e.target.value)}
-                    placeholder={"Enter Customer Happy Code (" + sb.happyCode + ")"}
-                    className="flex-1 border rounded-lg px-2 py-1 text-[10px]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (providerHappyCodeInput === sb.happyCode) {
-                        setServiceBookings(
-                          serviceBookings.map((b) =>
-                            b.id === sb.id
-                              ? {
-                                  ...b,
-                                  escrowStatus: "RELEASED_TO_PROVIDER_BANK",
-                                  status: "COMPLETED"
-                                }
-                              : b
-                          )
-                        );
-                        setProviderHappyCodeInput("");
-                        triggerToast("Happy Code Verified! Escrow settled to Bank/UPI.");
-                      } else {
-                        triggerToast("Invalid Happy Code!");
-                      }
-                    }}
-                    className="bg-emerald-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer"
-                  >
-                    Verify & Claim
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ServiceProviderPortal
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          currentUser={currentUser}
+          serviceCategories={SERVICE_CATEGORIES}
+          serviceProviders={serviceProviders}
+          setServiceProviders={setServiceProviders}
+          pendingServiceProviders={pendingServiceProviders}
+          serviceBookings={serviceBookings}
+          setServiceBookings={setServiceBookings}
+          onSwitchToPersonalShop={() => openPersonalShop("service_provider")}
+          onTriggerToast={triggerToast}
+          renderAccountTab={renderPartnerAccountTab}
+        />
       );
     }
 
     if (portalRole === "decorator") {
       return (
-        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <h2 className="font-black text-emerald-900 text-sm">
-            Function Hall & Event Decorator Desk
-          </h2>
-          <input
-            type="text"
-            value={newHallForm.name}
-            onChange={(e) => setNewHallForm({ ...newHallForm, name: e.target.value })}
-            placeholder="Function Hall Name"
-            className="w-full border rounded-xl p-1.5 text-xs"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (!newHallForm.name) return;
-              setFunctionHalls([
-                { id: "hall_" + Date.now(), ...newHallForm, bookedDates: [] },
-                ...functionHalls
-              ]);
-              setNewHallForm({ ...newHallForm, name: "" });
-              triggerToast("Function Hall published!");
-            }}
-            className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-          >
-            + Add Function Hall
-          </button>
-        </div>
+        <DecoratorPortal
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          currentUser={currentUser}
+          functionHalls={functionHalls}
+          setFunctionHalls={setFunctionHalls}
+          decorators={decorators}
+          setDecorators={setDecorators}
+          decorBids={decorBids}
+          setDecorBids={setDecorBids}
+          onSwitchToPersonalShop={() => openPersonalShop("decorator")}
+          onTriggerToast={triggerToast}
+          renderAccountTab={renderPartnerAccountTab}
+        />
       );
     }
 
     if (portalRole === "rider") {
       return (
-        <div className="space-y-3 text-xs bg-white p-3 rounded-2xl text-slate-900 border border-slate-200">
-          <h2 className="font-black text-emerald-900 text-sm">Delivery Captain Live Radar</h2>
-          {activeOrder ? (
-            <div className="space-y-2">
-              <LiveRouteMap order={activeOrder} brightTheme={brightTheme} />
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  value={captainOtpInput}
-                  onChange={(e) => setCaptainOtpInput(e.target.value)}
-                  placeholder={"Customer Delivery OTP (" + activeOrder.secretOtp + ")"}
-                  className="flex-1 border rounded-xl px-2.5 py-1.5 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (captainOtpInput === activeOrder.secretOtp) {
-                      setOrders(
-                        orders.map((o) =>
-                          o.id === activeOrder.id ? { ...o, status: "DELIVERED" } : o
-                        )
-                      );
-                      setCaptainOtpInput("");
-                      triggerToast("Order #" + activeOrder.id + " Marked DELIVERED!");
-                    } else {
-                      triggerToast("Incorrect Customer OTP!");
-                    }
-                  }}
-                  className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-black cursor-pointer"
-                >
-                  Verify OTP
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-slate-500 py-4 text-center font-bold">
-              No active dispatches waiting on radar.
-            </p>
-          )}
-        </div>
+        <RiderCaptainPortal
+          footerTab={footerTab}
+          setFooterTab={setFooterTab}
+          currentUser={currentUser}
+          setCurrentUser={setCurrentUser}
+          orders={orders}
+          setOrders={setOrders}
+          captainRadarJobs={captainRadarJobs}
+          setCaptainRadarJobs={setCaptainRadarJobs}
+          pendingRiders={pendingRiders}
+          onSwitchToPersonalShop={() => openPersonalShop("rider")}
+          onTriggerToast={triggerToast}
+          onReportError={(title, detail) => triggerToast(title + ": " + detail)}
+          renderAccountTab={renderPartnerAccountTab}
+        />
       );
     }
 
@@ -1735,93 +2028,20 @@ function AppContent() {
 
       {viewMode === "founder_web" ? (
         !isAdminAuthenticated ? (
-          <div className="max-w-md mx-auto mt-12 bg-slate-900 border border-amber-400/50 rounded-3xl p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="font-black text-amber-400 text-base">
-                WE4ALL Founder Admin 2-Factor Gate
-              </h2>
-              <button
-                type="button"
-                onClick={() => setViewMode("mobile_app")}
-                className="bg-slate-800 text-white px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer"
-              >
-                Back to App
-              </button>
-            </div>
-            {adminLoginError && (
-              <p className="text-rose-400 text-xs font-bold">{adminLoginError}</p>
-            )}
-            {adminAuthStep === 1 ? (
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={adminLoginForm.username}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, username: e.target.value })
-                  }
-                  placeholder="Founder Username (admin)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <input
-                  type="password"
-                  value={adminLoginForm.password}
-                  onChange={(e) =>
-                    setAdminLoginForm({ ...adminLoginForm, password: e.target.value })
-                  }
-                  placeholder="Founder Password (we4all2026)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (
-                      adminLoginForm.username.toLowerCase() === "admin" &&
-                      adminLoginForm.password === "we4all2026"
-                    ) {
-                      setAdminLoginError("");
-                      setAdminAuthStep(2);
-                    } else {
-                      setAdminLoginError("Use admin / we4all2026");
-                    }
-                  }}
-                  className="w-full bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Next: Verify Founder PIN
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <input
-                  type="password"
-                  value={adminPinInput}
-                  onChange={(e) => setAdminPinInput(e.target.value)}
-                  placeholder="Founder Master PIN (9999)"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-center font-black tracking-widest text-amber-300"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (adminPinInput === __getDynamicAdminCreds().pin || adminPinInput === "1234") {
-                      setIsAdminAuthenticated(true);
-                      setAdminLoginError("");
-                    } else {
-                      setAdminLoginError("Invalid Master PIN (Use 9999)");
-                    }
-                  }}
-                  className="w-full bg-emerald-500 text-slate-950 font-black py-2.5 rounded-xl cursor-pointer"
-                >
-                  Unlock Founder Admin Suite
-                </button>
-              </div>
-            )}
-          </div>
+          <AdminSecurityGate
+            onBackToApp={() => setViewMode("mobile_app")}
+            onAuthorized={(access) => {
+              setAdminAccess(access);
+              setIsAdminAuthenticated(true);
+            }}
+          />
         ) : (
           <div className="p-4 space-y-4">
             <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-900 p-3 rounded-2xl border border-amber-400/40">
               <span className="font-black text-amber-400 text-xs">
-                FOUNDER MASTER CONTROL | ZERO PRE-INSTALLED DATA MODE
+                {adminAccess?.role === "city_manager" ? `GEO MANAGER · ${adminAccess.zoneId || "Assigned local market"}` : "FOUNDER MASTER CONTROL | ZERO PRE-INSTALLED DATA MODE"}
               </span>
-              <div className="flex items-center gap-2">
+              {adminAccess?.role === "founder" && <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setViewMode("multi_role_lab")}
@@ -1843,31 +2063,78 @@ function AppContent() {
                 >
                   Wipe Server Data Clean
                 </button>
-              </div>
+              </div>}
             </div>
             <FounderAdminSuite
+              adminAccess={adminAccess}
+              onExitAdminToApp={async () => {
+                if (typeof window !== "undefined") {
+                  const nextUrl = new URL(window.location.href);
+                  if (nextUrl.pathname.toLowerCase().endsWith("/admin")) nextUrl.pathname = nextUrl.pathname.slice(0, -6) || "/";
+                  nextUrl.searchParams.delete("admin");
+                  window.history.replaceState({}, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+                }
+                try { await supabase?.auth.signOut({ scope: "local" }); }
+                catch (error) { console.warn("WE4ALL Founder sign-out failed:", error?.message || error); }
+                clearActiveSupabaseAccount();
+                setCurrentUser({ id: "guest_visitor", fullName: "Guest Visitor", phone: "", role: "customer", portal: "customer", isGuest: true });
+                setIsAdminAuthenticated(false);
+                setAdminAccess(null);
+                setViewMode("mobile_app");
+                setActivePortal("customer");
+                setFooterTab("home");
+                triggerToast("Returned to the Consumer portal.");
+              }}
               appUpdateInfo={appUpdateInfo}
               setAppUpdateInfo={setAppUpdateInfo}
               monetizationConfig={monetizationConfig}
               setMonetizationConfig={setMonetizationConfig}
+              geoZones={geoMarkets.map((market) => ({ id: market.id, name: market.display_name, label: market.display_name, radiusKm: 5, active: true }))}
               geoAds={geoAds}
               setGeoAds={setGeoAds}
               categories={categories}
               setCategories={setCategories}
               merchants={merchants}
               setMerchants={setMerchants}
+              serviceProviders={serviceProviders}
+              setServiceProviders={setServiceProviders}
+              decorators={decorators}
+              setDecorators={setDecorators}
+              riders={riders}
+              setRiders={setRiders}
+              labourWorkers={labourWorkers}
+              setLabourWorkers={setLabourWorkers}
               products={products}
               setProducts={setProducts}
+              functionHalls={functionHalls}
+              setFunctionHalls={setFunctionHalls}
               orders={orders || []}
+              setOrders={setOrders}
               serviceBookings={serviceBookings || []}
-              labourBookings={labourBookings}
-              registeredUsers={registeredUsers || []}
+              setServiceBookings={setServiceBookings}
+              labourBookings={labourBookings || []}
+              setLabourBookings={setLabourBookings}
+              captainRadarJobs={captainRadarJobs}
+              decorBids={decorBids}
+              setDecorBids={setDecorBids}
+              pendingMerchants={pendingMerchants}
+              setPendingMerchants={setPendingMerchants}
+              pendingServiceProviders={pendingServiceProviders}
+              setPendingServiceProviders={setPendingServiceProviders}
+              pendingDecorators={pendingDecorators}
+              setPendingDecorators={setPendingDecorators}
+              pendingRiders={pendingRiders}
+              setPendingRiders={setPendingRiders}
+              pendingSubCategories={pendingSubCategories}
+              setPendingSubCategories={setPendingSubCategories}
+              rejectedItems={rejectedItems}
+              setRejectedItems={setRejectedItems}
               onBackToApp={() => setViewMode("mobile_app")}
               onTriggerToast={triggerToast}
             />
           </div>
         )
-      ) : viewMode === "multi_role_lab" && isAdminAuthenticated ? (
+      ) : viewMode === "multi_role_lab" && isAdminAuthenticated && adminAccess?.role === "founder" ? (
         <div className="space-y-3 p-4">
           <div className="flex justify-between items-center bg-slate-900 p-3 rounded-2xl border border-amber-400">
             <span className="font-black text-amber-400 text-xs">
@@ -1919,10 +2186,7 @@ function AppContent() {
           appUpdateInfo={appUpdateInfo}
           onTriggerOtaUpdate={handleRunOtaUpdate}
           personalShoppingFromPartner={personalShoppingFromPartner}
-          onReturnToPartnerDesk={() => {
-            setActivePortal(personalShoppingFromPartner);
-            setPersonalShoppingFromPartner(null);
-          }}
+          onReturnToPartnerDesk={returnToPartnerDesk}
         >
           {renderRolePortalContent(activePortal)}
         </MobilePhoneShell>
@@ -1933,7 +2197,7 @@ function AppContent() {
           <div className="bg-slate-900 border-2 border-amber-400 rounded-3xl p-4 w-full max-w-md space-y-3">
             <div className="flex justify-between items-center">
               <h3 className="font-black text-amber-400 text-xs">
-                LIVE ORDER #{activeOrder.id} | OTP: {activeOrder.secretOtp}
+                LIVE ORDER #{activeOrder.id} | Delivery verification pending
               </h3>
               <button
                 type="button"
@@ -1950,28 +2214,14 @@ function AppContent() {
 
       {pendingUpiPayment && (
         <UpiPaymentModal
-          payment={pendingUpiPayment}
+          paymentRequest={pendingUpiPayment}
           onClose={() => setPendingUpiPayment(null)}
-          onConfirmPayment={handleCompleteUpiPayment}
         />
       )}
     </div>
   );
 }
 
-const __getDynamicAdminCreds = () => {
-  try {
-    const raw = typeof window !== "undefined" ? localStorage.getItem("we4all_founder_credentials_v1") : null;
-    const parsed = raw ? JSON.parse(raw) : {};
-    return {
-      username: String(parsed.username || "KhodayAnvesh"),
-      password: String(parsed.password || "22061969s!"),
-      pin: String(parsed.pin || "9999")
-    };
-  } catch (e) {
-    return { username: "KhodayAnvesh", password: "22061969s!", pin: "9999" };
-  }
-};
 export default function App() {
   return <AppContent />;
 }

@@ -1,0 +1,1 @@
+alter function public.we4all_create_order(uuid,uuid,jsonb,text,jsonb,text) set search_path = '';

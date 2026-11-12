@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import LiveRouteMap from "./LiveRouteMap";
+const RideWorkspace = React.lazy(() => import("./rides/RideWorkspace"));
 
 export const VEHICLE_CONSORT_RULES = {
   "2W": {
@@ -46,12 +47,12 @@ export default function RiderCaptainPortal({
   onReportError = () => {},
   renderAccountTab
 }) {
-  const myVehicleCode = currentUser?.vehicleCode || "2W";
-  const myVehicleRule =
-    VEHICLE_CONSORT_RULES[myVehicleCode] || VEHICLE_CONSORT_RULES["2W"];
+  const myVehicleCode = currentUser?.vehicleCode || "UNVERIFIED";
+  const myVehicleRule = VEHICLE_CONSORT_RULES[myVehicleCode] || VEHICLE_CONSORT_RULES["2W"];
 
-  const [isOnlineForDriving, setIsOnlineForDriving] = useState(true);
-  const [autoOnline9AmEnabled, setAutoOnline9AmEnabled] = useState(true);
+  const [isOnlineForDriving, setIsOnlineForDriving] = useState(false);
+  const [locationConsent, setLocationConsent] = useState(false);
+  const autoOnline9AmEnabled = false;
   const [showLockedOtherVehicleJobs, setShowLockedOtherVehicleJobs] =
     useState(true);
   const [dropOtpInputs, setDropOtpInputs] = useState({});
@@ -63,14 +64,21 @@ export default function RiderCaptainPortal({
       r.phone === currentUser?.phone ||
       r.captainName === currentUser?.fullName
   );
-  const isPublishedLive =
-    !myPendingCaptain || myPendingCaptain.status === "Approved";
+  const isPublishedLive = Boolean(
+    currentUser?.authUserId &&
+    currentUser?.role === "rider" &&
+    currentUser?.status === "Approved" &&
+    VEHICLE_CONSORT_RULES[myVehicleCode] &&
+    (!myPendingCaptain || myPendingCaptain.status === "Approved")
+  );
 
   // Merge store orders from Merchant Portal into Radar if not already in captainRadarJobs
   const radarJobIds = new Set((captainRadarJobs || []).map((j) => j.id));
   const storeOrdersForRadar = (orders || [])
     .filter(
       (o) =>
+        o.serverDispatchVerified === true &&
+        ["VERIFIED", "PAID"].includes(o.paymentStatus) &&
         !radarJobIds.has(o.id) &&
         (o.status === "READY_FOR_PICKUP_AGENT_ALERTED" ||
           o.status === "PAID_PACKING_STARTED" ||
@@ -93,7 +101,7 @@ export default function RiderCaptainPortal({
       distFromCaptainKm: 0.5,
       distanceKm: o.distanceKm || 2.2,
       captainPayout: o.deliveryFee || 45,
-      secretOtp: String(o.secretOtp || "4499"),
+      secretOtp: "",
       status:
         o.status === "CAPTAIN_EN_ROUTE_TO_DROP" ||
         o.status === "OUT_FOR_DELIVERY_LIVE_MAP"
@@ -108,13 +116,14 @@ export default function RiderCaptainPortal({
   // STRICT ISOLATION: A Captain can ONLY operate orders allocated to their exact vehicleCode
   const myEligibleRadarJobs = combinedRadarList.filter(
     (j) =>
+      j.serverDispatchVerified === true &&
       (j.requiredVehicleCode || "2W") === myVehicleCode &&
       j.status !== "COMPLETED_DELIVERED" &&
       j.status !== "DELIVERED_COMPLETED" &&
       j.status !== "DELIVERED_REVIEW_POPUP"
   );
   const lockedOtherVehicleJobs = combinedRadarList.filter(
-    (j) => (j.requiredVehicleCode || "2W") !== myVehicleCode
+    (j) => j.serverDispatchVerified === true && (j.requiredVehicleCode || "2W") !== myVehicleCode
   );
 
   // Deduplicated Active Accepted Trips for Tab 2 (Route Map & OTP Verification)
@@ -130,6 +139,7 @@ export default function RiderCaptainPortal({
   (orders || [])
     .filter(
       (o) =>
+        o.serverDispatchVerified === true &&
         (o.requiredVehicleCode || "2W") === myVehicleCode &&
         (o.status === "READY_FOR_PICKUP_AGENT_ALERTED" ||
           o.status === "CAPTAIN_EN_ROUTE_TO_DROP" ||
@@ -142,7 +152,7 @@ export default function RiderCaptainPortal({
           pickupPin: o.shopName || "Sri Laxmi Supermart",
           dropPin: o.address || "Subhash Nagar, Adilabad",
           captainPayout: o.deliveryFee || 45,
-          secretOtp: String(o.secretOtp || "4499")
+          secretOtp: ""
         });
       }
     });
@@ -154,13 +164,14 @@ export default function RiderCaptainPortal({
   combinedRadarList
     .filter(
       (j) =>
+        j.serverDispatchVerified === true &&
         (j.requiredVehicleCode || "2W") === myVehicleCode &&
         j.status !== "OPEN_ON_RADAR"
     )
     .forEach((j) => bookingsMap.set(j.id, j));
 
   (orders || [])
-    .filter((o) => (o.requiredVehicleCode || "2W") === myVehicleCode)
+    .filter((o) => o.serverSettlementStatus === "VERIFIED" && (o.requiredVehicleCode || "2W") === myVehicleCode)
     .forEach((o) => {
       if (!bookingsMap.has(o.id)) {
         bookingsMap.set(o.id, o);
@@ -170,105 +181,12 @@ export default function RiderCaptainPortal({
   const allMyVehicleBookings = Array.from(bookingsMap.values());
 
   // COMPLETE OTP VERIFICATION HANDLER (Updates BOTH captainRadarJobs AND orders)
-  const handleVerifyTripOtpAndComplete = (trip, forceOtpValue = null) => {
-    try {
-      const expectedOtp = String(trip.secretOtp || "4499").trim();
-      const rawInput =
-        forceOtpValue !== null
-          ? String(forceOtpValue).trim()
-          : String(dropOtpInputs[trip.id] ?? "").trim();
-
-      if ((rawInput || []).length === 0) {
-        onReportError(
-          `4-Digit OTP Required for Order #${trip.id}`,
-          `The OTP input box is empty. Customer/Merchant Doorstep OTP for #${trip.id} is "${expectedOtp}".`,
-          `Tap "Auto-Fill & Verify OTP (${expectedOtp})" below or type ${expectedOtp} in the box.`,
-          () => handleVerifyTripOtpAndComplete(trip, expectedOtp)
-        );
-        return;
-      }
-
-      if (rawInput !== expectedOtp) {
-        onReportError(
-          `Incorrect OTP Entered for Order #${trip.id}`,
-          `You entered "${rawInput}", which does not match the required 4-digit OTP "${expectedOtp}".`,
-          `Tap "Auto-Fix & Verify OTP (${expectedOtp})" below to complete delivery immediately.`,
-          () => handleVerifyTripOtpAndComplete(trip, expectedOtp)
-        );
-        return;
-      }
-
-      const completedAtTime = new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-
-      // 1. Update captainRadarJobs (or insert if it originated from store orders)
-      const existsInRadar = captainRadarJobs.some((x) => x.id === trip.id);
-      if (existsInRadar) {
-        setCaptainRadarJobs(
-          captainRadarJobs.map((x) =>
-            x.id === trip.id
-              ? {
-                  ...x,
-                  status: "COMPLETED_DELIVERED",
-                  completedAt: completedAtTime,
-                  paymentReqStatus: "ELIGIBLE_FOR_PAYOUT_REQ"
-                }
-              : x
-          )
-        );
-      } else {
-        setCaptainRadarJobs([
-          {
-            ...trip,
-            status: "COMPLETED_DELIVERED",
-            completedAt: completedAtTime,
-            paymentReqStatus: "ELIGIBLE_FOR_PAYOUT_REQ"
-          },
-          ...captainRadarJobs
-        ]);
-      }
-
-      // 2. Update orders array so Merchant & Customer portals see DELIVERED_REVIEW_POPUP!
-      setOrders(
-        orders.map((o) =>
-          o.id === trip.id
-            ? {
-                ...o,
-                status: "DELIVERED_REVIEW_POPUP",
-                completedAt: completedAtTime,
-                paymentReqStatus: "ELIGIBLE_FOR_PAYOUT_REQ"
-              }
-            : o
-        )
-      );
-
-      // 3. Clear OTP input & display instant visual confirmation card
-      const nextInputs = { ...dropOtpInputs };
-      delete nextInputs[trip.id];
-      setDropOtpInputs(nextInputs);
-
-      const payoutAmt = trip.captainPayout || trip.deliveryFee || 45;
-      setOtpVerifiedBanner({
-        id: trip.id,
-        otp: expectedOtp,
-        payout: payoutAmt,
-        route: `${trip.pickupPin || trip.shopName} -> ${
-          trip.dropPin || trip.address
-        }`
-      });
-
-      onTriggerToast(
-        `OTP (${expectedOtp}) Verified! Order #${trip.id} Delivered & Rs.${payoutAmt} added to Earnings.`
-      );
-    } catch (err) {
-      onReportError(
-        "OTP Verification Exception",
-        err?.message || String(err),
-        "Verify order state in RiderCaptainPortal.jsx"
-      );
-    }
+  const handleVerifyTripOtpAndComplete = () => {
+    onReportError(
+      "Delivery verification unavailable",
+      "The backend has not issued a customer-bound, expiring delivery OTP. No delivery status or payout was changed.",
+      "Complete the secure OTP endpoint and provider-side verification before enabling delivery completion."
+    );
   };
 
   const handleDownloadCaptainStatementPdf = () => {
@@ -320,6 +238,12 @@ export default function RiderCaptainPortal({
   if (footerTab === "account") {
     return renderAccountTab();
   }
+  if (footerTab === "home") {
+    return <React.Suspense fallback={<p role="status">Opening rider workspace…</p>}>
+      <RideWorkspace key={currentUser?.authUserId || "guest"} currentUser={currentUser}
+        mode="rider" onShop={onSwitchToPersonalShop} />
+    </React.Suspense>;
+  }
 
   return (
     <div className="space-y-3 text-xs text-white">
@@ -369,21 +293,9 @@ export default function RiderCaptainPortal({
               <button
                 key={vr.code}
                 type="button"
+                disabled={vr.code !== myVehicleCode || !isPublishedLive}
                 onClick={() => {
-                  const defaultModels = {
-                    "2W": "Hero Splendor 125cc",
-                    "3W": "Bajaj Maxima 3W Auto",
-                    "4W_HEAVY": "Tata Ace Gold Mini Truck"
-                  };
-                  setCurrentUser({
-                    ...currentUser,
-                    vehicleCode: vr.code,
-                    vehicleClass: vr.label,
-                    vehicleModel: defaultModels[vr.code]
-                  });
-                  onTriggerToast(
-                    `Switched Captain Login to ${vr.label}. Orders for other vehicles are strictly locked!`
-                  );
+                  onTriggerToast("Vehicle class is read-only and comes from the Founder-approved rider profile. Submit a vehicle change request for verification.");
                 }}
                 className={`py-1.5 rounded-lg font-black cursor-pointer ${
                   myVehicleCode === vr.code
@@ -391,7 +303,7 @@ export default function RiderCaptainPortal({
                     : "bg-slate-900 text-slate-400 border border-slate-800"
                 }`}
               >
-                Login as {vr.shortLabel}
+                {vr.shortLabel} {vr.code === myVehicleCode ? "Approved profile" : "Locked"}
               </button>
             ))}
           </div>
@@ -405,7 +317,19 @@ export default function RiderCaptainPortal({
           </span>
           <button
             type="button"
-            onClick={() => setIsOnlineForDriving(!isOnlineForDriving)}
+            onClick={() => {
+              if (isOnlineForDriving) {
+                setIsOnlineForDriving(false);
+                setLocationConsent(false);
+                return;
+              }
+              const accepted = window.confirm(
+                "Share this device's location while you are online as a WE4ALL captain? Location tracking remains on this device only until the secure server tracking service is configured."
+              );
+              if (!accepted) return;
+              setLocationConsent(true);
+              setIsOnlineForDriving(true);
+            }}
             className={`px-2.5 py-1 rounded-lg font-black text-[9px] cursor-pointer ${
               isOnlineForDriving
                 ? "bg-emerald-400 text-slate-950"
@@ -474,39 +398,7 @@ export default function RiderCaptainPortal({
                   Showing orders allocated strictly to {myVehicleRule.label}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const weightForMyVeh =
-                    myVehicleCode === "2W" ? 8 : myVehicleCode === "3W" ? 120 : 550;
-                  const payoutForMyVeh =
-                    myVehicleCode === "2W" ? 45 : myVehicleCode === "3W" ? 165 : 480;
-                  const newJob = {
-                    id: `RDR-${Math.floor(1000 + Math.random() * 9000)}`,
-                    requiredVehicleCode: myVehicleCode,
-                    vehicleLabel: myVehicleRule.label,
-                    weightKg: weightForMyVeh,
-                    badge: `${myVehicleRule.shortLabel} Order (${weightForMyVeh} kg Load)`,
-                    bookedBy:
-                      "Customer: Srinivas Rao | Merchant: Sri Laxmi Supermart",
-                    pickupPin: "Main Bazar Supermart, Adilabad",
-                    dropPin: "Subhash Nagar Colony, Adilabad",
-                    distFromCaptainKm: 0.5,
-                    distanceKm: 2.8,
-                    captainPayout: payoutForMyVeh,
-                    secretOtp: String(Math.floor(1000 + Math.random() * 9000)),
-                    status: "OPEN_ON_RADAR",
-                    paymentReqStatus: "PENDING_TRIP_COMPLETION"
-                  };
-                  setCaptainRadarJobs([newJob, ...captainRadarJobs]);
-                  onTriggerToast(
-                    `Simulated ${myVehicleRule.shortLabel} Order #${newJob.id}!`
-                  );
-                }}
-                className="bg-amber-400 text-slate-950 font-black px-2.5 py-1.5 rounded-xl text-[10px] cursor-pointer shrink-0"
-              >
-                + Test {myVehicleRule.shortLabel} Order
-              </button>
+              <p className="text-[10px] text-amber-200">Live dispatch jobs will appear here when the authenticated dispatch service allocates an order to this vehicle class.</p>
             </div>
           </div>
 
@@ -540,65 +432,16 @@ export default function RiderCaptainPortal({
                 </p>
                 <p className="text-amber-300 font-bold">
                   Drop: <span className="text-white">{job.dropPin}</span> ({job.distanceKm} km) | OTP:{" "}
-                  <strong className="text-white">{job.secretOtp || "4499"}</strong>
+                  <strong className="text-white">"Awaiting server verification"</strong>
                 </p>
               </div>
               {job.status === "OPEN_ON_RADAR" ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    if ((job.requiredVehicleCode || "2W") !== myVehicleCode) {
-                      onReportError(
-                        "Cross-Vehicle Interference Blocked",
-                        `Order #${job.id} requires ${job.requiredVehicleCode}, but you are logged in as ${myVehicleCode}.`,
-                        "Switch to the matching vehicle login or accept an order allocated to your vehicle."
-                      );
-                      return;
-                    }
-                    const exists = captainRadarJobs.some((x) => x.id === job.id);
-                    if (exists) {
-                      setCaptainRadarJobs(
-                        captainRadarJobs.map((x) =>
-                          x.id === job.id
-                            ? {
-                                ...x,
-                                status: "ACCEPTED_BY_CAPTAIN",
-                                assignedCaptain:
-                                  currentUser?.fullName || "Raju Local Rider"
-                              }
-                            : x
-                        )
-                      );
-                    } else {
-                      setCaptainRadarJobs([
-                        {
-                          ...job,
-                          status: "ACCEPTED_BY_CAPTAIN",
-                          assignedCaptain:
-                            currentUser?.fullName || "Raju Local Rider"
-                        },
-                        ...captainRadarJobs
-                      ]);
-                    }
-                    setOrders(
-                      orders.map((o) =>
-                        o.id === job.id
-                          ? {
-                              ...o,
-                              status: "CAPTAIN_EN_ROUTE_TO_DROP",
-                              tokenHandedOver: true
-                            }
-                          : o
-                      )
-                    );
-                    setFooterTab("batch");
-                    onTriggerToast(
-                      `Accepted ${myVehicleRule.shortLabel} Order #${job.id}! Switched to Route Map.`
-                    );
-                  }}
-                  className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer shadow"
+                  disabled
+                  className="w-full bg-slate-700 text-slate-300 font-black py-2 rounded-xl cursor-not-allowed"
                 >
-                  Accept {myVehicleRule.shortLabel} Order (Rs.{job.captainPayout}) &rarr;
+                  Dispatch allocation service required
                 </button>
               ) : (
                 <button
@@ -606,7 +449,7 @@ export default function RiderCaptainPortal({
                   onClick={() => setFooterTab("batch")}
                   className="w-full bg-teal-500/20 border border-teal-400 text-teal-200 font-black py-1.5 rounded-xl cursor-pointer"
                 >
-                  Accepted &bull; Open 2. Route Map to Verify OTP &rarr;
+                  Assignment status must be confirmed by dispatch server
                 </button>
               )}
             </div>
@@ -686,7 +529,7 @@ export default function RiderCaptainPortal({
             </div>
           ) : (
             activeAcceptedTrips.map((trip) => {
-              const otpCode = String(trip.secretOtp || "4499").trim();
+              const otpCode = "";
               return (
                 <div
                   key={trip.id}
@@ -704,33 +547,22 @@ export default function RiderCaptainPortal({
                     pickupLabel={trip.pickupPin || trip.shopName}
                     dropLabel={trip.dropPin || trip.address}
                     riderName={currentUser?.fullName || "Raju Local Rider"}
-                    vehicle={`${myVehicleRule.shortLabel} (${currentUser?.rcPlate || "TS-01"})`}
-                    distanceKm={trip.distanceKm || 2.5}
+                    vehicle={`${myVehicleRule.shortLabel} (${currentUser?.rcPlate || "Vehicle pending"})`}
+                    distanceKm={trip.distanceKm || null}
+                    trackingEnabled={isOnlineForDriving && locationConsent}
                   />
                   <div className="bg-slate-950 p-2 rounded-xl border border-slate-800 flex justify-between items-center text-[10px]">
                     <span className="text-slate-300">
                       Customer / Merchant OTP:{" "}
                       <strong className="text-amber-300 font-mono text-xs">{otpCode}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDropOtpInputs({
-                          ...dropOtpInputs,
-                          [trip.id]: otpCode
-                        });
-                        handleVerifyTripOtpAndComplete(trip, otpCode);
-                      }}
-                      className="bg-teal-500/20 border border-teal-400 text-teal-200 px-2.5 py-1 rounded-lg text-[9px] font-black cursor-pointer"
-                    >
-                      Auto-Fill &amp; Verify ({otpCode})
-                    </button>
+                    <span className="text-[10px] text-amber-200">Server-issued delivery OTP required. Completion remains locked.</span>
                   </div>
                   <div className="flex gap-1.5">
                     <input
                       type="text"
                       maxLength={4}
-                      placeholder={`Enter OTP (${otpCode})`}
+                      placeholder="Server-issued delivery OTP (not configured)"
                       value={dropOtpInputs[trip.id] ?? ""}
                       onChange={(e) =>
                         setDropOtpInputs({
@@ -742,10 +574,11 @@ export default function RiderCaptainPortal({
                     />
                     <button
                       type="button"
+                      disabled
                       onClick={() => handleVerifyTripOtpAndComplete(trip)}
-                      className="flex-1 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black rounded-xl text-[10px] cursor-pointer shadow"
+                      className="flex-1 bg-slate-700 text-slate-300 font-black rounded-xl text-[10px] cursor-not-allowed shadow"
                     >
-                      Verify OTP &amp; Complete Delivery &rarr;
+                      Server verification required
                     </button>
                   </div>
                 </div>
@@ -790,7 +623,7 @@ export default function RiderCaptainPortal({
             </h4>
             {allMyVehicleBookings.map((bk) => {
               const fare = Number(bk.captainPayout || bk.deliveryFee || 45);
-              const isPaid = bk.paymentReqStatus === "PAYMENT_RELEASED_TO_UPI";
+              const isPaid = bk.serverSettlementStatus === "VERIFIED";
               return (
                 <div
                   key={bk.id}
@@ -818,39 +651,20 @@ export default function RiderCaptainPortal({
                     </span>
                     {isPaid ? (
                       <span className="bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-lg text-[9px] font-black">
-                        SETTLED TO UPI 
+                        Settlement verification required 
                       </span>
                     ) : (
                       <button
                         type="button"
+                        disabled
                         onClick={() => {
-                          setCaptainRadarJobs(
-                            captainRadarJobs.map((x) =>
-                              x.id === bk.id
-                                ? {
-                                    ...x,
-                                    paymentReqStatus: "PAYMENT_RELEASED_TO_UPI"
-                                  }
-                                : x
-                            )
-                          );
-                          setOrders(
-                            orders.map((o) =>
-                              o.id === bk.id
-                                ? {
-                                    ...o,
-                                    paymentReqStatus: "PAYMENT_RELEASED_TO_UPI"
-                                  }
-                                : o
-                            )
-                          );
                           onTriggerToast(
-                            `Payment Request Raised! Rs.${fare} sent to ${currentUser?.upiId || "captain@ybl"}.`
+                            "Payout request cannot be submitted yet. WE4ALL needs an authenticated captain settlement API and payment-provider confirmation. No payout status was changed."
                           );
                         }}
-                        className="bg-amber-400 text-slate-950 font-black px-3 py-1 rounded-lg text-[9px] cursor-pointer"
+                        className="bg-slate-700 text-slate-300 font-black px-3 py-1 rounded-lg text-[9px] cursor-not-allowed"
                       >
-                        Raise Payment Request (Rs.{fare}) &rarr;
+                        Payout integration required
                       </button>
                     )}
                   </div>
@@ -871,7 +685,7 @@ export default function RiderCaptainPortal({
                   4. {myVehicleRule.shortLabel} Earnings &amp; 09:00 AM Default Online Duty
                 </h4>
                 <p className="text-[10px] text-slate-400">
-                  Auto-Online every morning at 09:00 AM ({autoOnline9AmEnabled ? "Active" : "Paused"})
+                  09:00 AM auto-duty requires a server scheduler and explicit consent. Manual online mode is used until then.
                 </p>
               </div>
               <button
