@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codex/we4all-supabase-accounts-ota
+      - codex/we4all-shop-rides
   workflow_dispatch:
 
 permissions:

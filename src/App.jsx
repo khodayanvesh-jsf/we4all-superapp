@@ -33,6 +33,7 @@ import MerchantPortal from "./modules/MerchantPortal";
 import ServiceProviderPortal from "./modules/ServiceProviderPortal";
 import DecoratorPortal from "./modules/DecoratorPortal";
 import RiderCaptainPortal from "./modules/RiderCaptainPortal";
+const RideWorkspace = React.lazy(() => import("./modules/rides/RideWorkspace"));
 import { canOpenPartnerPortal, isCustomerVisibleListing, calculateDecoratorAdvance } from "./modules/workflows/portalRules";
 import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
@@ -1524,7 +1525,8 @@ function AppContent() {
                               type="button"
                               disabled={prod.inStock === false}
                               onClick={() => handleAddToUnifiedMerchantCart(prod)}
-                              className="bg-emerald-600 disabled:bg-slate-300 disabled:text-slate-500 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
+                              aria-label={`Add ${prod.subCategoryBrand} to cart`}
+                              className="bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[10px] font-black cursor-pointer"
                             >
                               {prod.inStock === false ? "Out of stock" : "+ Add"}
                             </button>
@@ -1730,78 +1732,10 @@ function AppContent() {
               )}
 
               {customerHomeSubTab === "taxi" && (
-                <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-2">
-                  <h3 className="font-black text-xs">Instant Local Point-to-Point Ride</h3>
-                  <input
-                    type="text"
-                    value={taxiBookingForm.pickupPin}
-                    onChange={(e) =>
-                      setTaxiBookingForm({ ...taxiBookingForm, pickupPin: e.target.value })
-                    }
-                    placeholder="Pickup Location"
-                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-                  />
-                  <input
-                    type="text"
-                    value={taxiBookingForm.dropPin}
-                    onChange={(e) =>
-                      setTaxiBookingForm({ ...taxiBookingForm, dropPin: e.target.value })
-                    }
-                    placeholder="Drop Location"
-                    className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs"
-                  />
-                  <div className="grid grid-cols-3 gap-1.5 pt-1">
-                    {[
-                      { type: "2W Bike", rate: 12 },
-                      { type: "3W Auto", rate: 22 },
-                      { type: "AC Cab", rate: 35 }
-                    ].map((v) => {
-                      const fare = Math.round(taxiBookingForm.distanceKm * v.rate + 20);
-                      return (
-                        <button
-                          key={v.type}
-                          type="button"
-                          disabled={taxiBookingBusy}
-                          onClick={async () => {
-                            if (!currentUser?.authUserId || currentUser?.isGuest) {
-                              triggerToast("Sign in with your free WE4ALL account to request a ride.");
-                              setFooterTab("account");
-                              return;
-                            }
-                            const vehicleClass = v.type === "2W Bike" ? "2W" : v.type === "3W Auto" ? "3W" : "4W";
-                            setTaxiBookingBusy(true);
-                            try {
-                              const result = await createServerRideBooking({
-                                vehicleClass,
-                                pickupAddress: taxiBookingForm.pickupPin,
-                                dropoffAddress: taxiBookingForm.dropPin,
-                                zoneId: activeAddressObj?.zoneId || "adilabad_master",
-                                note: "Fare estimate is indicative; final quote is pending rider confirmation.",
-                                idempotencyKey: `ride-${currentUser.authUserId}-${globalThis.crypto?.randomUUID?.() || Date.now()}`
-                              });
-                              setTaxiCart((current) => [{
-                                id: result.ride_booking_id, serverRideBookingId: result.ride_booking_id,
-                                vehicle: v.type, vehicleClass,
-                                pickup: taxiBookingForm.pickupPin, drop: taxiBookingForm.dropPin,
-                                estimatedFare: fare, fare: null, status: result.status || "requested",
-                                paymentStatus: "pending"
-                              }, ...current]);
-                              triggerToast(`${v.type} request ${result.ride_booking_id} saved. Fare is pending; no payment was collected.`);
-                            } catch (error) {
-                              triggerToast(error?.message || "Ride request failed. No server booking was created.");
-                            } finally {
-                              setTaxiBookingBusy(false);
-                            }
-                          }}
-                          className="p-2 rounded-xl border border-emerald-600 bg-emerald-50 text-center cursor-pointer"
-                        >
-                          <p className="font-black text-[10px]">{v.type}</p>
-                          <p className="font-black text-xs text-emerald-800">Est. ₹{fare}</p><p className="text-[8px] text-slate-500">Final fare by rider</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                <React.Suspense fallback={<p role="status">Opening rides…</p>}>
+                  <RideWorkspace key={currentUser?.authUserId || "guest"} currentUser={currentUser}
+                    onSignIn={() => setFooterTab("account")} onShop={() => setCustomerHomeSubTab("stores")} />
+                </React.Suspense>
               )}
 
 
@@ -2124,26 +2058,14 @@ function AppContent() {
               )}
 
               {activeCartViewTab === "taxi_cart" && (
-                <div className="space-y-2">
-                  {taxiCart.map((r, i) => (
-                    <div key={i} className="flex justify-between border-b pb-1">
-                      <span>
-                        {r.vehicle}: {r.pickup} to {r.drop}
-                      </span>
-                      <span className="font-black">Rs.{r.fare}</span>
-                    </div>
-                  ))}
-                  {(taxiCart || []).length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerToast("Ride request has not been dispatched. Live captain allocation and fare confirmation are not yet connected. Your ride cart is unchanged.");
-                      }}
-                      className="w-full bg-emerald-600 text-white font-black py-2 rounded-xl cursor-pointer"
-                    >
-                      Request ride (dispatch pending)
-                    </button>
-                  )}
+                <div className="space-y-3">
+                  <p>Request rides directly from the Rides screen and follow their progress there.</p>
+                  {!!taxiCart.length && <p>Your older ride cart contains {taxiCart.length} saved selections. These were never dispatched; confirm pickup again when booking.</p>}
+                  {(taxiCart || []).map((ride, index) => <div key={`${ride.id || "saved"}-${index}`} className="rounded-xl border border-slate-300 p-2">
+                    {ride.vehicle}: {ride.pickup} → {ride.drop} · saved estimate Rs.{ride.fare}
+                  </div>)}
+                  <button type="button" onClick={() => { setCustomerHomeSubTab("taxi"); setFooterTab("home"); }}
+                    className="bg-emerald-700 text-white px-4 py-3 rounded-xl font-bold">Open rides</button>
                 </div>
               )}
             </div>

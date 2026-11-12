@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { invokeWe4AllOperations, verifyDeliveryTestOtp } from "../supabaseClient";
 import LiveRouteMap from "./LiveRouteMap";
-import RiderRadarMap from "./RiderRadarMap";
+const RideWorkspace = React.lazy(() => import("./rides/RideWorkspace"));
 
 export const VEHICLE_CONSORT_RULES = {
   "2W": {
