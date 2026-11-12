@@ -1,5 +1,2 @@
-Repository: khodayanvesh-jsf/we4all-superapp
-Branch: fix/payment-safety-guest-default
-Commit: 9158eb471ccee150fe5d7f365b9a4e9f1fef8492
-App: 3.3.0 (build 330)
-Exported: 2026-11-06
+This file is generated with the exact branch, commit and export time inside the GitHub Actions source package.
+For a Git clone, run: git rev-parse HEAD

@@ -3,7 +3,8 @@ name: Export WE4ALL offline source package
 on:
   push:
     branches:
-      - fix/payment-safety-guest-default
+      - main
+      - codex/we4all-offline-sync
   workflow_dispatch:
 
 permissions:
@@ -13,32 +14,34 @@ jobs:
   export-source:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout exact development branch source
+      - name: Checkout requested commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: fix/payment-safety-guest-default
           persist-credentials: false
 
-      - name: Create offline source archive
+      - name: Create source-only archive from tracked files
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/we4all-export"
+          export_dir="$RUNNER_TEMP/we4all-export"
+          mkdir -p "$export_dir"
+          git archive --format=tar HEAD | tar -xf - -C "$export_dir"
+          rm -f "$export_dir/WE4ALL-v3.0.1-Production.apk" "$export_dir/SOURCE-COMMIT.txt"
           printf 'Repository: %s\nBranch: %s\nCommit: %s\nExported: %s\n' \
-            "$GITHUB_REPOSITORY" "fix/payment-safety-guest-default" "$GITHUB_SHA" "$(date -u +%FT%TZ)" \
-            > "$RUNNER_TEMP/we4all-export/SOURCE-COMMIT.txt"
-          zip -qr "$RUNNER_TEMP/WE4ALL-offline-source.zip" . \
-            -x ".git/*" "node_modules/*" "dist/*" "android/.gradle/*" \
-               "android/app/build/*" "coverage/*" ".vercel/*" \
-               ".env" ".env.*" "!.env.example" "**/.env" "**/.env.*" \
-               "**/node_modules/*" "**/dist/*" "**/build/*" "**/.DS_Store"
+            "$GITHUB_REPOSITORY" "${GITHUB_REF_NAME}" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" \
+            > "$export_dir/SOURCE-COMMIT.txt"
+          (cd "$export_dir" && zip -qr "$RUNNER_TEMP/WE4ALL-offline-source.zip" .)
+          unzip -Z1 "$RUNNER_TEMP/WE4ALL-offline-source.zip" | grep -qx 'package-lock.json'
+          unzip -Z1 "$RUNNER_TEMP/WE4ALL-offline-source.zip" | grep -qx 'supabase/config.toml'
+          unzip -Z1 "$RUNNER_TEMP/WE4ALL-offline-source.zip" | grep -qx 'android/gradlew'
+          sha256sum "$RUNNER_TEMP/WE4ALL-offline-source.zip" > "$RUNNER_TEMP/WE4ALL-offline-source.zip.sha256"
 
-      - name: Upload full source archive
+      - name: Upload source and checksum
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: WE4ALL-offline-source-${{ github.sha }}
           path: |
             ${{ runner.temp }}/WE4ALL-offline-source.zip
-            ${{ runner.temp }}/we4all-export/SOURCE-COMMIT.txt
+            ${{ runner.temp }}/WE4ALL-offline-source.zip.sha256
           if-no-files-found: error
           retention-days: 30
