@@ -26,8 +26,9 @@ export function normalizeSupabaseBaseUrl(rawUrl) {
 const SUPABASE_URL = normalizeSupabaseBaseUrl(
   import.meta.env.VITE_SUPABASE_URL || "https://bdmbziwazpuzbukazmug.supabase.co"
 );
+const localPublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
 const SUPABASE_PUBLISHABLE_KEY = String(
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  (localPublishableKey === "YOUR_SUPABASE_PUBLISHABLE_KEY" ? "" : localPublishableKey) ||
   "sb_publishable_nNPwaseb81B8V05aVwmleg_JkBVNvzl"
 ).trim();
 

@@ -133,7 +133,16 @@ export default function FounderAdminSuite({
   const [founderProfileMessage, setFounderProfileMessage] = useState("");
   const [founderProfileBusy, setFounderProfileBusy] = useState(false);
   const [managedUsers, setManagedUsers] = useState([]);
+  const [managedRoleFilter, setManagedRoleFilter] = useState("all");
   const [managedUserFilter, setManagedUserFilter] = useState("active");
+  const matchingPortalAccounts = managedUsers.filter((account) => {
+    const role = managedRoleFilter === "all"
+      ? null
+      : account.roles?.find((entry) => entry.role === managedRoleFilter);
+    if (managedRoleFilter !== "all" && !role) return false;
+    const status = role ? (role.status === "approved" ? "active" : role.status) : account.portal_status;
+    return managedUserFilter === "all" || managedUserFilter === status;
+  });
   const [managedListings, setManagedListings] = useState([]);
   const [usersMessage, setUsersMessage] = useState("");
   const [usersBusy, setUsersBusy] = useState(false);
@@ -2689,7 +2698,22 @@ export default function FounderAdminSuite({
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/30 bg-slate-900 p-4"><div><h3 className="text-sm font-black text-indigo-200">Portal account access</h3><p className="mt-1 text-[10px] text-slate-300">Active counts only approved roles. Pending applicants stay in the approval queue and Pending filter. Removing an account blocks sign-in and active listings while preserving transaction, KYC and audit history.</p></div><div className="flex gap-2"><button type="button" disabled={usersBusy} onClick={refreshManagedUsers} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">{usersBusy ? "Loading…" : "Refresh users"}</button><button type="button" disabled={usersBusy} onClick={refreshManagedListings} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-black text-white">Refresh listings</button></div></div>
           <label className="flex items-center gap-2 text-[10px] text-slate-300">Show accounts<select aria-label="Filter portal accounts" value={managedUserFilter} onChange={(event) => setManagedUserFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="active">Active portal users</option><option value="pending">Pending applicants</option><option value="suspended">Suspended / removed</option><option value="all">All accounts</option></select><span>{managedUsers.filter((account) => managedUserFilter === "all" || account.portal_status === managedUserFilter).length} shown</span></label>
           {usersMessage && <p role="status" className="rounded-xl bg-slate-950 p-2 text-[10px] text-amber-200">{usersMessage}</p>}
-          {managedUsers.filter((account) => managedUserFilter === "all" || account.portal_status === managedUserFilter).map((account) => {
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            Portal role
+            <select aria-label="Filter accounts by portal role" value={managedRoleFilter}
+              onChange={(event) => setManagedRoleFilter(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white">
+              <option value="all">All roles</option>
+              <option value="customer">Customer</option>
+              <option value="merchant">Merchant</option>
+              <option value="service_provider">Service provider</option>
+              <option value="decorator">Decorator</option>
+              <option value="rider">Rider</option>
+              <option value="labour">Labour</option>
+            </select>
+          </label>
+          {!matchingPortalAccounts.length && <p className="text-xs text-slate-400">No accounts match these filters.</p>}
+          {matchingPortalAccounts.map((account) => {
             const profile = account.profile || {};
             return <article key={account.user_id} className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black text-white">{profile.full_name || "Unnamed account"} <span className={account.portal_status === "active" ? "text-emerald-300" : "text-amber-300"}>· {account.portal_status || "pending"}</span></p><p className="font-mono text-[9px] text-slate-500">{account.user_id}</p></div><button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => removeManagedUserAccess(account)} className="rounded-lg border border-rose-700 bg-rose-950 px-3 py-1.5 text-[9px] font-black text-rose-200 disabled:opacity-40">Remove from platform</button></div>
