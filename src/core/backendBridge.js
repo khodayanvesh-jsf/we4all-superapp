@@ -1,4 +1,4 @@
-﻿import { supabase } from '../supabaseClient';
+import { supabase } from '../supabaseClient';
 
 export async function registerPortalUser({ email, password, fullName, phone, role, businessName, category }) {
   const { data, error } = await supabase.auth.signUp({
@@ -90,6 +90,65 @@ export async function fetchActiveMerchantsWithCatalog() {
     .eq('status', 'active')
     .eq('is_verified', true)
     .order('business_name', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+
+// --- ORDER PLACEMENT & MERCHANT ORDER MANAGEMENT ---
+export async function placeCustomerOrder({
+  merchantId,
+  customerName,
+  customerPhone,
+  deliveryAddress,
+  items,
+  totalAmount,
+  paymentMethod = 'UPI / Cash on Delivery'
+}) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const customerId = sessionData?.session?.user?.id || null;
+
+  const { data, error } = await supabase
+    .from('merchant_orders')
+    .insert([
+      {
+        merchant_id: merchantId,
+        customer_id: customerId,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        delivery_address: deliveryAddress,
+        items: items,
+        total_amount: parseFloat(totalAmount),
+        payment_method: paymentMethod,
+        status: 'pending'
+      }
+    ])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchMerchantOrders(merchantId) {
+  const { data, error } = await supabase
+    .from('merchant_orders')
+    .select('*')
+    .eq('merchant_id', merchantId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateMerchantOrderStatus({ orderId, status }) {
+  const { data, error } = await supabase
+    .from('merchant_orders')
+    .update({ status })
+    .eq('id', orderId)
+    .select()
+    .single();
+
   if (error) throw error;
   return data;
 }
