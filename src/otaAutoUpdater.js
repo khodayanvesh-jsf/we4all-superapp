@@ -1,12 +1,12 @@
 ﻿import { Capacitor } from '@capacitor/core';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
-const BUILD_OTA_VERSION = '3.3.7-20261112193224';
-const DEFAULT_OTA_BASE_URL = 'https://we4all-super-app.vercel.app';
+const BUILD_OTA_VERSION = '3.3.8-20261113104832';
+const DEFAULT_OTA_BASE_URL = 'https://we-4-all-super-app.vercel.app';
 
 let otaCheckInProgress = false;
 
-export async function runAutoOtaUpdate(): Promise<void> {
+export async function runAutoOtaUpdate() {
   if (otaCheckInProgress) return;
   otaCheckInProgress = true;
 
@@ -14,7 +14,6 @@ export async function runAutoOtaUpdate(): Promise<void> {
     const isNative = Capacitor.isNativePlatform();
 
     if (isNative) {
-      // Required on every launch so CapacitorUpdater does not roll back the active bundle
       try {
         await CapacitorUpdater.notifyAppReady();
       } catch (e) {
@@ -22,21 +21,23 @@ export async function runAutoOtaUpdate(): Promise<void> {
       }
     }
 
+    const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : {};
     const baseUrl =
-      (import.meta as any).env?.VITE_OTA_URL ||
-      (import.meta as any).env?.VITE_APP_URL ||
+      env.VITE_OTA_URL ||
+      env.VITE_APP_URL ||
       localStorage.getItem('we4all_ota_base_url') ||
       (window.location.origin.startsWith('http') && !window.location.origin.includes('localhost')
         ? window.location.origin
         : DEFAULT_OTA_BASE_URL);
 
-    const res = await fetch(${baseUrl.replace(/\/$/, '')}/ota-version.json?t=${Date.now()}, {
+    const cleanBase = String(baseUrl).replace(/\/$/, '');
+    const res = await fetch(cleanBase + '/ota-version.json?t=' + Date.now(), {
       cache: 'no-store',
     });
     if (!res.ok) return;
 
-    const manifest: { version?: string; bundleUrl?: string } = await res.json();
-    const remoteVersion = manifest?.version;
+    const manifest = await res.json();
+    const remoteVersion = manifest && manifest.version;
     if (!remoteVersion) return;
 
     const appliedVersion = localStorage.getItem('we4all_ota_applied_version') || BUILD_OTA_VERSION;
@@ -46,7 +47,9 @@ export async function runAutoOtaUpdate(): Promise<void> {
     }
 
     if (isNative) {
-      const bundleUrl = manifest.bundleUrl || ${baseUrl.replace(/\/$/, '')}/ota-bundle.zip;
+      const bundleUrl = manifest.bundleUrl && manifest.bundleUrl.startsWith('http')
+        ? manifest.bundleUrl
+        : cleanBase + '/ota-bundle.zip';
       console.log('[OTA] Downloading new bundle:', remoteVersion, bundleUrl);
       const bundle = await CapacitorUpdater.download({
         url: bundleUrl,
@@ -65,7 +68,6 @@ export async function runAutoOtaUpdate(): Promise<void> {
   }
 }
 
-// Run immediately when the app opens and whenever the app comes back to the foreground
 if (typeof window !== 'undefined') {
   runAutoOtaUpdate();
   document.addEventListener('visibilitychange', () => {
@@ -74,4 +76,3 @@ if (typeof window !== 'undefined') {
     }
   });
 }
-
