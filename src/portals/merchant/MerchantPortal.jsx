@@ -5,13 +5,17 @@ import {
   getMerchantDashboardData,
   addMerchantCatalogItem,
   fetchMerchantOrders,
-  updateMerchantOrderStatus
+  updateMerchantOrderStatus,
+  requestSqlPortalOtp,
+  verifySqlPortalOtp
 } from '../../core/backendBridge';
 
 export default function MerchantPortal() {
-  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'dashboard'
-  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'catalog'
+  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'verify_otp' | 'dashboard'
+  const [activeTab, setActiveTab] = useState('orders');
   const [form, setForm] = useState({ email: '', password: '', fullName: '', phone: '', businessName: '', category: 'grocery' });
+  const [otpCode, setOtpCode] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
   const [merchantData, setMerchantData] = useState(null);
   const [orders, setOrders] = useState([]);
   const [newItem, setNewItem] = useState({ itemName: '', price: '' });
@@ -26,20 +30,49 @@ export default function MerchantPortal() {
     }
   };
 
+  const completeMerchantLogin = async () => {
+    const { user } = await loginToPortal({ email: form.email, password: form.password, requiredRole: 'merchant' });
+    const store = await getMerchantDashboardData(user.id);
+    setMerchantData(store);
+    await loadOrders(store.id);
+    setMode('dashboard');
+    setStatusMsg('');
+  };
+
   const handleAuth = async (e) => {
     e.preventDefault();
     setStatusMsg('Processing...');
     try {
       if (mode === 'register') {
         await registerPortalUser({ ...form, role: 'merchant' });
-        setStatusMsg('Registration complete! Logging into Merchant Portal...');
+        const code = await requestSqlPortalOtp(form.email);
+        setGeneratedOtp(code);
+        setMode('verify_otp');
+        setStatusMsg('Enter the 6-digit verification OTP below to activate your Merchant Store.');
+        return;
       }
-      const { user } = await loginToPortal({ email: form.email, password: form.password, requiredRole: 'merchant' });
-      const store = await getMerchantDashboardData(user.id);
-      setMerchantData(store);
-      await loadOrders(store.id);
-      setMode('dashboard');
-      setStatusMsg('');
+      await completeMerchantLogin();
+    } catch (err) {
+      setStatusMsg(err.message);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setStatusMsg('Verifying 6-digit OTP...');
+    try {
+      await verifySqlPortalOtp({ email: form.email, otpCode });
+      await completeMerchantLogin();
+    } catch (err) {
+      setStatusMsg(err.message);
+    }
+  };
+
+  const handleRegenerateOtp = async () => {
+    try {
+      const code = await requestSqlPortalOtp(form.email);
+      setGeneratedOtp(code);
+      setStatusMsg('Generated a new 6-digit OTP code!');
     } catch (err) {
       setStatusMsg(err.message);
     }
@@ -85,9 +118,7 @@ export default function MerchantPortal() {
             Refresh Orders
           </button>
         </div>
-
         <hr style={{ margin: '16px 0' }} />
-
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
           <button
             onClick={() => setActiveTab('orders')}
@@ -123,7 +154,7 @@ export default function MerchantPortal() {
           <div>
             <h3>Customer Orders</h3>
             {orders.length === 0 ? (
-              <p>No customer orders yet. Orders placed in the Customer Marketplace will appear here.</p>
+              <p>No customer orders yet.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {orders.map((order) => (
@@ -146,18 +177,10 @@ export default function MerchantPortal() {
                       ))}
                     </div>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <button onClick={() => handleOrderStatus(order.id, 'accepted')} style={{ padding: '6px 12px', background: '#0066ff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                        Accept Order
-                      </button>
-                      <button onClick={() => handleOrderStatus(order.id, 'out_for_delivery')} style={{ padding: '6px 12px', background: '#f39c12', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                        Out for Delivery
-                      </button>
-                      <button onClick={() => handleOrderStatus(order.id, 'completed')} style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                        Mark Completed
-                      </button>
-                      <button onClick={() => handleOrderStatus(order.id, 'cancelled')} style={{ padding: '6px 12px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                        Cancel
-                      </button>
+                      <button onClick={() => handleOrderStatus(order.id, 'accepted')} style={{ padding: '6px 12px', background: '#0066ff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Accept Order</button>
+                      <button onClick={() => handleOrderStatus(order.id, 'out_for_delivery')} style={{ padding: '6px 12px', background: '#f39c12', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Out for Delivery</button>
+                      <button onClick={() => handleOrderStatus(order.id, 'completed')} style={{ padding: '6px 12px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Mark Completed</button>
+                      <button onClick={() => handleOrderStatus(order.id, 'cancelled')} style={{ padding: '6px 12px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
                     </div>
                   </div>
                 ))}
@@ -184,10 +207,62 @@ export default function MerchantPortal() {
     );
   }
 
+  /* VIEW: 6-DIGIT OTP VERIFICATION BOX */
+  if (mode === 'verify_otp') {
+    return (
+      <div style={{ padding: '24px', maxWidth: '420px', margin: '40px auto', fontFamily: 'sans-serif', border: '1px solid #ddd', borderRadius: '8px', background: '#fff' }}>
+        <h2 style={{ marginTop: 0, color: '#0066ff' }}>Verify 6-Digit Merchant OTP</h2>
+        <p style={{ fontSize: '13px', color: '#555' }}>
+          Account registered for <strong>{form.email}</strong>.
+        </p>
+
+        {generatedOtp && (
+          <div style={{ padding: '12px', background: '#e7f3ff', border: '1px dashed #0066ff', borderRadius: '6px', marginBottom: '14px', textAlign: 'center' }}>
+            <div style={{ fontSize: '12px', color: '#0056b3' }}>Your 6-Digit Verification OTP Code:</div>
+            <div style={{ fontSize: '24px', fontWeight: 'bold', letterSpacing: '6px', color: '#0066ff', marginTop: '4px' }}>
+              {generatedOtp}
+            </div>
+            <button
+              type="button"
+              onClick={() => setOtpCode(generatedOtp)}
+              style={{ marginTop: '6px', padding: '4px 10px', fontSize: '11px', background: '#0066ff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              Auto-Fill OTP
+            </button>
+          </div>
+        )}
+
+        {statusMsg && (
+          <div style={{ padding: '10px', background: '#fff3cd', color: '#856404', borderRadius: '6px', marginBottom: '12px', fontSize: '13px' }}>
+            {statusMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleVerifyOtp} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <input
+            placeholder="Enter 6-Digit OTP"
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value)}
+            maxLength={6}
+            required
+            style={{ padding: '12px', fontSize: '18px', letterSpacing: '4px', textAlign: 'center', borderRadius: '6px', border: '1px solid #0066ff' }}
+          />
+          <button type="submit" style={{ padding: '10px', background: '#28a745', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+            Verify OTP & Open Merchant Portal
+          </button>
+        </form>
+
+        <button onClick={handleRegenerateOtp} style={{ width: '100%', marginTop: '10px', padding: '8px', background: '#f0f0f0', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
+          Generate New 6-Digit OTP
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '24px', maxWidth: '420px', margin: '40px auto', fontFamily: 'sans-serif', border: '1px solid #ddd', borderRadius: '8px' }}>
       <h2>WE4ALL Merchant {mode === 'login' ? 'Login' : 'Registration'}</h2>
-      {statusMsg && <p style={{ color: '#d9534f' }}>{statusMsg}</p>}
+      {statusMsg && <p style={{ color: '#d9534f', fontSize: '13px' }}>{statusMsg}</p>}
       <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <input type="email" placeholder="Merchant Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required style={{ padding: '8px' }} />
         <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required style={{ padding: '8px' }} />
@@ -204,11 +279,11 @@ export default function MerchantPortal() {
             </select>
           </>
         )}
-        <button type="submit" style={{ padding: '10px', background: '#0066ff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-          {mode === 'login' ? 'Login to Merchant Portal' : 'Register Merchant Store'}
+        <button type="submit" style={{ padding: '10px', background: '#0066ff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+          {mode === 'login' ? 'Login to Merchant Portal' : 'Register & Get 6-Digit OTP'}
         </button>
       </form>
-      <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} style={{ marginTop: '12px', background: 'none', border: 'none', color: '#0066ff', cursor: 'pointer' }}>
+      <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setStatusMsg(''); }} style={{ marginTop: '12px', background: 'none', border: 'none', color: '#0066ff', cursor: 'pointer' }}>
         {mode === 'login' ? 'New merchant? Register your store' : 'Already registered? Login here'}
       </button>
     </div>
