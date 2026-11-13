@@ -220,3 +220,24 @@ export async function logoutPortalUser() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
+
+// --- DIRECT SQL 6-DIGIT OTP GENERATOR & VERIFIER (NO EMAIL TEMPLATE NEEDED) ---
+export async function requestSqlPortalOtp(email) {
+  const { data, error } = await supabase.rpc('generate_portal_otp', {
+    target_email: email.trim()
+  });
+  if (error) throw error;
+  return data; // Returns the 6-digit OTP string
+}
+
+export async function verifySqlPortalOtp({ email, otpCode }) {
+  const { data, error } = await supabase.rpc('verify_portal_otp_code', {
+    target_email: email.trim(),
+    input_code: otpCode.trim()
+  });
+  if (error) throw error;
+  if (!data) {
+    throw new Error('Invalid 6-digit OTP code. Please check the code and try again.');
+  }
+  return true;
+}
