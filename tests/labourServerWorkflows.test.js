@@ -16,7 +16,7 @@ test("approved Labour directory is loaded from the public partner registry, not 
   assert.match(client, /eq\("partner_type", "labour"\)/);
   assert.match(client, /eq\("approval_status", "approved"\)/);
   assert.match(app, /loadPublicLabourProviders/);
-  assert.match(app, /refreshLabourDirectory/);
+  assert.match(app, /setLabourWorkers\(workers\.value\)/);
 });
 
 test("Labour profile publication is saved to the authenticated approved partner record", () => {
@@ -32,7 +32,7 @@ test("customer Labour hiring creates a server engagement with retry-safe request
   assert.match(client, /invokeWe4AllOperations\("create_labour"/);
   assert.match(operations, /case "create_labour"/);
   assert.match(operations, /we4all_create_labour_engagement/);
-  assert.match(app, /live\.labourEngagements/);
+  assert.match(app, /operations\.value\.labourEngagements/);
 });
 
 test("Labour partner accepts with a quote or declines using the server ledger", () => {
