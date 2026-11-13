@@ -24,7 +24,9 @@ export default function PortalGate() {
     setCurrentUrl(window.location.pathname + window.location.hash);
   };
 
-  const isLockedMerchantApk = import.meta.env.VITE_APP_PORTAL === 'merchant';
+  const portalMode = import.meta.env.VITE_APP_PORTAL;
+  const isLockedMerchantApk = portalMode === 'merchant';
+  const isLockedCustomerApk = portalMode === 'customer';
 
   const isCustomerAuth =
     window.location.pathname.startsWith('/customer-auth') ||
@@ -33,16 +35,20 @@ export default function PortalGate() {
   const isCustomerPortal =
     !isCustomerAuth &&
     (window.location.pathname.startsWith('/customer') ||
-      window.location.hash.startsWith('#/customer'));
+      window.location.hash.startsWith('#/customer') ||
+      isLockedCustomerApk);
 
   const isAdminMerchants =
-    window.location.pathname.startsWith('/admin-merchants') ||
-    window.location.hash.startsWith('#/admin-merchants');
+    !isLockedCustomerApk &&
+    !isLockedMerchantApk &&
+    (window.location.pathname.startsWith('/admin-merchants') ||
+      window.location.hash.startsWith('#/admin-merchants'));
 
   const isMerchantPortal =
-    window.location.pathname.startsWith('/merchant') ||
-    window.location.hash.startsWith('#/merchant') ||
-    isLockedMerchantApk;
+    !isLockedCustomerApk &&
+    (window.location.pathname.startsWith('/merchant') ||
+      window.location.hash.startsWith('#/merchant') ||
+      isLockedMerchantApk);
 
   const activeKey = isCustomerAuth
     ? 'customer-auth'
@@ -55,7 +61,15 @@ export default function PortalGate() {
     : 'main';
 
   let activeView = <App />;
-  if (isCustomerAuth) {
+  if (isLockedMerchantApk) {
+    activeView = <MerchantPortal />;
+  } else if (isLockedCustomerApk) {
+    activeView = isCustomerAuth ? (
+      <CustomerAuth onAuthSuccess={() => switchPortal('#/customer')} />
+    ) : (
+      <CustomerMarketplace />
+    );
+  } else if (isCustomerAuth) {
     activeView = <CustomerAuth onAuthSuccess={() => switchPortal('#/customer')} />;
   } else if (isCustomerPortal) {
     activeView = <CustomerMarketplace />;
@@ -64,6 +78,20 @@ export default function PortalGate() {
   } else if (isMerchantPortal) {
     activeView = <MerchantPortal />;
   }
+
+  // Inside standalone Customer APK, show only Customer Marketplace & Customer Account tabs
+  const navItems = isLockedCustomerApk
+    ? [
+        { key: 'customer', label: 'Marketplace', hash: '#/customer' },
+        { key: 'customer-auth', label: 'My Account / OTP', hash: '#/customer-auth' }
+      ]
+    : [
+        { key: 'main', label: 'Main App', hash: '#/' },
+        { key: 'customer-auth', label: 'Customer Login', hash: '#/customer-auth' },
+        { key: 'customer', label: 'Marketplace', hash: '#/customer' },
+        { key: 'merchant', label: 'Merchant', hash: '#/merchant' },
+        { key: 'admin-merchants', label: 'Admin Approvals', hash: '#/admin-merchants' }
+      ];
 
   return (
     <>
@@ -93,17 +121,11 @@ export default function PortalGate() {
               onClick={() => setMinimized(false)}
               style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold', padding: '2px 6px' }}
             >
-              ⚡ Portals
+              {isLockedCustomerApk ? '👤 Menu' : '⚡ Portals'}
             </button>
           ) : (
             <>
-              {[
-                { key: 'main', label: 'Main App', hash: '#/' },
-                { key: 'customer-auth', label: 'Customer Login', hash: '#/customer-auth' },
-                { key: 'customer', label: 'Marketplace', hash: '#/customer' },
-                { key: 'merchant', label: 'Merchant', hash: '#/merchant' },
-                { key: 'admin-merchants', label: 'Admin Approvals', hash: '#/admin-merchants' }
-              ].map((item) => (
+              {navItems.map((item) => (
                 <button
                   key={item.key}
                   onClick={() => switchPortal(item.hash)}
