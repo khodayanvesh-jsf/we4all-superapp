@@ -16,11 +16,10 @@ jobs:
 
       - name: Package offline source archive
         run: |
-          mkdir -p artifacts
-          tar --exclude='./node_modules' --exclude='./.git' --exclude='./android/build' --exclude='./android/app/build' -czf artifacts/WE4ALL-offline-source.tar.gz .
+          tar --exclude='./node_modules' --exclude='./.git' --exclude='./android/build' --exclude='./android/app/build' --exclude='./artifacts' -czf "$RUNNER_TEMP/WE4ALL-offline-source.tar.gz" .
 
       - name: Upload offline source package
         uses: actions/upload-artifact@v4
         with:
           name: WE4ALL-Offline-Source-Package
-          path: artifacts/WE4ALL-offline-source.tar.gz
+          path: ${{ runner.temp }}/WE4ALL-offline-source.tar.gz
