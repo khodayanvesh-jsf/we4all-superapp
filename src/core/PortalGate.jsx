@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import App from '../App';
 import MerchantPortal from '../portals/merchant/MerchantPortal';
+import AdminMerchantApproval from '../portals/admin/AdminMerchantApproval';
 
 export default function PortalGate() {
   const [currentUrl, setCurrentUrl] = useState(window.location.pathname + window.location.hash);
@@ -15,7 +16,14 @@ export default function PortalGate() {
     };
   }, []);
 
-  // Route to isolated Merchant Portal if URL is /merchant or #/merchant
+  const isAdminMerchants =
+    window.location.pathname.startsWith('/admin-merchants') ||
+    window.location.hash.startsWith('#/admin-merchants');
+
+  if (isAdminMerchants) {
+    return <AdminMerchantApproval />;
+  }
+
   const isMerchantPortal =
     window.location.pathname.startsWith('/merchant') ||
     window.location.hash.startsWith('#/merchant') ||
@@ -25,6 +33,5 @@ export default function PortalGate() {
     return <MerchantPortal />;
   }
 
-  // Otherwise render your existing App & Admin Console completely untouched
   return <App />;
 }

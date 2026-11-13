@@ -60,3 +60,24 @@ export async function addMerchantCatalogItem({ merchantId, itemName, price }) {
   if (error) throw error;
   return data;
 }
+
+// --- ADMIN CONSOLE: MERCHANT APPROVAL HELPERS ---
+export async function fetchAllMerchantsForAdmin() {
+  const { data, error } = await supabase
+    .from('merchants')
+    .select('*, profiles:owner_id(full_name, email, phone), merchant_catalog(count)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function updateMerchantApprovalStatus({ merchantId, status, isVerified }) {
+  const { data, error } = await supabase
+    .from('merchants')
+    .update({ status, is_verified: isVerified })
+    .eq('id', merchantId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
