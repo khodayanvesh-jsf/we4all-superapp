@@ -1,6 +1,7 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import { validateFeePolicy } from "./workflows/feePolicies";
+import { listFounderDynamicModules, saveFounderDynamicModule, setFounderDynamicModuleStatus } from "../supabaseClient";
 import { listSubcategories } from "./workflows/subcategoryKeys";
 import {
   saveCloudAndLocalState,
@@ -23,7 +24,7 @@ const REGISTRATION_ROLE_LABELS = {
 
 function hasReviewableTerms(application) {
   const version = application.application_payload?.kyc?.terms?.version || "";
-  return version.startsWith("final-") || version === "trial-draft-1" || Boolean(application.founder_test_account && version === "trial-draft-1");
+  return version.startsWith("final-") || (application.founder_test_account === true && version === "trial-draft-1");
 }
 
 export default function FounderAdminSuite({
@@ -125,6 +126,15 @@ export default function FounderAdminSuite({
   const safeSplitScreens = Array.isArray(splitScreens) ? splitScreens : [];
 
   const [adminDisplayMode, setAdminDisplayMode] = useState("web");
+  const [dynamicModules, setDynamicModules] = useState([]);
+  const [dynamicModulesLoading, setDynamicModulesLoading] = useState(false);
+  const [dynamicModulesError, setDynamicModulesError] = useState("");
+  const [dynamicModuleBusy, setDynamicModuleBusy] = useState(false);
+  const [dynamicModuleForm, setDynamicModuleForm] = useState({
+    moduleKey: "", title: "", description: "", icon: "grid", categoryKey: "custom",
+    portalTarget: "customer", zoneCodes: "*", visibilityRoles: "customer",
+    moduleConfig: JSON.stringify({ layout: "grid", components: [] }, null, 2)
+  });
   const [founderTab, setFounderTab] = useState("approvals");
   const [adminCredentialForm, setAdminCredentialForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
   const [adminCredentialMessage, setAdminCredentialMessage] = useState("");
@@ -227,7 +237,7 @@ export default function FounderAdminSuite({
 
   // Supabase status is verified against the active Auth session; config presence alone is not authentication.
   const [syncStatusMsg, setSyncStatusMsg] = useState(
-    isLiveSupabaseConfigured ? "Project configured Â· sign-in required" : "Supabase client not configured"
+    isLiveSupabaseConfigured ? "Project configured · sign-in required" : "Supabase client not configured"
   );
 
   const [serverPartnerApplications, setServerPartnerApplications] = useState([]);
@@ -446,7 +456,7 @@ export default function FounderAdminSuite({
       if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not load Geo Managers.");
       setGeoManagers(Array.isArray(data.managers) ? data.managers : []);
       setGeoMarkets(Array.isArray(data.markets) ? data.markets : []);
-      setManagerMessage(`${(data.managers || []).length} Geo Managers Â· ${(data.markets || []).length} active local markets.`);
+      setManagerMessage(`${(data.managers || []).length} Geo Managers · ${(data.markets || []).length} active local markets.`);
     } catch (error) { setManagerMessage(error?.message || "Could not load Geo Managers."); }
     finally { setManagerBusy(false); }
   };
@@ -756,10 +766,10 @@ export default function FounderAdminSuite({
       updates.password = password;
     }
     const nextUsername = username.trim();
-    if (nextUsername && !/^[A-Za-z0-9._-]{3,64}$/.test(nextUsername)) { setAdminCredentialMessage("Use 3â€“64 letters, numbers, dots, underscores or hyphens for the Founder username."); return; }
+    if (nextUsername && !/^[A-Za-z0-9._-]{3,64}$/.test(nextUsername)) { setAdminCredentialMessage("Use 3–64 letters, numbers, dots, underscores or hyphens for the Founder username."); return; }
     if (!Object.keys(updates).length && !nextUsername) { setAdminCredentialMessage("Enter a new username, email or password."); return; }
     setAdminCredentialBusy(true);
-    setAdminCredentialMessage("Verifying the administrator sessionâ€¦");
+    setAdminCredentialMessage("Verifying the administrator session…");
     try {
       const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (assuranceError) throw assuranceError;
@@ -787,6 +797,7 @@ export default function FounderAdminSuite({
     { id: "database", label: "2. 8-Table Master Database CRUD", badge: "Edit All Data" },
     { id: "categories", label: "3. Categories, Sub-Pills & Stock", badge: `${safeCategories.length} Cats` },
     { id: "founder_profile", label: "4. Founder Profile", badge: "My Details" },
+    { id: "modules", label: "Published Modules", badge: `${dynamicModules.length} Modules` },
     { id: "portal_users", label: "5. Portal Accounts", badge: `${managedUsers.filter((user) => user.portal_status === "active").length} Active` },
     { id: "geo_managers", label: "6. Geo Managers & Markets", badge: `${geoManagers.length} Managers` },
     { id: "security_server", label: "7. Admin Credentials & Data Server", badge: "PIN + Cloud" },
@@ -800,6 +811,69 @@ export default function FounderAdminSuite({
   useEffect(() => {
     if (adminAccess?.role === "city_manager" && founderTab !== "approvals") setFounderTab("approvals");
   }, [adminAccess?.role, founderTab]);
+
+  const refreshDynamicModules = async () => {
+    setDynamicModulesLoading(true);
+    setDynamicModulesError("");
+    try {
+      const rows = await listFounderDynamicModules();
+      setDynamicModules(rows);
+    } catch (error) {
+      setDynamicModulesError(error?.message || "Could not load Founder module registry.");
+    } finally {
+      setDynamicModulesLoading(false);
+    }
+  };
+
+  const handleSaveDynamicModuleDraft = async () => {
+    let moduleConfig;
+    try {
+      moduleConfig = JSON.parse(dynamicModuleForm.moduleConfig || "{}");
+    } catch {
+      setDynamicModulesError("Module configuration must be valid JSON.");
+      return;
+    }
+    setDynamicModuleBusy(true);
+    setDynamicModulesError("");
+    try {
+      await saveFounderDynamicModule({
+        moduleKey: dynamicModuleForm.moduleKey,
+        title: dynamicModuleForm.title,
+        description: dynamicModuleForm.description,
+        icon: dynamicModuleForm.icon,
+        categoryKey: dynamicModuleForm.categoryKey,
+        portalTarget: dynamicModuleForm.portalTarget,
+        zoneCodes: dynamicModuleForm.zoneCodes.split(",").map((value) => value.trim()).filter(Boolean),
+        visibilityRoles: dynamicModuleForm.visibilityRoles.split(",").map((value) => value.trim()).filter(Boolean),
+        isPublic: true,
+        moduleConfig
+      });
+      onTriggerToast("Dynamic module saved as a versioned draft. It is not public until you publish it.");
+      await refreshDynamicModules();
+    } catch (error) {
+      setDynamicModulesError(error?.message || "Could not save module draft.");
+    } finally {
+      setDynamicModuleBusy(false);
+    }
+  };
+
+  const handleDynamicModuleStatus = async (moduleId, action) => {
+    setDynamicModuleBusy(true);
+    setDynamicModulesError("");
+    try {
+      await setFounderDynamicModuleStatus(moduleId, action);
+      onTriggerToast(action === "publish" ? "Dynamic module published to eligible customers." : "Dynamic module disabled.");
+      await refreshDynamicModules();
+    } catch (error) {
+      setDynamicModulesError(error?.message || "Could not update module status.");
+    } finally {
+      setDynamicModuleBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (founderTab === "modules") refreshDynamicModules();
+  }, [founderTab]);
 
   const renderPartnerApprovalCard = (partner, partnerType) => {
     if (!partner) return null;
@@ -1074,7 +1148,7 @@ export default function FounderAdminSuite({
                 onClick={refreshServerPartnerApplications}
                 className="bg-emerald-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black px-3 py-2 rounded-lg text-[10px]"
               >
-                {serverPartnerApplicationsLoading ? "Refreshingâ€¦" : "Refresh server queue"}
+                {serverPartnerApplicationsLoading ? "Refreshing…" : "Refresh server queue"}
               </button>
             </div>
             {serverPartnerApplicationsError && (
@@ -1086,7 +1160,7 @@ export default function FounderAdminSuite({
               </p>
             )}
             {serverPartnerApplicationsLoading ? (
-              <p className="text-slate-400 text-[10px]">Loading private applications from Supabaseâ€¦</p>
+              <p className="text-slate-400 text-[10px]">Loading private applications from Supabase…</p>
             ) : serverPartnerApplications.length === 0 ? (
               <p className="text-slate-400 text-[10px]">
                 No pending server-side partner applications are visible to this Founder session. If this is the first load, verify Founder app_metadata authorization and refresh.
@@ -1098,6 +1172,7 @@ export default function FounderAdminSuite({
                 const kyc = payload.kyc || {};
                 const documentKeys = Object.keys(kyc.files || {});
                 const checklist = serverKycChecklist[application.id] || {};
+                const reason = (serverReviewReasons[application.id] || "").trim();
                 const allChecksComplete = ["identity", "role_proof", "payout_proof", "terms", "signature"].every((key) => checklist[key] === true);
                 const reviewItems = [
                   ["identity", "Identity document matches applicant"],
@@ -1116,10 +1191,10 @@ export default function FounderAdminSuite({
                       <div>
                         <strong className="text-white">{name}</strong>
                         <p className="text-[10px] text-slate-300">
-                          {(application.requested_role || "partner").replaceAll("_", " ")} Â· {business || phone} Â· {area}
+                          {(application.requested_role || "partner").replaceAll("_", " ")} · {business || phone} · {area}
                         </p>
                         <p className="text-[9px] text-slate-500">
-                          Application {application.id} Â· {new Date(application.created_at).toLocaleString()}
+                          Application {application.id} · {new Date(application.created_at).toLocaleString()}
                         </p>
                       </div>
                       <span className="text-amber-300 text-[9px] font-black">{kyc.status === "submitted" ? "DOCUMENTS READY TO REVIEW" : "WAITING FOR APPLICANT DOCUMENTS"}</span>
@@ -1129,11 +1204,11 @@ export default function FounderAdminSuite({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {documentKeys.map((key) => (
                             <a key={key} href={application.kyc_document_urls?.[key] || undefined} target="_blank" rel="noreferrer" className={`rounded-lg border p-2 text-[10px] font-bold ${application.kyc_document_urls?.[key] ? "border-sky-700 bg-sky-950/40 text-sky-200 hover:bg-sky-900/50" : "border-slate-700 bg-slate-950 text-slate-500 pointer-events-none"}`}>
-                              {application.kyc_document_urls?.[key] ? `Open ${key.replaceAll("_", " ")} â†—` : `${key.replaceAll("_", " ")} Â· unavailable`}
+                              {application.kyc_document_urls?.[key] ? `Open ${key.replaceAll("_", " ")} ↗` : `${key.replaceAll("_", " ")} · unavailable`}
                             </a>
                           ))}
-                          {application.kyc_document_urls?.signature && <a href={application.kyc_document_urls.signature} target="_blank" rel="noreferrer" className="rounded-lg border border-sky-700 bg-sky-950/40 p-2 text-[10px] font-bold text-sky-200">Open uploaded signature â†—</a>}
-                          {!application.kyc_document_urls?.signature && kyc.signature?.signer_name && <p className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-300">Typed signer: {kyc.signature.signer_name} Â· method: {kyc.signature.method || "typed name"}</p>}
+                          {application.kyc_document_urls?.signature && <a href={application.kyc_document_urls.signature} target="_blank" rel="noreferrer" className="rounded-lg border border-sky-700 bg-sky-950/40 p-2 text-[10px] font-bold text-sky-200">Open uploaded signature ↗</a>}
+                          {!application.kyc_document_urls?.signature && kyc.signature?.signer_name && <p className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-slate-300">Typed signer: {kyc.signature.signer_name} · method: {kyc.signature.method || "typed name"}</p>}
                         </div>
                         <div className="rounded-xl border border-slate-700 bg-slate-950 p-3 space-y-2">
                           <p className="text-[10px] text-slate-300">Documents are private. Review each file before checking its box. Links refresh with the queue and expire after one hour.</p>
@@ -1176,7 +1251,7 @@ export default function FounderAdminSuite({
                       </button>
                       <button
                         type="button"
-                        disabled={serverReviewBusyId === application.id || String(serverReviewReasons[application.id] || "").trim().length < 4}
+                        disabled={serverReviewBusyId === application.id || reason.length < 4}
                         onClick={() => reviewServerPartnerApplication(application, "rejected")}
                         className="bg-rose-700 disabled:bg-slate-700 text-white disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
@@ -1259,11 +1334,11 @@ export default function FounderAdminSuite({
                         <span className="text-[10px] text-amber-300">PENDING AVAILABILITY REVIEW</span>
                       </div>
                       <p className="text-[10px] text-slate-300">
-                        Customer: {request.customerName} Â· Event total â‚¹{Number(request.amount || 0).toLocaleString("en-IN")} Â· Requested advance â‚¹{Number(request.requestedAdvanceAmount || 0).toLocaleString("en-IN")}
+                        Customer: {request.customerName} · Event total ₹{Number(request.amount || 0).toLocaleString("en-IN")} · Requested advance ₹{Number(request.requestedAdvanceAmount || 0).toLocaleString("en-IN")}
                       </p>
                       {availability.map(({ event, hall, date, available }) => (
                         <p key={event.id} className={available ? "text-emerald-300 text-[10px]" : "text-rose-300 text-[10px]"}>
-                          {event.title || hall?.name || event.id} Â· {date} Â· {available ? "Approved hall and date available" : "Hall not approved, missing, or date already blocked"}
+                          {event.title || hall?.name || event.id} · {date} · {available ? "Approved hall and date available" : "Hall not approved, missing, or date already blocked"}
                         </p>
                       ))}
                       <div className="flex gap-2">
@@ -1334,7 +1409,7 @@ export default function FounderAdminSuite({
                 {managedListings.filter((listing) => listing.approval_status === "pending").map((listing) => (
                   <div key={listing.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-950 p-3">
                     <div><strong className="text-white">{listing.title}</strong>
-                      <p className="text-xs text-slate-400">{listing.category_key} Â· â‚¹{listing.price_inr} Â· {listing.stock_quantity} in stock</p></div>
+                      <p className="text-xs text-slate-400">{listing.category_key} · ₹{listing.price_inr} · {listing.stock_quantity} in stock</p></div>
                     <div className="flex gap-2">
                       <button type="button" disabled={usersBusy} onClick={() => reviewListing(listing, "approved")} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950">Approve product</button>
                       <button type="button" disabled={usersBusy} onClick={() => reviewListing(listing, "rejected")} className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-bold text-white">Reject</button>
@@ -1353,7 +1428,7 @@ export default function FounderAdminSuite({
                   <div key={hall.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
                     <div>
                       <strong className="text-white">{hall.name}</strong>
-                      <p className="text-[10px] text-slate-400">Owner: {hall.ownerUserId || hall.ownerPhone || "Not linked"} Â· Capacity: {hall.capacity} Â· â‚¹{hall.dailyRent || hall.pricePerDay}/day Â· {hall.location}</p>
+                      <p className="text-[10px] text-slate-400">Owner: {hall.ownerUserId || hall.ownerPhone || "Not linked"} · Capacity: {hall.capacity} · ₹{hall.dailyRent || hall.pricePerDay}/day · {hall.location}</p>
                     </div>
                     <div className="flex gap-2">
                       <button type="button" onClick={() => {
@@ -1382,7 +1457,7 @@ export default function FounderAdminSuite({
                   <div key={worker.id} className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 flex flex-wrap justify-between items-center gap-3">
                     <div>
                       <strong className="text-white">{worker.name}</strong>
-                      <p className="text-[10px] text-slate-400">{worker.tradeName} Â· {worker.mode} Â· {worker.phone || "No phone"} Â· â‚¹{worker.fullDayWage}/day</p>
+                      <p className="text-[10px] text-slate-400">{worker.tradeName} · {worker.mode} · {worker.phone || "No phone"} · ₹{worker.fullDayWage}/day</p>
                     </div>
                     <div className="flex gap-2">
                       <button type="button" onClick={() => {
@@ -2010,7 +2085,7 @@ export default function FounderAdminSuite({
                 if (!quickStockForm.subCategoryBrand.trim()) return;
                 const newProd = {
                   id: `prod_${Date.now()}`,
-                  zoneId: item.marketId || item.zoneId || "local_market",
+                  zoneId: selectedZoneFilter || "local_market",
                   categoryId: quickStockForm.categoryId,
                   subCategoryBrand: quickStockForm.subCategoryBrand.trim(),
                   shopName: quickStockForm.shopName.trim() || "Sri Laxmi Supermart",
@@ -2073,8 +2148,8 @@ export default function FounderAdminSuite({
 
           <div className="bg-slate-900 border border-indigo-400/40 rounded-2xl p-4 space-y-3">
             <h3 className="font-black text-white text-sm">Registration role availability</h3>
-            <p className="text-[11px] text-slate-300">Choose which defined roles appear in registration. Disabled roles cannot submit new partner applications. There is no â€œOtherâ€ role, and consumer registration must remain enabled.</p>
-            {registrationRoleSettings.length === 0 && <p className="text-[10px] text-amber-200">{registrationRoleBusy ? "Loading server settingsâ€¦" : "Role settings are not loaded. Apply the registration-role migration and refresh."}</p>}
+            <p className="text-[11px] text-slate-300">Choose which defined roles appear in registration. Disabled roles cannot submit new partner applications. There is no “Other” role, and consumer registration must remain enabled.</p>
+            {registrationRoleSettings.length === 0 && <p className="text-[10px] text-amber-200">{registrationRoleBusy ? "Loading server settings…" : "Role settings are not loaded. Apply the registration-role migration and refresh."}</p>}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {registrationRoleSettings.map((role) => (
                 <label key={role.role_key} className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-xs text-white">
@@ -2098,7 +2173,7 @@ export default function FounderAdminSuite({
             <input type="email" autoComplete="email" value={adminCredentialForm.email} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, email: event.target.value })} placeholder="New sign-in email (optional)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
             <input type="password" autoComplete="new-password" value={adminCredentialForm.password} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, password: event.target.value })} placeholder="New password (12+ characters)" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
             <input type="password" autoComplete="new-password" value={adminCredentialForm.confirmPassword} onChange={(event) => setAdminCredentialForm({ ...adminCredentialForm, confirmPassword: event.target.value })} placeholder="Confirm new password" className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm text-white" />
-            <button type="submit" disabled={adminCredentialBusy} className="rounded-xl bg-rose-500 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{adminCredentialBusy ? "Updatingâ€¦" : "Update administrator credentials"}</button>
+            <button type="submit" disabled={adminCredentialBusy} className="rounded-xl bg-rose-500 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{adminCredentialBusy ? "Updating…" : "Update administrator credentials"}</button>
             {adminCredentialMessage && <p role="status" className="text-[11px] text-amber-200">{adminCredentialMessage}</p>}
             <p className="text-[10px] text-slate-400">A short PIN does not replace the required authenticator factor. Do not reuse a password or enter the password into support chat.</p>
           </form>
@@ -2141,10 +2216,10 @@ export default function FounderAdminSuite({
               <button
                 type="button"
                 onClick={async () => {
-                  setSyncStatusMsg("Checking Supabase API, verified session and private syncâ€¦");
+                  setSyncStatusMsg("Checking Supabase API, verified session and private sync…");
                   const result = await probeSupabaseConnection();
                   const statusText = result.syncReady
-                    ? "Connected Â· authenticated private sync verified"
+                    ? "Connected · authenticated private sync verified"
                     : result.backendReachable
                       ? result.message
                       : "Supabase API is not reachable: " + result.message;
@@ -2182,10 +2257,10 @@ export default function FounderAdminSuite({
                   });
                   const syncResult = await syncCurrentUserStateNow();
                   if (syncResult?.ok) {
-                    setSyncStatusMsg("Connected Â· private state saved to Supabase");
+                    setSyncStatusMsg("Connected · private state saved to Supabase");
                     onTriggerToast("Private account snapshot verified and saved to Supabase.");
                   } else {
-                    setSyncStatusMsg("Cloud save failed Â· " + (syncResult?.reason || "unknown error"));
+                    setSyncStatusMsg("Cloud save failed · " + (syncResult?.reason || "unknown error"));
                     onTriggerToast("Supabase save failed: " + (syncResult?.reason || "unknown error"));
                   }
                 }}
@@ -2613,7 +2688,7 @@ export default function FounderAdminSuite({
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-black text-amber-300 text-sm">Create or update a fee policy</h3>
-              <button type="button" onClick={refreshFeePolicies} disabled={feePolicyLoading} className="rounded-lg bg-slate-700 px-3 py-2 text-[10px] font-bold disabled:opacity-50">{feePolicyLoading ? "Loadingâ€¦" : "Refresh server policies"}</button>
+              <button type="button" onClick={refreshFeePolicies} disabled={feePolicyLoading} className="rounded-lg bg-slate-700 px-3 py-2 text-[10px] font-bold disabled:opacity-50">{feePolicyLoading ? "Loading…" : "Refresh server policies"}</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <label className="text-[10px] text-slate-300">Fee type
@@ -2632,7 +2707,7 @@ export default function FounderAdminSuite({
                 <select value={feePolicyDraft.scope_key} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_key: e.target.value, subcategory_key: "" }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="">Select category</option>{safeCategories.map((category) => <option key={category.id} value={category.id}>{category.name || category.id}</option>)}</select>
               </label>}
               {(feePolicyDraft.scope_type === "category" || feePolicyDraft.scope_type === "subcategory") && <label className="text-[10px] text-slate-300">Sub-catalog (optional)
-                <select value={feePolicyDraft.subcategory_key || (feePolicyDraft.scope_type === "subcategory" ? feePolicyDraft.scope_key : "")} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, subcategory_key: e.target.value, ...(p.scope_type === "subcategory" ? { scope_key: e.target.value } : {}) }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="">{feePolicyDraft.scope_type === "category" ? "All sub-categories in selected category" : "Select sub-catalog"}</option>{listSubcategories(safeCategories).filter((item) => feePolicyDraft.scope_type !== "category" || !feePolicyDraft.scope_key || item.categoryId === feePolicyDraft.scope_key).map((item) => <option key={item.key} value={item.key}>{item.categoryName} Â· {item.label}</option>)}</select>
+                <select value={feePolicyDraft.subcategory_key || (feePolicyDraft.scope_type === "subcategory" ? feePolicyDraft.scope_key : "")} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, subcategory_key: e.target.value, ...(p.scope_type === "subcategory" ? { scope_key: e.target.value } : {}) }))} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="">{feePolicyDraft.scope_type === "category" ? "All sub-categories in selected category" : "Select sub-catalog"}</option>{listSubcategories(safeCategories).filter((item) => feePolicyDraft.scope_type !== "category" || !feePolicyDraft.scope_key || item.categoryId === feePolicyDraft.scope_key).map((item) => <option key={item.key} value={item.key}>{item.categoryName} · {item.label}</option>)}</select>
               </label>}
               {!["global", "category", "subcategory"].includes(feePolicyDraft.scope_type) && <label className="text-[10px] text-slate-300">Item, service, or zone key<input value={feePolicyDraft.scope_key} onChange={(e) => setFeePolicyDraft((p) => ({ ...p, scope_key: e.target.value }))} placeholder="Enter the selected catalogue item or key" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white" /></label>}
               <label className="text-[10px] text-slate-300">Percentage (max merchant 10%, customer 5%)
@@ -2658,7 +2733,7 @@ export default function FounderAdminSuite({
               </label>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={saveFeePolicy} disabled={feePolicyLoading} className="rounded-lg bg-emerald-500 px-4 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">{feePolicyLoading ? "Savingâ€¦" : "Save policy to server"}</button>
+              <button type="button" onClick={saveFeePolicy} disabled={feePolicyLoading} className="rounded-lg bg-emerald-500 px-4 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">{feePolicyLoading ? "Saving…" : "Save policy to server"}</button>
               <p className="self-center text-[10px] text-slate-400">Merchant commission and rider priority fees stay draft-only until their settlement/selection modules are connected.</p>
             </div>
             {feePolicyMessage && <p role="status" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-amber-100">{feePolicyMessage}</p>}
@@ -2668,7 +2743,7 @@ export default function FounderAdminSuite({
             <div className="flex justify-between items-center"><h3 className="font-black text-white text-sm">Server fee policies</h3><span className="text-[10px] text-slate-400">{feePolicies.length} records</span></div>
             {feePolicies.length === 0 ? <p className="text-[10px] text-slate-400">No server policies loaded yet. Refresh after the fee-policy migration is installed in staging.</p> : feePolicies.map((policy) => (
               <div key={policy.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 p-3 text-[10px]">
-                <div><strong className="text-white">{policy.display_name}</strong><p className="text-slate-400">{policy.fee_type.replaceAll("_", " ")} Â· {policy.scope_type}:{policy.scope_key} Â· v{policy.version}</p><p className="text-amber-200">{policy.rate_percent}% {Number(policy.fixed_inr) ? `+ Rs.${policy.fixed_inr}` : ""} Â· {policy.active ? "Active" : "Draft"}</p></div>
+                <div><strong className="text-white">{policy.display_name}</strong><p className="text-slate-400">{policy.fee_type.replaceAll("_", " ")} · {policy.scope_type}:{policy.scope_key} · v{policy.version}</p><p className="text-amber-200">{policy.rate_percent}% {Number(policy.fixed_inr) ? `+ Rs.${policy.fixed_inr}` : ""} · {policy.active ? "Active" : "Draft"}</p></div>
                 <button type="button" onClick={() => setFeePolicyDraft({ ...policy, subcategory_key: policy.scope_type === "subcategory" ? policy.scope_key : "", active: Boolean(policy.active), rate_percent: Number(policy.rate_percent || 0), fixed_inr: Number(policy.fixed_inr || 0) })} className="rounded-lg bg-slate-700 px-3 py-1.5 font-bold text-white">Edit policy</button>
               </div>
             ))}
@@ -2677,6 +2752,77 @@ export default function FounderAdminSuite({
       )}
 
       {/* =====================================================================
+          TAB 4: VERSIONED DYNAMIC MODULE REGISTRY
+      ===================================================================== */}
+      {founderTab === "modules" && (
+        <div className="space-y-4">
+          <section className="bg-slate-900 border border-cyan-500/40 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-black text-cyan-300 text-sm">Versioned Dynamic Module Builder</h3>
+                <p className="text-[10px] text-slate-400">Save drafts, publish or disable modules across devices. Configuration is declarative JSON; scripts and executable HTML are rejected.</p>
+              </div>
+              <button type="button" onClick={refreshDynamicModules} disabled={dynamicModulesLoading}
+                className="bg-slate-800 text-white px-3 py-2 rounded-lg text-[10px] font-bold disabled:opacity-50">
+                {dynamicModulesLoading ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+            {dynamicModulesError && <p className="bg-rose-950/50 border border-rose-500/50 text-rose-200 rounded-xl p-2 text-[10px]">{dynamicModulesError}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <input value={dynamicModuleForm.moduleKey} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, moduleKey: e.target.value })}
+                placeholder="Module key, e.g. farm_inputs" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
+              <input value={dynamicModuleForm.title} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, title: e.target.value })}
+                placeholder="Module title" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
+              <select value={dynamicModuleForm.portalTarget} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, portalTarget: e.target.value })}
+                className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                <option value="customer">Customer</option><option value="merchant">Merchant</option>
+                <option value="service_provider">Service Provider</option><option value="decorator">Decorator / Hall</option>
+                <option value="rider">Rider</option><option value="labour">Labour</option><option value="founder">Founder</option>
+              </select>
+              <input value={dynamicModuleForm.icon} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, icon: e.target.value })}
+                placeholder="Icon name" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
+              <input value={dynamicModuleForm.categoryKey} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, categoryKey: e.target.value })}
+                placeholder="Category key" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
+              <input value={dynamicModuleForm.zoneCodes} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, zoneCodes: e.target.value })}
+                placeholder="Zone codes (comma-separated, * for all)" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
+              <input value={dynamicModuleForm.visibilityRoles} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, visibilityRoles: e.target.value })}
+                placeholder="Visible roles (comma-separated)" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs md:col-span-2"/>
+              <input value={dynamicModuleForm.description} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, description: e.target.value })}
+                placeholder="Module description" className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"/>
+            </div>
+            <textarea rows={7} value={dynamicModuleForm.moduleConfig} onChange={(e) => setDynamicModuleForm({ ...dynamicModuleForm, moduleConfig: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-emerald-200 font-mono text-[10px]"
+              placeholder='{"layout":"grid","components":[]}'/>
+            <button type="button" onClick={handleSaveDynamicModuleDraft} disabled={dynamicModuleBusy}
+              className="w-full bg-cyan-500 disabled:bg-slate-700 text-slate-950 disabled:text-slate-300 font-black py-2.5 rounded-xl text-xs">
+              {dynamicModuleBusy ? "Saving…" : "Save versioned draft"}
+            </button>
+          </section>
+          <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
+            <h4 className="font-black text-white text-xs">Registered modules ({dynamicModules.length})</h4>
+            {dynamicModulesLoading ? <p className="text-[10px] text-slate-400">Loading server registry…</p> :
+              dynamicModules.length === 0 ? <p className="text-[10px] text-slate-400">No dynamic modules have been saved yet, or Founder authorization is not active.</p> :
+              dynamicModules.map((module) => (
+                <div key={module.id} className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-wrap justify-between items-center gap-2">
+                  <div className="min-w-0">
+                    <p className="font-black text-cyan-200 text-xs">{module.icon} {module.title} <span className="text-slate-400">v{module.version}</span></p>
+                    <p className="text-[9px] text-slate-400">{module.module_key} · {module.portal_target} · {module.status} · zones: {(module.zone_codes || []).join(", ")}</p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {module.status !== "published" && <button type="button" disabled={dynamicModuleBusy} onClick={() => handleDynamicModuleStatus(module.id, "publish")}
+                      className="bg-emerald-500 text-slate-950 font-black px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50">Publish</button>}
+                    {module.status !== "disabled" && <button type="button" disabled={dynamicModuleBusy} onClick={() => handleDynamicModuleStatus(module.id, "disable")}
+                      className="bg-rose-700 text-white font-black px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50">Disable</button>}
+                  </div>
+                </div>
+              ))}
+          </section>
+        </div>
+      )}
+
+      {/* =====================================================================
+          TAB 9: MULTI-PHONE LIVE TESTING SANDBOX & 1-CLICK FLOW TESTER
+      ===================================================================== */}      {/* =====================================================================
           TAB 9: MULTI-PHONE LIVE TESTING SANDBOX & 1-CLICK FLOW TESTER
       ===================================================================== */}
       {founderTab === "founder_profile" && (
@@ -2687,7 +2833,7 @@ export default function FounderAdminSuite({
             <label className="block text-[10px] text-slate-300">Business / founder organization<input value={founderProfile.business_name} onChange={(event) => setFounderProfile({ ...founderProfile, business_name: event.target.value })} maxLength={160} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white" /></label>
             <label className="block text-[10px] text-slate-300">Area / address<input value={founderProfile.area} onChange={(event) => setFounderProfile({ ...founderProfile, area: event.target.value })} maxLength={160} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-white" /></label>
             <div className="grid gap-2 md:grid-cols-2 text-[10px]"><p className="rounded-xl bg-slate-950 p-2 text-slate-300">Verified phone: {founderProfile.phone || "Not available"}</p><p className="rounded-xl bg-slate-950 p-2 text-slate-300">Sign-in email: {founderProfile.email || "Not available"}</p></div>
-            <div className="flex gap-2"><button type="button" disabled={founderProfileBusy} onClick={loadFounderProfile} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-bold text-white">Reload details</button><button type="submit" disabled={founderProfileBusy} className="rounded-xl bg-amber-400 px-4 py-2 text-[10px] font-black text-slate-950">{founderProfileBusy ? "Savingâ€¦" : "Save my details"}</button></div>
+            <div className="flex gap-2"><button type="button" disabled={founderProfileBusy} onClick={loadFounderProfile} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-bold text-white">Reload details</button><button type="submit" disabled={founderProfileBusy} className="rounded-xl bg-amber-400 px-4 py-2 text-[10px] font-black text-slate-950">{founderProfileBusy ? "Saving…" : "Save my details"}</button></div>
             {founderProfileMessage && <p role="status" className="text-[10px] text-emerald-200">{founderProfileMessage}</p>}
           </form>
         </div>
@@ -2695,7 +2841,7 @@ export default function FounderAdminSuite({
 
       {founderTab === "portal_users" && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/30 bg-slate-900 p-4"><div><h3 className="text-sm font-black text-indigo-200">Portal account access</h3><p className="mt-1 text-[10px] text-slate-300">Active counts only approved roles. Pending applicants stay in the approval queue and Pending filter. Removing an account blocks sign-in and active listings while preserving transaction, KYC and audit history.</p></div><div className="flex gap-2"><button type="button" disabled={usersBusy} onClick={refreshManagedUsers} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">{usersBusy ? "Loadingâ€¦" : "Refresh users"}</button><button type="button" disabled={usersBusy} onClick={refreshManagedListings} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-black text-white">Refresh listings</button></div></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/30 bg-slate-900 p-4"><div><h3 className="text-sm font-black text-indigo-200">Portal account access</h3><p className="mt-1 text-[10px] text-slate-300">Active counts only approved roles. Pending applicants stay in the approval queue and Pending filter. Removing an account blocks sign-in and active listings while preserving transaction, KYC and audit history.</p></div><div className="flex gap-2"><button type="button" disabled={usersBusy} onClick={refreshManagedUsers} className="rounded-xl bg-indigo-400 px-3 py-2 text-[10px] font-black text-slate-950">{usersBusy ? "Loading…" : "Refresh users"}</button><button type="button" disabled={usersBusy} onClick={refreshManagedListings} className="rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-black text-white">Refresh listings</button></div></div>
           <label className="flex items-center gap-2 text-[10px] text-slate-300">Show accounts<select aria-label="Filter portal accounts" value={managedUserFilter} onChange={(event) => setManagedUserFilter(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-white"><option value="active">Active portal users</option><option value="pending">Pending applicants</option><option value="suspended">Suspended / removed</option><option value="all">All accounts</option></select><span>{managedUsers.filter((account) => managedUserFilter === "all" || account.portal_status === managedUserFilter).length} shown</span></label>
           {usersMessage && <p role="status" className="rounded-xl bg-slate-950 p-2 text-[10px] text-amber-200">{usersMessage}</p>}
           <label className="flex items-center gap-2 text-xs text-slate-300">
@@ -2716,24 +2862,24 @@ export default function FounderAdminSuite({
           {matchingPortalAccounts.map((account) => {
             const profile = account.profile || {};
             return <article key={account.user_id} className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black text-white">{profile.full_name || "Unnamed account"} <span className={account.portal_status === "active" ? "text-emerald-300" : "text-amber-300"}>Â· {account.portal_status || "pending"}</span></p><p className="font-mono text-[9px] text-slate-500">{account.user_id}</p></div><button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => removeManagedUserAccess(account)} className="rounded-lg border border-rose-700 bg-rose-950 px-3 py-1.5 text-[9px] font-black text-rose-200 disabled:opacity-40">Remove from platform</button></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-black text-white">{profile.full_name || "Unnamed account"} <span className={account.portal_status === "active" ? "text-emerald-300" : "text-amber-300"}>· {account.portal_status || "pending"}</span></p><p className="font-mono text-[9px] text-slate-500">{account.user_id}</p></div><button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => removeManagedUserAccess(account)} className="rounded-lg border border-rose-700 bg-rose-950 px-3 py-1.5 text-[9px] font-black text-rose-200 disabled:opacity-40">Remove from platform</button></div>
               <div className="grid gap-2 md:grid-cols-3"><input aria-label="User full name" defaultValue={profile.full_name || ""} data-field="full_name" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Full name"/><input aria-label="Business name" defaultValue={profile.business_name || ""} data-field="business_name" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Business name"/><input aria-label="Area" defaultValue={profile.area || ""} data-field="area" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Area / address"/></div>
               <button type="button" disabled={usersBusy} onClick={(event) => { const inputs = event.currentTarget.parentElement.querySelectorAll("input[data-field]"); const edited = Object.fromEntries([...inputs].map((input) => [input.dataset.field, input.value])); supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile: { ...profile, ...edited }, roles: account.roles || [] } }).then(({ data, error }) => { if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Save failed"); setUsersMessage("Portal account details saved."); }).catch((error) => setUsersMessage(error.message)); }} className="rounded-lg bg-slate-700 px-3 py-1.5 text-[9px] font-bold text-white">Save profile details</button>
-              <div className="space-y-1">{(account.roles || []).map((role) => <div key={role.role} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950 p-2"><span className="text-[10px] font-bold text-slate-200">{role.role.replaceAll("_", " ")} Â· {role.status}</span><select aria-label={`${role.role} access state`} value={role.status} disabled={usersBusy} onChange={(event) => changeManagedRole(account, role.role, event.target.value)} className="rounded border border-slate-700 bg-slate-900 p-1.5 text-[9px] text-white"><option value="approved">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option></select></div>)}</div>
+              <div className="space-y-1">{(account.roles || []).map((role) => <div key={role.role} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950 p-2"><span className="text-[10px] font-bold text-slate-200">{role.role.replaceAll("_", " ")} · {role.status}</span><select aria-label={`${role.role} access state`} value={role.status} disabled={usersBusy} onChange={(event) => changeManagedRole(account, role.role, event.target.value)} className="rounded border border-slate-700 bg-slate-900 p-1.5 text-[9px] text-white"><option value="approved">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option></select></div>)}</div>
               <div className="flex flex-wrap gap-2"><select aria-label="Add portal role" id={`new-role-${account.user_id}`} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[9px] text-white"><option value="merchant">Product Merchant</option><option value="service_provider">Service Provider</option><option value="decorator">Decorator / Hall</option><option value="rider">Delivery Captain</option><option value="labour">Labour / Mistri</option></select><button type="button" disabled={usersBusy} onClick={(event) => { const select = event.currentTarget.parentElement.querySelector("select"); changeManagedRole(account, select.value, "pending"); }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[9px] font-black text-white">Add pending portal</button></div>
             </article>;
           })}
           <section className="space-y-2 rounded-2xl border border-emerald-500/30 bg-slate-900 p-3">
             <h4 className="text-xs font-black text-emerald-200">Private trial registration</h4>
             <p className="text-xs text-slate-300">Issue one pass per tester. Share the pass and test login privately. The tester chooses a PIN and submits any required partner documents.</p>
-            <button type="button" disabled={issuingTestPass} onClick={issueTestPass} className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950">{issuingTestPass ? "Creatingâ€¦" : "Create one-time test pass"}</button>
+            <button type="button" disabled={issuingTestPass} onClick={issueTestPass} className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950">{issuingTestPass ? "Creating…" : "Create one-time test pass"}</button>
             {testPass && <div className="space-y-2">
               <label className="block text-xs text-white">Test login<input readOnly value={testPass.login} className="block w-full rounded bg-slate-950 p-2 font-mono" /></label>
               <label className="block text-xs text-white">One-time pass<input readOnly value={testPass.code} className="block w-full rounded bg-slate-950 p-2 font-mono" /></label>
               <button type="button" onClick={() => setTestPass(null)} className="text-xs text-emerald-200 underline">Hide pass</button>
             </div>}
           </section>
-          <section className="space-y-2 rounded-2xl border border-rose-500/30 bg-slate-900 p-3"><div><h4 className="text-xs font-black text-rose-200">Products & services</h4><p className="text-[10px] text-slate-400">Remove a selected listing from customer discovery while retaining previous order records.</p></div>{managedListings.map((listing) => <div key={listing.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-950 p-2"><span className="text-[10px] text-white">{listing.title} Â· {listing.item_type} Â· {listing.approval_status}{listing.is_active ? " Â· active" : " Â· removed"}</span>{listing.is_active && <button type="button" disabled={usersBusy} onClick={() => removeManagedListing(listing)} className="rounded-lg bg-rose-900 px-3 py-1.5 text-[9px] font-black text-white">Remove listing</button>}</div>)}{managedListings.length === 0 && <p className="text-[10px] text-slate-500">Select Refresh listings to load products and services.</p>}</section>
+          <section className="space-y-2 rounded-2xl border border-rose-500/30 bg-slate-900 p-3"><div><h4 className="text-xs font-black text-rose-200">Products & services</h4><p className="text-[10px] text-slate-400">Remove a selected listing from customer discovery while retaining previous order records.</p></div>{managedListings.map((listing) => <div key={listing.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-950 p-2"><span className="text-[10px] text-white">{listing.title} · {listing.item_type} · {listing.approval_status}{listing.is_active ? " · active" : " · removed"}</span>{listing.is_active && <button type="button" disabled={usersBusy} onClick={() => removeManagedListing(listing)} className="rounded-lg bg-rose-900 px-3 py-1.5 text-[9px] font-black text-white">Remove listing</button>}</div>)}{managedListings.length === 0 && <p className="text-[10px] text-slate-500">Select Refresh listings to load products and services.</p>}</section>
         </div>
       )}
 
@@ -2743,12 +2889,12 @@ export default function FounderAdminSuite({
             <h3 className="text-sm font-black text-emerald-200">Add a Geo Manager</h3><p className="text-[10px] text-slate-300">Choose an existing auto-created local market. The manager receives an email invitation and can review partner applications only in that market.</p>
             <input required type="text" value={managerInvite.full_name} onChange={(event) => setManagerInvite({ ...managerInvite, full_name: event.target.value })} placeholder="Manager full name" className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white"/>
             <input required type="email" value={managerInvite.email} onChange={(event) => setManagerInvite({ ...managerInvite, email: event.target.value })} placeholder="Manager email for invitation" className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white"/>
-            <select required value={managerInvite.market_id} onChange={(event) => setManagerInvite({ ...managerInvite, market_id: event.target.value })} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white"><option value="">Select local market</option>{geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name} Â· {market.id}</option>)}</select>
+            <select required value={managerInvite.market_id} onChange={(event) => setManagerInvite({ ...managerInvite, market_id: event.target.value })} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white"><option value="">Select local market</option>{geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name} · {market.id}</option>)}</select>
             <button type="submit" disabled={managerBusy || geoMarkets.length === 0} className="rounded-xl bg-emerald-400 px-4 py-2 text-[10px] font-black text-slate-950 disabled:opacity-50">Send invitation</button>
             <button type="button" disabled={managerBusy} onClick={refreshGeoManagers} className="ml-2 rounded-xl bg-slate-700 px-3 py-2 text-[10px] font-bold text-white">Refresh markets / managers</button>
             {managerMessage && <p role="status" className="text-[10px] text-amber-200">{managerMessage}</p>}
           </form>
-          {geoManagers.map((manager) => <div key={manager.user_id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 p-3"><div><p className="text-xs font-black text-white">{manager.display_name}</p><p className="text-[10px] text-slate-400">{manager.email} Â· {manager.zone_id}</p></div><div className="flex gap-2"><select aria-label="Reassign manager market" defaultValue={manager.zone_id} onChange={async (event) => { const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_assign", user_id: manager.user_id, market_id: event.target.value } }); if (error || data?.ok !== true) setManagerMessage(data?.error || error?.message || "Could not assign market."); else { setManagerMessage("Manager market updated. Ask them to sign in again to refresh server permissions."); refreshGeoManagers(); } }} className="rounded border border-slate-700 bg-slate-950 p-1 text-[9px] text-white">{geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name}</option>)}</select><button type="button" onClick={async () => { const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_remove", user_id: manager.user_id } }); if (error || data?.ok !== true) setManagerMessage(data?.error || error?.message || "Could not remove manager."); else refreshGeoManagers(); }} className="rounded-lg bg-rose-900 px-2.5 py-1 text-[9px] font-black text-white">Remove access</button></div></div>)}
+          {geoManagers.map((manager) => <div key={manager.user_id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 p-3"><div><p className="text-xs font-black text-white">{manager.display_name}</p><p className="text-[10px] text-slate-400">{manager.email} · {manager.zone_id}</p></div><div className="flex gap-2"><select aria-label="Reassign manager market" defaultValue={manager.zone_id} onChange={async (event) => { const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_assign", user_id: manager.user_id, market_id: event.target.value } }); if (error || data?.ok !== true) setManagerMessage(data?.error || error?.message || "Could not assign market."); else { setManagerMessage("Manager market updated. Ask them to sign in again to refresh server permissions."); refreshGeoManagers(); } }} className="rounded border border-slate-700 bg-slate-950 p-1 text-[9px] text-white">{geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name}</option>)}</select><button type="button" onClick={async () => { const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_remove", user_id: manager.user_id } }); if (error || data?.ok !== true) setManagerMessage(data?.error || error?.message || "Could not remove manager."); else refreshGeoManagers(); }} className="rounded-lg bg-rose-900 px-2.5 py-1 text-[9px] font-black text-white">Remove access</button></div></div>)}
         </div>
       )}
 
@@ -3258,5 +3404,3 @@ export default function FounderAdminSuite({
     </div>
   );
 }
-
-

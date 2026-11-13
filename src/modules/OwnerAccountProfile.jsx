@@ -42,6 +42,7 @@ const getFunctionResponseError = async (error, fallback) => {
 export default function OwnerAccountProfile(rawProps = {}) {
   const {
     currentUser,
+  initialRole = "customer",
     setCurrentUser,
     activePortal = "customer",
     setActivePortal,
@@ -78,7 +79,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [subTab, setSubTab] = useState(() => (isLoggedIn ? "account_details" : "kyc_gate"));
   const [authMode, setAuthMode] = useState("login"); // login | register
   const [loginMethod, setLoginMethod] = useState("pin");
-  const [selectedRoleKey, setSelectedRoleKey] = useState("customer");
+  const [selectedRoleKey, setSelectedRoleKey] = useState(initialRole);
   const [registrationRoleOptions, setRegistrationRoleOptions] = useState(ROLE_OPTIONS);
   const [showPinText, setShowPinText] = useState(false);
 
@@ -87,9 +88,9 @@ export default function OwnerAccountProfile(rawProps = {}) {
   const [privateTestMode, setPrivateTestMode] = useState(false);
   const [privateTestPass, setPrivateTestPass] = useState("");
   const privateTestSession = useRef(null);
-  const [pilotInstantMode, setPilotInstantMode] = useState(false);
   const envTrialOtpMode = import.meta.env.VITE_WE4ALL_TRIAL_OTP_MODE === "true";
-  const trialOtpModeEnabled = !privateTestMode && (pilotInstantMode || envTrialOtpMode);
+  const [pilotInstantMode, setPilotInstantMode] = useState(envTrialOtpMode);
+  const trialOtpModeEnabled = !privateTestMode && pilotInstantMode;
   const resolvedAddresses = Array.isArray(savedAddresses) && savedAddresses.length > 0 ? savedAddresses : (Array.isArray(addressBook) ? addressBook : []);
   const updateAddresses = setSavedAddresses || setAddressBook || (() => {});
   const resolvedActiveAddressId = activeAddressId ?? selectedAddressId ?? (resolvedAddresses[0]?.id || "");
@@ -426,6 +427,90 @@ export default function OwnerAccountProfile(rawProps = {}) {
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
   });
 
+  const finishRegistration = async (data, { phone }) => {
+    const user = data.user;
+    const profilePayload = {
+      user_id: user.id,
+      full_name: regForm.fullName.trim(),
+      business_name: regForm.businessName.trim(),
+      phone: user.phone || phone,
+      area: regForm.area || "",
+      updated_at: new Date().toISOString()
+    };
+    const { error: profileError } = await supabase.from("we4all_profiles").upsert(profilePayload, { onConflict: "user_id" });
+    if (profileError) throw profileError;
+
+    const bootstrap = await bootstrapCustomerAccount({
+      fullName: profilePayload.full_name, phone: profilePayload.phone, area: profilePayload.area
+    });
+    if (bootstrap?.ok !== true) throw new Error("Your account exists, but setup could not finish. Sign in and try again.");
+
+    const customer = {
+      id: user.id, authUserId: user.id,
+      phone: profilePayload.phone,
+      fullName: regForm.fullName.trim(),
+      businessName: regForm.businessName.trim(),
+      area: regForm.area || "",
+      role: "customer", status: "Approved", isGuest: false
+    };
+
+    if (selectedRoleKey !== "customer" && !data?.partner_application_id) {
+      const location = businessLocation;
+      if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
+        throw new Error("Add your business GPS location before submitting partner registration.");
+      }
+      const { data: marketId, error: marketError } = await supabase.rpc("we4all_register_market", {
+        p_latitude: location.latitude,
+        p_longitude: location.longitude,
+        p_display_name: regForm.area || `Local market ${regForm.zoneId}`,
+        p_state_name: ""
+      });
+      if (marketError || typeof marketId !== "string") throw new Error(marketError?.message || "Could not create the local market for this business location.");
+      const { error: applicationError } = await supabase.from("we4all_partner_applications").insert({
+        user_id: user.id,
+        requested_role: selectedRoleKey,
+        application_payload: {
+          full_name: regForm.fullName.trim(),
+          business_name: regForm.businessName.trim(),
+          phone: profilePayload.phone,
+          area: profilePayload.area,
+          zone_id: marketId,
+          market_id: marketId,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          partner_details: regForm.partnerDetails || {}
+        }
+      });
+      if (applicationError) throw applicationError;
+    }
+
+    const activation = await activateSupabaseAccount(user.id);
+    if (privateTestMode && activation.ok) {
+      privateTestSession.current = null;
+      setPrivateTestPass("");
+    }
+    if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
+    if (activation.changed && typeof window !== "undefined") {
+      window.sessionStorage.setItem("we4all_open_account_after_registration", "1");
+      window.location.reload();
+      return;
+    }
+
+    setTrialChallengeId("");
+    setOtpState({ sent: false, phone: "", token: "", busy: false });
+    setLocalUser(customer);
+    setCurrentUser?.(customer);
+    setActivePortal?.("customer");
+    onSelectRole?.("customer");
+    setSubTab("account_details");
+    setFormFeedback({
+      type: "success",
+      message: selectedRoleKey === "customer"
+        ? "Customer account created. You are signed in."
+        : "Customer account created. Your partner application was submitted as pending Founder approval."
+    });
+  };
+
   const sendRegistrationCode = async () => {
     const phone = accountLoginIdentity(regForm.phone)?.phone || "";
     const email = realAccountEmail(regForm.email);
@@ -481,62 +566,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       }
       if (result.error) throw result.error;
       if (result.data?.session && result.data?.user?.id) {
-        // When Supabase email confirmation is turned off for frictionless pilot testing, complete registration immediately!
-        await bootstrapCustomerAccount({
-          fullName: regForm.fullName.trim(),
-          phone,
-          area: regForm.area || "Adilabad"
-        });
-        const instantUser = {
-          id: result.data.user.id,
-          authUserId: result.data.user.id,
-          phone,
-          fullName: regForm.fullName.trim(),
-          businessName: regForm.businessName.trim(),
-          area: regForm.area || "Adilabad",
-          upiId: normalizeUpiId(regForm.upiId, cleanPhoneDigits(regForm.phone)),
-          role: "customer",
-          status: "Approved",
-          isGuest: false
-        };
-        if (selectedRoleKey !== "customer") {
-          const loc = Number.isFinite(businessLocation.latitude) ? businessLocation : { latitude: 19.6641, longitude: 78.532 };
-          const mId = marketCellId(loc.latitude, loc.longitude) || "m_393_1571";
-          await supabase.rpc("we4all_register_market", {
-            p_latitude: loc.latitude,
-            p_longitude: loc.longitude,
-            p_display_name: regForm.area || `Local market ${mId}`,
-            p_state_name: "Telangana"
-          }).catch(() => {});
-          await supabase.from("we4all_partner_applications").insert({
-            user_id: result.data.user.id,
-            requested_role: selectedRoleKey,
-            application_payload: {
-              full_name: regForm.fullName.trim(),
-              business_name: regForm.businessName.trim(),
-              phone,
-              area: regForm.area || "Adilabad",
-              zone_id: regForm.zoneId || mId,
-              market_id: mId,
-              latitude: loc.latitude,
-              longitude: loc.longitude,
-              partner_details: regForm.partnerDetails || {}
-            }
-          });
-        }
-        await activateSupabaseAccount(result.data.user.id);
-        setOtpState({ sent: false, phone: "", token: "", busy: false });
-        setLocalUser(instantUser);
-        setCurrentUser?.(instantUser);
-        setActivePortal?.("customer");
-        onSelectRole?.("customer");
-        setSubTab("account_details");
-        setFormFeedback({
-          type: "success",
-          message: selectedRoleKey === "customer"
-            ? "Account created and signed in immediately!"
-            : "Account created! Your partner application is saved as pending Founder review; complete KYC in the Partner Application tab."
-        });
+        await finishRegistration(result.data, { phone });
         return;
       }
       setTrialChallengeId("");
@@ -756,79 +786,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         await supabase.auth.signOut({ scope: "local" });
         throw new Error("The registration email could not be confirmed.");
       }
-      setTrialChallengeId("");
-      const profilePayload = {
-        user_id: user.id,
-        full_name: regForm.fullName.trim(),
-        business_name: regForm.businessName.trim(),
-        phone: user.phone || accountLoginIdentity(regForm.phone)?.phone || "",
-        area: regForm.area || "",
-        updated_at: new Date().toISOString()
-      };
-      const { error: profileError } = await supabase.from("we4all_profiles").upsert(profilePayload, { onConflict: "user_id" });
-      if (profileError) throw profileError;
-
-      const customer = {
-        id: user.id, authUserId: user.id,
-        phone: profilePayload.phone,
-        fullName: regForm.fullName.trim(),
-        businessName: regForm.businessName.trim(),
-        area: regForm.area || "",
-        role: "customer", status: "Approved", isGuest: false
-      };
-
-      if (selectedRoleKey !== "customer" && !(isTrialRegistration && data?.partner_application_id)) {
-        const location = businessLocation;
-        if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
-          throw new Error("Add your business GPS location before submitting partner registration.");
-        }
-        const { data: marketId, error: marketError } = await supabase.rpc("we4all_register_market", {
-          p_latitude: location.latitude,
-          p_longitude: location.longitude,
-          p_display_name: regForm.area || `Local market ${regForm.zoneId}`,
-          p_state_name: ""
-        });
-        if (marketError || typeof marketId !== "string") throw new Error(marketError?.message || "Could not create the local market for this business location.");
-        const { error: applicationError } = await supabase.from("we4all_partner_applications").insert({
-          user_id: user.id,
-          requested_role: selectedRoleKey,
-          application_payload: {
-            full_name: regForm.fullName.trim(),
-            business_name: regForm.businessName.trim(),
-            phone: profilePayload.phone,
-            area: profilePayload.area,
-            zone_id: marketId,
-            market_id: marketId,
-            latitude: location.latitude,
-            longitude: location.longitude,
-            partner_details: regForm.partnerDetails || {}
-          }
-        });
-        if (applicationError) throw applicationError;
-      }
-
-      const activation = await activateSupabaseAccount(user.id);
-      if (privateTestMode && activation.ok) {
-        privateTestSession.current = null;
-        setPrivateTestPass("");
-      }
-      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
-      if (activation.changed && typeof window !== "undefined") {
-        window.location.reload();
-        return;
-      }
-
-      setLocalUser(customer);
-      setCurrentUser?.(customer);
-      setActivePortal?.("customer");
-      onSelectRole?.("customer");
-      setSubTab("account_details");
-      setFormFeedback({
-        type: "success",
-        message: selectedRoleKey === "customer"
-          ? "Customer account created and verified. Your account is now connected to Supabase."
-          : "Customer account created. Your partner application was submitted as pending Founder approval."
-      });
+      await finishRegistration(data, { phone: accountLoginIdentity(regForm.phone)?.phone || "" });
     } catch (error) {
       setFormFeedback({ type: "error", message: error?.message || "Could not complete registration." });
     } finally {

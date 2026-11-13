@@ -50,7 +50,7 @@ test("Rider portal has no fallback OTP, synthetic jobs or client payout success"
   assert.equal(rider.includes("4499"), false);
   assert.equal(rider.includes("Math.random"), false);
   assert.equal(rider.includes("PAYMENT_RELEASED_TO_UPI"), false);
-  assert.equal(rider.includes("trackingEnabled={isOnlineForDriving && locationConsent}"), true);
+  assert.equal(rider.includes("trackingEnabled={routeGpsEnabled}"), true);
   assert.equal(rider.includes("Server-issued delivery OTP"), true);
   assert.equal(rider.includes('mode="rider"'), true);
   assert.equal(rider.includes("RideWorkspace"), true);

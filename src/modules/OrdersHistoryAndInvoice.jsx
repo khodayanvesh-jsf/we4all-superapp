@@ -35,6 +35,7 @@ function loadCashfreeSdk() {
 export default function OrdersHistoryAndInvoice({
   orders = [],
   serviceBookings = [],
+  customerId,
   labourBookings = [],
   onCancelOrder,
   onReturnOrder,
@@ -293,6 +294,14 @@ export default function OrdersHistoryAndInvoice({
           No orders or bookings recorded yet. Place an order to see its server status here.
         </div>
       )}
+
+      {serviceBookings.filter((booking) => booking.serverBookingId && booking.customerId === customerId).map((booking) => (
+        <article key={booking.id} className="space-y-1 rounded-xl border border-slate-800 bg-slate-900 p-3">
+          <p className="font-bold text-white">{booking.providerName || "Service visit"} · {booking.status}</p>
+          <p className="text-slate-300">{booking.bookedDate} · {booking.bookedSlot}</p>
+          <p className="text-emerald-300">{booking.quotedTotal != null ? `Provider quote ₹${booking.quotedTotal}` : "Awaiting provider quote"}</p>
+        </article>
+      ))}
 
       {filteredOrders.map((ord) => {
         const isExpanded = expandedOrderId === ord.id;
