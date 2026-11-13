@@ -241,3 +241,33 @@ export async function verifySqlPortalOtp({ email, otpCode }) {
   }
   return true;
 }
+
+// --- ADMIN CONSOLE: GLOBAL ALL-ORDERS LIVE MONITOR ---
+export async function fetchAllOrdersForAdmin() {
+  const { data, error } = await supabase
+    .from('merchant_orders')
+    .select('*, merchants:merchant_id(business_name, category, city)')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+}
+
+export function subscribeToAllOrdersAdmin(onOrdersEvent) {
+  const channel = supabase
+    .channel('admin-global-orders-monitor')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'merchant_orders' },
+      (payload) => {
+        if (onOrdersEvent) {
+          onOrdersEvent(payload);
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
