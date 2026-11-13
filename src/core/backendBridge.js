@@ -191,3 +191,32 @@ export function subscribeToOrderStatusChanges(onOrderChange) {
     supabase.removeChannel(channel);
   };
 }
+
+// --- CUSTOMER AUTH: SESSION & PROFILE HELPERS ---
+export async function getCurrentCustomerProfile() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const user = sessionData?.session?.user;
+  if (!user) return null;
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, email, full_name, phone, role')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  return {
+    user,
+    profile: profile || {
+      id: user.id,
+      email: user.email,
+      full_name: user.user_metadata?.full_name || '',
+      phone: user.user_metadata?.phone || '',
+      role: user.user_metadata?.role || 'customer'
+    }
+  };
+}
+
+export async function logoutPortalUser() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}

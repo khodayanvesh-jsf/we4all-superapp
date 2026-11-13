@@ -3,6 +3,7 @@ import App from '../App';
 import MerchantPortal from '../portals/merchant/MerchantPortal';
 import AdminMerchantApproval from '../portals/admin/AdminMerchantApproval';
 import CustomerMarketplace from '../portals/customer/CustomerMarketplace';
+import CustomerAuth from '../portals/customer/CustomerAuth';
 
 export default function PortalGate() {
   const [currentUrl, setCurrentUrl] = useState(window.location.pathname + window.location.hash);
@@ -25,9 +26,14 @@ export default function PortalGate() {
 
   const isLockedMerchantApk = import.meta.env.VITE_APP_PORTAL === 'merchant';
 
+  const isCustomerAuth =
+    window.location.pathname.startsWith('/customer-auth') ||
+    window.location.hash.startsWith('#/customer-auth');
+
   const isCustomerPortal =
-    window.location.pathname.startsWith('/customer') ||
-    window.location.hash.startsWith('#/customer');
+    !isCustomerAuth &&
+    (window.location.pathname.startsWith('/customer') ||
+      window.location.hash.startsWith('#/customer'));
 
   const isAdminMerchants =
     window.location.pathname.startsWith('/admin-merchants') ||
@@ -38,7 +44,9 @@ export default function PortalGate() {
     window.location.hash.startsWith('#/merchant') ||
     isLockedMerchantApk;
 
-  const activeKey = isCustomerPortal
+  const activeKey = isCustomerAuth
+    ? 'customer-auth'
+    : isCustomerPortal
     ? 'customer'
     : isAdminMerchants
     ? 'admin-merchants'
@@ -47,7 +55,9 @@ export default function PortalGate() {
     : 'main';
 
   let activeView = <App />;
-  if (isCustomerPortal) {
+  if (isCustomerAuth) {
+    activeView = <CustomerAuth onAuthSuccess={() => switchPortal('#/customer')} />;
+  } else if (isCustomerPortal) {
     activeView = <CustomerMarketplace />;
   } else if (isAdminMerchants) {
     activeView = <AdminMerchantApproval />;
@@ -59,7 +69,6 @@ export default function PortalGate() {
     <>
       {activeView}
 
-      {/* Floating Portal Switcher (Hidden inside standalone locked Merchant APK) */}
       {!isLockedMerchantApk && (
         <div
           style={{
@@ -82,15 +91,7 @@ export default function PortalGate() {
           {minimized ? (
             <button
               onClick={() => setMinimized(false)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#fff',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                padding: '2px 6px'
-              }}
-              title="Expand Portal Switcher"
+              style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold', padding: '2px 6px' }}
             >
               ⚡ Portals
             </button>
@@ -98,7 +99,8 @@ export default function PortalGate() {
             <>
               {[
                 { key: 'main', label: 'Main App', hash: '#/' },
-                { key: 'customer', label: 'Customer', hash: '#/customer' },
+                { key: 'customer-auth', label: 'Customer Login', hash: '#/customer-auth' },
+                { key: 'customer', label: 'Marketplace', hash: '#/customer' },
                 { key: 'merchant', label: 'Merchant', hash: '#/merchant' },
                 { key: 'admin-merchants', label: 'Admin Approvals', hash: '#/admin-merchants' }
               ].map((item) => (
@@ -113,8 +115,7 @@ export default function PortalGate() {
                     fontWeight: 'bold',
                     fontSize: '12px',
                     background: activeKey === item.key ? '#0066ff' : 'transparent',
-                    color: activeKey === item.key ? '#fff' : '#d1d5db',
-                    transition: 'all 0.2s'
+                    color: activeKey === item.key ? '#fff' : '#d1d5db'
                   }}
                 >
                   {item.label}
@@ -130,10 +131,8 @@ export default function PortalGate() {
                   width: '22px',
                   height: '22px',
                   cursor: 'pointer',
-                  marginLeft: '4px',
-                  lineHeight: '20px'
+                  marginLeft: '4px'
                 }}
-                title="Minimize Switcher"
               >
                 –
               </button>
