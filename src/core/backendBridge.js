@@ -81,3 +81,15 @@ export async function updateMerchantApprovalStatus({ merchantId, status, isVerif
   if (error) throw error;
   return data;
 }
+
+// --- CUSTOMER PORTAL: ACTIVE MERCHANTS & CATALOG ---
+export async function fetchActiveMerchantsWithCatalog() {
+  const { data, error } = await supabase
+    .from('merchants')
+    .select('*, merchant_catalog(*)')
+    .eq('status', 'active')
+    .eq('is_verified', true)
+    .order('business_name', { ascending: true });
+  if (error) throw error;
+  return data;
+}

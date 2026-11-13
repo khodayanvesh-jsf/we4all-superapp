@@ -1,7 +1,9 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import App from '../App';
 import MerchantPortal from '../portals/merchant/MerchantPortal';
 import AdminMerchantApproval from '../portals/admin/AdminMerchantApproval';
+
+import CustomerMarketplace from '../portals/customer/CustomerMarketplace';
 
 export default function PortalGate() {
   const [currentUrl, setCurrentUrl] = useState(window.location.pathname + window.location.hash);
@@ -19,6 +21,14 @@ export default function PortalGate() {
   const isAdminMerchants =
     window.location.pathname.startsWith('/admin-merchants') ||
     window.location.hash.startsWith('#/admin-merchants');
+
+  const isCustomerPortal =
+    window.location.pathname.startsWith('/customer') ||
+    window.location.hash.startsWith('#/customer');
+
+  if (isCustomerPortal) {
+    return <CustomerMarketplace />;
+  }
 
   if (isAdminMerchants) {
     return <AdminMerchantApproval />;
