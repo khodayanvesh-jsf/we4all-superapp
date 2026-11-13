@@ -152,3 +152,42 @@ export async function updateMerchantOrderStatus({ orderId, status }) {
   if (error) throw error;
   return data;
 }
+
+// --- CUSTOMER PORTAL: LIVE ORDER STATUS TRACKING ---
+export async function fetchCustomerOrders({ customerPhone, orderIds = [] }) {
+  let query = supabase
+    .from('merchant_orders')
+    .select('*, merchants:merchant_id(business_name, category, city)')
+    .order('created_at', { ascending: false });
+
+  if (customerPhone && customerPhone.trim().length >= 10) {
+    query = query.eq('customer_phone', customerPhone.trim());
+  } else if (orderIds.length > 0) {
+    query = query.in('id', orderIds);
+  } else {
+    return [];
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
+}
+
+export function subscribeToOrderStatusChanges(onOrderChange) {
+  const channel = supabase
+    .channel('customer-order-tracker')
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'merchant_orders' },
+      (payload) => {
+        if (onOrderChange && payload.new) {
+          onOrderChange(payload.new);
+        }
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
