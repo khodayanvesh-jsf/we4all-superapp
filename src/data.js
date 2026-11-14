@@ -69,10 +69,10 @@ export const LABOUR_TRADE_CATEGORIES = [
 ];
 
 export const DECORATION_SERVICE_MODULES = [
-  { id: "dec_stage", title: "Grand Royal Stage Decoration", programType: "Wedding / Reception Stage", baseEstimate: 25000, features: ["Fresh Imported Orchids & Roses", "LED Truss Warm Lighting", "Velvet Maharaja Sofa & Backdrop"] },
-  { id: "dec_haldi", title: "Vibrant Marigold Haldi Setup", programType: "Haldi Ceremony", baseEstimate: 12000, features: ["Yellow & Orange Marigold Canopy", "Brass Urli Tub Setup", "Floral Photo Booth Frame"] },
-  { id: "dec_mehendi", title: "Rajasthani Jhula Mehendi Decor", programType: "Mehendi Night", baseEstimate: 14500, features: ["Decorated Floral Swing (Jhula)", "Colorful Umbrella Ceiling", "Bolster Cushion Seating"] },
-  { id: "dec_sangeet", title: "Concert LED Sangeet & Sound Stage", programType: "Sangeet Ceremony", baseEstimate: 32000, features: ["P3 Matrix LED Wall", "Cold Pyro & CO2 Jet Entry", "JBL Line Array DJ Sound"] }
+  { id: "dec_stage", icon: "\uD83D\uDC51", name: "Grand Royal Stage Decoration", title: "Grand Royal Stage Decoration", programType: "Wedding / Reception Stage", startingPrice: 25000, baseEstimate: 25000, features: ["Fresh Imported Orchids & Roses", "LED Truss Warm Lighting", "Velvet Maharaja Sofa & Backdrop"] },
+  { id: "dec_haldi", icon: "\uD83C\uDF3C", name: "Vibrant Marigold Haldi Setup", title: "Vibrant Marigold Haldi Setup", programType: "Haldi Ceremony", startingPrice: 12000, baseEstimate: 12000, features: ["Yellow & Orange Marigold Canopy", "Brass Urli Tub Setup", "Floral Photo Booth Frame"] },
+  { id: "dec_mehendi", icon: "\uD83E\uDE8D", name: "Rajasthani Jhula Mehendi Decor", title: "Rajasthani Jhula Mehendi Decor", programType: "Mehendi Night", startingPrice: 14500, baseEstimate: 14500, features: ["Decorated Floral Swing (Jhula)", "Colorful Umbrella Ceiling", "Bolster Cushion Seating"] },
+  { id: "dec_sangeet", icon: "\uD83C\uDFB6", name: "Concert LED Sangeet & Sound Stage", title: "Concert LED Sangeet & Sound Stage", programType: "Sangeet Ceremony", startingPrice: 32000, baseEstimate: 32000, features: ["P3 Matrix LED Wall", "Cold Pyro & CO2 Jet Entry", "JBL Line Array DJ Sound"] }
 ];
 
 export const CURATED_COLLECTIONS = [

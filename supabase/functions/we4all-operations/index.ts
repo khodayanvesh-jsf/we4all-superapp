@@ -187,7 +187,7 @@ const handleOperations = withSupabase({ auth: "user" }, async (req: Request, ctx
  case "verify_delivery_test_otp":{
   if(!has("rider"))return fail("APPROVED_RIDER_REQUIRED",403);
   const type=String(body.deliveryType||""),id=String(body.deliveryId||""),code=String(body.code||"").trim();
-  if(!["M2C","P2P","TAXI"].includes(type)||!uuid(id)||!/^\\d{6}$/.test(code))return fail("INVALID_TEST_OTP");
+  if(!["M2C","P2P","TAXI"].includes(type)||!uuid(id)||!/^\d{6}$/.test(code))return fail("INVALID_TEST_OTP");
   const {data:partner}=await admin.from("we4all_partners").select("id").eq("owner_user_id",user.id).eq("partner_type","rider").eq("approval_status","approved").maybeSingle();
   if(!partner)return fail("APPROVED_RIDER_REQUIRED",403);
   if(type==="P2P"||type==="TAXI"){

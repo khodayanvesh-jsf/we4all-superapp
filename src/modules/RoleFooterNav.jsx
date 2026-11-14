@@ -16,7 +16,7 @@ export default function RoleFooterNav({
     customer: [
       { id: "home", icon: "\uD83C\uDFE0", label: t.stores },
       { id: "services", icon: "\uD83D\uDD27", label: t.services },
-      { id: "carts", icon: "\uD83D\uDED2", label: `${t.carts} (${totalCartCount})` },
+      { id: "cart", icon: "\uD83D\uDED2", label: `${t.carts} (${totalCartCount})` },
       { id: "orders", icon: "\uD83D\uDCE6", label: `${t.orders} (${totalOrdersCount})` },
       { id: "account", icon: "\uD83D\uDC64", label: t.account }
     ],
@@ -36,16 +36,16 @@ export default function RoleFooterNav({
     ],
     decorator: [
       { id: "home", icon: "\uD83C\uDFDB\uFE0F", label: "Hall Calendar" },
-      { id: "bidding", icon: "\uD83D\uDD28", label: "Reverse Bids" },
-      { id: "escrow", icon: "\uD83D\uDD12", label: "35%/85% Escrow" },
+      { id: "bids", icon: "\uD83D\uDD28", label: "Reverse Bids" },
+      { id: "orders", icon: "\uD83D\uDD12", label: "35%/85% Escrow" },
       { id: "portfolio", icon: "\uD83C\uDF38", label: "Portfolio" },
       { id: "account", icon: "\uD83D\uDC64", label: t.account }
     ],
     rider: [
       { id: "home", icon: "\uD83D\uDEF5", label: `Radar (${totalOrdersCount})` },
-      { id: "map", icon: "\uD83D\uDDFA\uFE0F", label: "3-Pt Live Map" },
-      { id: "batching", icon: "\u26A1", label: "Smart Batch" },
-      { id: "orders", icon: "\u2B50", label: "Scorecard" },
+      { id: "batch", icon: "\uD83D\uDDFA\uFE0F", label: "3-Pt Live Map" },
+      { id: "rates", icon: "\u26A1", label: "Km Rate & Pay" },
+      { id: "orders", icon: "\u2B50", label: "Earnings" },
       { id: "account", icon: "\uD83D\uDC64", label: t.account }
     ],
     labour: [
@@ -68,7 +68,7 @@ export default function RoleFooterNav({
       }`}
     >
       {tabsToRender.map((tab) => {
-        const isActive = footerTab === tab.id;
+        const isActive = footerTab === tab.id || (tab.id === "cart" && footerTab === "carts");
         return (
           <button
             key={tab.id}

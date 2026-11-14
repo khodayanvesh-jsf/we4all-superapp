@@ -51,3 +51,14 @@ verify_jwt = false
 # A native update request is public. The response contains only release metadata.
 [functions.we4all-ota-staging]
 verify_jwt = false
+[functions.we4all-adjust-stock]
+verify_jwt = false
+
+[functions.we4all-module-admin]
+verify_jwt = true
+
+[functions.we4all-operations]
+verify_jwt = true
+
+[functions.we4all-sync]
+verify_jwt = true

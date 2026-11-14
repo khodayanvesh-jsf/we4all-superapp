@@ -1269,14 +1269,14 @@ export default function FounderAdminSuite({
               { id: "captains", label: `1. Captains (${safePendingRiders.length})` },
               { id: "decorators_halls", label: `2. Decor Partners (${safePendingDecorators.length})` },
               { id: "decor_requests", label: `3. Event Requests (${safeDecorRequests.length})` },
-              { id: "service_providers", label: `3. Services (${safePendingServices.length})` },
-              { id: "merchants", label: `4. Merchants (${safePendingMerchants.length})` },
-              { id: "brands", label: `5. Brand Requests (${safePendingBrands.length})` },
-              { id: "product_approvals", label: "6. Server Products" },
-              { id: "function_halls", label: `7. Function Halls (${safePendingHallApprovals.length})` },
-              { id: "labour_workers", label: `8. Labour Workers (${safePendingLabourApprovals.length})` },
-              { id: "rejected", label: `9. Rejected (${safeRejectedItems.length})` },
-              { id: "direct_add", label: "10. + Direct Add" }
+              { id: "service_providers", label: `4. Services (${safePendingServices.length})` },
+              { id: "merchants", label: `5. Merchants (${safePendingMerchants.length})` },
+              { id: "brands", label: `6. Brand Requests (${safePendingBrands.length})` },
+              { id: "product_approvals", label: "7. Server Products" },
+              { id: "function_halls", label: `8. Function Halls (${safePendingHallApprovals.length})` },
+              { id: "labour_workers", label: `9. Labour Workers (${safePendingLabourApprovals.length})` },
+              { id: "rejected", label: `10. Rejected (${safeRejectedItems.length})` },
+              { id: "direct_add", label: "11. + Direct Add" }
             ].map((sub) => (
               <button
                 key={sub.id}

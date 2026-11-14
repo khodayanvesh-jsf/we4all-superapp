@@ -65,7 +65,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
     checkingUpdate = false,
     onRunOtaUpdate = () => {},
     otaProgress = null,
-    onOpenAdminGate,
+    onOpenAdminGate, onOpenAdminConsole,
     onPartnerAuthenticated,
     onLogoutPartner,
     onTriggerToast = () => {}
@@ -203,7 +203,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (resolvedRole !== "customer") {
         const { data, error: partnerError } = await supabase
           .from("we4all_partners")
-          .select("id,partner_type,approval_status,market_id,zone_id")
+          .select("id,partner_type,approval_status,market_id,zone_id,availability_rules")
           .eq("owner_user_id", user.id)
           .eq("partner_type", resolvedRole)
           .eq("approval_status", "approved")
@@ -513,7 +513,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
 
   const sendRegistrationCode = async () => {
     const phone = accountLoginIdentity(regForm.phone)?.phone || "";
-    const email = realAccountEmail(regForm.email);
+    const phoneDigits = cleanPhoneDigits(regForm.phone); const email = realAccountEmail(regForm.email) || (phoneDigits.length === 10 ? `pilot.${phoneDigits}@we4all.app` : "");
     if (!supabase || (!trialOtpModeEnabled && !email) || (trialOtpModeEnabled && !phone)) {
       setFormFeedback({ type: "error", message: "Enter a valid registration contact and check your connection." });
       return;
@@ -678,7 +678,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         }
         const { data: partnerRecord, error: partnerError } = await supabase
           .from("we4all_partners")
-          .select("id,partner_type,approval_status,market_id,zone_id")
+          .select("id,partner_type,approval_status,market_id,zone_id,availability_rules")
           .eq("owner_user_id", user.id)
           .eq("partner_type", requestedRole)
           .eq("approval_status", "approved")

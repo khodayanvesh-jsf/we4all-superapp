@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from "react";
 
 export default function GeoTargetedAdBanner({
+  ads,
   adsList = [],
+  selectedZone,
   userZone = "Adilabad",
   userState = "Telangana",
   brightTheme = true,
   onSelectAdAction
 }) {
+  const effectiveAds = Array.isArray(ads) ? ads : (Array.isArray(adsList) ? adsList : []);
+  const effectiveZone = selectedZone || userZone || "Adilabad";
   const [selectedTier, setSelectedTier] = useState("ALL_PRIORITY");
   const [activeSlideIdx, setActiveSlideIdx] = useState(0);
 
   const tierWeight = { GEO_LOCAL: 1, STATE_LEVEL: 2, BRAND_NATIONAL: 3 };
-  const sortedAds = [...adsList]
+  const sortedAds = [...effectiveAds]
     .filter((ad) => selectedTier === "ALL_PRIORITY" || ad.tier === selectedTier)
     .sort((a, b) => (tierWeight[a.tier] || 9) - (tierWeight[b.tier] || 9));
 
@@ -33,7 +37,7 @@ export default function GeoTargetedAdBanner({
         }`}
       >
         <span>
-          <strong className="text-emerald-600">Geo-Ad Engine Ready:</strong> 1st {userZone} GPS &rarr; 2nd {userState} &rarr; 3rd Brand Ads
+          <strong className="text-emerald-600">Geo-Ad Engine Ready:</strong> 1st {effectiveZone} GPS &rarr; 2nd {userState} &rarr; 3rd Brand Ads
         </span>
         <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[8px]">
           0% Markup
@@ -56,7 +60,7 @@ export default function GeoTargetedAdBanner({
         <div className="flex gap-1 flex-wrap">
           {[
             { id: "ALL_PRIORITY", label: "Auto 1-2-3" },
-            { id: "GEO_LOCAL", label: `1. ${userZone} GPS` },
+            { id: "GEO_LOCAL", label: `1. ${effectiveZone} GPS` },
             { id: "STATE_LEVEL", label: `2. ${userState}` },
             { id: "BRAND_NATIONAL", label: "3. Brand Ads" }
           ].map((t) => (

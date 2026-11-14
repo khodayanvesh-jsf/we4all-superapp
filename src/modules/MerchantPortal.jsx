@@ -621,40 +621,7 @@ export default function MerchantPortal({
           >
             {productSubmitting ? "Saving to WE4ALL…" : "Submit Product for Approval"}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (!newProdForm.subCategoryBrand.trim()) return;
-              setPendingSubCategories([
-                ...pendingSubCategories,
-                {
-                  id: `ps_${Date.now()}`,
-                  categoryId: newProdForm.categoryId,
-                  subCategoryBrand: newProdForm.subCategoryBrand.trim(),
-                  shopName: newProdForm.shopName,
-                  distanceKm: 1.1,
-                  image: newProdForm.image,
-                  status: "pending",
-                  variants: [
-                    {
-                      id: `v_${Date.now()}`,
-                      label: newProdForm.unitLabel,
-                      price: newProdForm.price,
-                      mrp: newProdForm.price + 15,
-                      weightGrams: 1000
-                    }
-                  ]
-                }
-              ]);
-              setNewProdForm({ ...newProdForm, subCategoryBrand: "" });
-              if (onTriggerToast) {
-                onTriggerToast("Submitted Brand Sub-Category to Founder Admin for approval!");
-              }
-            }}
-            className="w-full bg-emerald-400 text-slate-950 font-black py-2 rounded-xl cursor-pointer"
-          >
-            Submit Brand for Admin Approval &rarr;
-          </button>
+          
 
           {rejectedItems && (rejectedItems || []).length > 0 && (
             <div className="bg-rose-950/60 border border-rose-500 p-2.5 rounded-xl text-rose-200 space-y-1">

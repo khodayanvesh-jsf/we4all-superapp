@@ -1,4 +1,3 @@
-import './networkAuthFix.js';
 import React from "react";
 import { Capacitor } from "@capacitor/core";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";

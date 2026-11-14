@@ -347,7 +347,18 @@ function AppContent() {
   });
   useEffect(() => { window.sessionStorage.removeItem("we4all_open_account_after_registration"); }, []);
   const footerTab = globalFooterTab;
-  const setFooterTab = setGlobalFooterTab;
+  const setFooterTab = (nextTab) => {
+    if (activePortal === "customer" && nextTab === "services") {
+      setGlobalCustomerSubTab("services");
+      setGlobalFooterTab("home");
+      return;
+    }
+    if (nextTab === "carts") {
+      setGlobalFooterTab("cart");
+      return;
+    }
+    setGlobalFooterTab(nextTab);
+  };
 
   const openPersonalShop = (partnerRole) => {
     const allowedPartnerRoles = ["merchant", "service_provider", "decorator", "rider", "labour"];
@@ -637,7 +648,7 @@ function AppContent() {
     const refreshMarkets = async () => {
       const { data, error } = await supabase.from("we4all_markets").select("id,display_name,state_name,center_lat,center_lng").eq("active", true).order("display_name");
       if (!active) return;
-      if (!error) setGeoMarkets(Array.isArray(data) ? data : []);
+      if (!error) { const list = Array.isArray(data) ? data : []; setGeoMarkets(list); if (list.length > 0) setSelectedZoneFilter((curr) => curr || list[0].id); }
     };
     refreshMarkets();
     const timer = window.setInterval(refreshMarkets, 60000);

@@ -50,7 +50,7 @@ export default function RiderCaptainPortal({
   onReportError = () => {},
   renderAccountTab
 }) {
-  const myVehicleCode = currentUser?.vehicleCode || "UNVERIFIED";
+  const rawVeh = currentUser?.vehicleCode || currentUser?.partnerDetails?.vehicle_type || (currentUser?.role === "rider" && currentUser?.status === "Approved" ? "2W" : "UNVERIFIED"); const myVehicleCode = rawVeh === "4W" || String(rawVeh).includes("4W") ? "4W_HEAVY" : String(rawVeh).includes("3W") ? "3W" : String(rawVeh).includes("2W") ? "2W" : rawVeh;
   const myVehicleRule = VEHICLE_CONSORT_RULES[myVehicleCode] || VEHICLE_CONSORT_RULES["2W"];
 
   const [isOnlineForDriving, setIsOnlineForDriving] = useState(false);
@@ -454,7 +454,7 @@ export default function RiderCaptainPortal({
             </div>
           </div>
 
-          {myEligibleRadarJobs.map((job) => (
+          {myEligibleRadarJobs.filter((j) => radarServiceFilter === "ALL" || (j.serviceType || "M2C") === radarServiceFilter).map((job) => (
             <div
               key={job.id}
               className="bg-slate-900 p-3 rounded-2xl border-2 border-emerald-500/50 space-y-2"
