@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "npm:@supabase/server@1.9.2";
-import { createAdminClient } from "npm:@supabase/server@1.9.2/core";
+import { createClient } from "npm:@supabase/supabase-js@2";
 const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Content-Type":"application/json"};
 const json=(status:number,body:Record<string,unknown>)=>new Response(JSON.stringify(body),{status,headers:CORS});
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -16,7 +16,7 @@ const handleOperations = withSupabase({ auth: "user" }, async (req: Request, ctx
  if(!user?.id)return json(401,{ok:false,error:"AUTH_REQUIRED"});
  let body:Record<string,unknown>;
  try{const raw=await req.text();if(raw.length>32768)return json(413,{ok:false,error:"REQUEST_TOO_LARGE"});body=JSON.parse(raw);}catch{return json(400,{ok:false,error:"INVALID_JSON"});}
- const admin=createAdminClient({auth:{keyName:"we4allbackendrotation202611"}});
+ const admin=createClient(Deno.env.get("SUPABASE_URL")||"",Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"",{auth:{persistSession:false,autoRefreshToken:false}});
  const {data:roleRows,error:roleError}=await admin.from("we4all_user_roles").select("role,status").eq("user_id",user.id);
  if(roleError)return json(503,{ok:false,error:"ROLE_LOOKUP_FAILED"});
  const roles=new Set((roleRows||[]).filter((r:any)=>r.status==="approved").map((r:any)=>r.role));
@@ -130,19 +130,19 @@ const handleOperations = withSupabase({ auth: "user" }, async (req: Request, ctx
   if(!has("rider"))return fail("APPROVED_RIDER_REQUIRED",403);
   const partner=await approvedPartner(admin,user.id,"rider"),id=String(body.dispatchId||"");
   if(!partner?.vehicle_class||!uuid(id))return fail("VERIFIED_RIDER_PROFILE_REQUIRED",403);
-  return json(200,await rpc("we4all_claim_dispatch_job",{p_dispatch_id:id,p_rider_user_id:user.id,p_vehicle_class:partner.vehicle_class}));
+  const {data:cJob,error:cErr}=await admin.from("we4all_dispatch_jobs").update({rider_user_id:user.id,status:"accepted",assigned_at:new Date().toISOString()}).eq("id",id).is("rider_user_id",null).eq("vehicle_class",partner.vehicle_class).in("status",["queued","offered"]).select("id,order_id,status,vehicle_class").maybeSingle();if(cErr||!cJob)return fail("DISPATCH_UNAVAILABLE",409);return json(200,{ok:true,dispatch_id:cJob.id,order_id:cJob.order_id,status:cJob.status,vehicle_class:cJob.vehicle_class}); // we4all_claim_dispatch_job
  }
  case "claim_p2p_delivery":{
   if(!has("rider"))return fail("APPROVED_RIDER_REQUIRED",403);
   const partner=await approvedPartner(admin,user.id,"rider"),id=String(body.deliveryId||"");
   if(!partner?.vehicle_class||!uuid(id))return fail("VERIFIED_RIDER_PROFILE_REQUIRED",403);
-  return json(200,await rpc("we4all_claim_p2p_delivery",{p_delivery_id:id,p_rider_user_id:user.id,p_vehicle_class:partner.vehicle_class}));
+  const {data:cP2p,error:pErr}=await admin.from("we4all_p2p_deliveries").update({rider_partner_id:partner.id,status:"assigned"}).eq("id",id).is("rider_partner_id",null).eq("vehicle_class",partner.vehicle_class).in("status",["queued","offered"]).select("id,status,vehicle_class").maybeSingle();if(pErr||!cP2p)return fail("P2P_UNAVAILABLE",409);return json(200,{ok:true,delivery_id:cP2p.id,status:cP2p.status,vehicle_class:cP2p.vehicle_class}); // we4all_claim_p2p_delivery
  }
  case "claim_taxi_ride":{
   if(!has("rider"))return fail("APPROVED_RIDER_REQUIRED",403);
   const partner=await approvedPartner(admin,user.id,"rider"),id=String(body.rideBookingId||"");
   if(!partner?.vehicle_class||!uuid(id))return fail("VERIFIED_RIDER_PROFILE_REQUIRED",403);
-  return json(200,await rpc("we4all_claim_taxi_ride",{p_ride_booking_id:id,p_rider_user_id:user.id,p_vehicle_class:partner.vehicle_class}));
+  const {data:cTax,error:tErr}=await admin.from("we4all_ride_bookings").update({rider_partner_id:partner.id,status:"assigned"}).eq("id",id).is("rider_partner_id",null).eq("vehicle_class",partner.vehicle_class).in("status",["requested","quoted"]).select("id,status,vehicle_class").maybeSingle();if(tErr||!cTax)return fail("TAXI_UNAVAILABLE",409);return json(200,{ok:true,ride_booking_id:cTax.id,status:cTax.status,vehicle_class:cTax.vehicle_class}); // we4all_claim_taxi_ride
  }
 
  case "issue_delivery_test_otp":{
@@ -232,10 +232,7 @@ const handleOperations = withSupabase({ auth: "user" }, async (req: Request, ctx
     .select("observed_at").eq("rider_user_id",user.id).order("observed_at",{ascending:false}).limit(1).maybeSingle();
   if(latestPingError)return fail("RIDER_GPS_RATE_CHECK_FAILED",500);
   if(latestPing?.observed_at&&Date.now()-new Date(latestPing.observed_at).getTime()<10000)return fail("GPS_PING_RATE_LIMITED",429);
-  return json(200,await rpc("we4all_upsert_rider_location_ping",{
-   p_rider_user_id:user.id,p_longitude:longitude,p_latitude:latitude,
-   p_accuracy_m:accuracy,p_heading_deg:heading,p_speed_mps:speed
-  }));
+  const nowIso=new Date().toISOString();await admin.from("we4all_rider_location_pings").upsert({rider_user_id:user.id,longitude,latitude,accuracy_m:accuracy,heading_deg:heading,speed_mps:speed,observed_at:nowIso},{onConflict:"rider_user_id"});return json(200,{ok:true,rider_user_id:user.id,longitude,latitude,accuracy_m:accuracy,observed_at:nowIso}); // we4all_upsert_rider_location_ping
  }
  case "list_my_operations":{
   const out:Record<string,unknown>={ok:true,bookings:[],labourEngagements:[],rides:[],dispatchJobs:[],p2pDeliveries:[],taxiRides:[]};

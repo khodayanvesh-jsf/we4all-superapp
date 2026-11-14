@@ -90,7 +90,7 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
   const kyc = {
     files: filePaths,
     signature: { method: signatureMethod, signer_name: signerName, path: signaturePath || null },
-    terms: { accepted: true, version: TERMS_VERSION, accepted_at: now },
+    terms: { accepted: true, version: "final-2026-11", accepted_at: now },
     submitted_at: now,
     status: "submitted"
   };

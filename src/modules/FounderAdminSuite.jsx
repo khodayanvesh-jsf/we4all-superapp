@@ -24,7 +24,7 @@ const REGISTRATION_ROLE_LABELS = {
 
 function hasReviewableTerms(application) {
   const version = application.application_payload?.kyc?.terms?.version || "";
-  return version.startsWith("final-") || (application.founder_test_account === true && version === "trial-draft-1");
+  return version.startsWith("final-") || version === "trial-draft-1";
 }
 
 export default function FounderAdminSuite({
