@@ -1,75 +1,22 @@
-name: Build WE4ALL Portal APKs (Merchant & Customer)
-
+name: Build Unified WE4ALL SuperApp APK
 on:
   push:
-    branches:
-      - main
-      - portal/merchant-app
+    branches: [ main ]
   workflow_dispatch:
-
 jobs:
-  build-portal-apks:
-    name: Build ${{ matrix.artifact_name }}.apk
+  build-superapp-apk:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - portal: merchant
-            app_id: com.we4all.merchant
-            app_name: WE4ALL Merchant
-            artifact_name: WE4ALL-Merchant-Debug
-          - portal: customer
-            app_id: com.we4all.customer
-            app_name: WE4ALL Customer
-            artifact_name: WE4ALL-Customer-Debug
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '21', cache: 'gradle' }
+      - run: npm install
+      - run: npm run build
+      - run: npx cap sync android
+      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
         with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-          cache: 'gradle'
-
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Build Vite Bundle (${{ matrix.portal }})
-        env:
-          VITE_APP_PORTAL: ${{ matrix.portal }}
-        run: npm run build
-
-      - name: Sync Capacitor Android
-        run: npx cap sync android
-
-      - name: Patch Android Package ID & App Name (${{ matrix.app_id }})
-        run: |
-          sed -i 's/applicationId\s*=\?\s*["'\''][^"'\'']*["'\'']/applicationId "${{ matrix.app_id }}"/g' android/app/build.gradle
-          sed -i 's/<string name="app_name">[^<]*<\/string>/<string name="app_name">${{ matrix.app_name }}<\/string>/g' android/app/src/main/res/values/strings.xml
-          sed -i 's/<string name="title_activity_main">[^<]*<\/string>/<string name="title_activity_main">${{ matrix.app_name }}<\/string>/g' android/app/src/main/res/values/strings.xml
-          if [ -f android/app/google-services.json ]; then
-            sed -i 's/"package_name"\s*:\s*"[^"]*"/"package_name": "${{ matrix.app_id }}"/g' android/app/google-services.json
-          fi
-
-      - name: Compile Debug APK with Gradle
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
-          cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/${{ matrix.artifact_name }}.apk"
-
-      - name: Upload ${{ matrix.artifact_name }} Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: android/app/build/outputs/apk/debug/${{ matrix.artifact_name }}.apk
+          name: WE4ALL-SuperApp-Debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
