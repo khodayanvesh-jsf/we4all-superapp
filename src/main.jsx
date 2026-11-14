@@ -1,3 +1,4 @@
+import PortalGate from './core/PortalGate';
 import React from "react";
 import { Capacitor } from "@capacitor/core";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";
@@ -72,7 +73,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <RootErrorBoundary>
       <ActionAndErrorFeedbackLayer>
-        <App />
+        <PortalGate />
         <NativeBundleReady />
       </ActionAndErrorFeedbackLayer>
     </RootErrorBoundary>
