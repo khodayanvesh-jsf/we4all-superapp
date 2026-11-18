@@ -1,215 +1,430 @@
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, session } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require("electron");
 const path = require("path");
+const fs = require("fs");
+const { getActiveIndexHtml, checkAndApplyOtaUpdate } = require("./otaUpdater.cjs");
 
-const LIVE_WEB_CONSOLE_URL = "https://we-4-all-super-app.vercel.app";
 let mainWindow = null;
 
-// Non-intrusive Windows Desktop Command Dock (Does NOT alter internal module UI)
-const WINDOWS_DOCK_CSS = `
+function getPackagedVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+    return pkg.version || "3.3.19";
+  } catch {
+    return "3.3.19";
+  }
+}
+
+// Purpose-Built 3-Pane Windows 11 Desktop Layout for All 6 WE4ALL Portals
+const WINDOWS_WORKSTATION_CSS = `
+  /* Hide web top download bar inside native Windows app */
+  #we4all-platform-download-bar { display: none !important; }
+
+  /* 3-Pane Windows Workstation Frame: Left Rail (250px) | Center Module Workspace | Right Telemetry & OTA Dock (310px) */
   body {
-    padding-left: 230px !important;
     background-color: #020617 !important;
+    padding-left: 250px !important;
+    padding-right: 310px !important;
+    padding-top: 38px !important;
+    overflow-x: hidden !important;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif !important;
   }
-  /* Keep module UI 100% intact and centered by default, or expand smoothly when Widescreen toggle is active */
-  body.we4all-win-widescreen .max-w-md {
-    max-width: 1180px !important;
-    width: 95% !important;
+
+  /* Expand mobile 448px container into a full Native Windows Desktop Module Canvas */
+  .max-w-md, .max-w-lg, .max-w-xl {
+    max-width: 100% !important;
+    width: 96% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
-  #we4all-win-dock {
+
+  /* Multi-column desktop grids for Products, Kisan Mandi, Merchant Stock, Orders & Admin Queues */
+  @media (min-width: 1100px) {
+    .grid-cols-2 {
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      gap: 14px !important;
+    }
+  }
+  @media (min-width: 1440px) {
+    .grid-cols-2 {
+      grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+      gap: 16px !important;
+    }
+  }
+
+  /* Convert mobile bottom thumb bar into a sleek centered Windows Desktop Floating Taskbar */
+  nav.fixed.bottom-0, div.fixed.bottom-0 {
+    left: 266px !important;
+    right: 326px !important;
+    max-width: 820px !important;
+    margin: 0 auto 12px auto !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(16, 185, 129, 0.45) !important;
+    background: rgba(15, 23, 42, 0.95) !important;
+    backdrop-filter: blur(12px) !important;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.75) !important;
+  }
+
+  /* Windows Top System Status Bar */
+  #we4all-win-topbar {
+    position: fixed;
+    top: 0;
+    left: 250px;
+    right: 310px;
+    height: 38px;
+    background: linear-gradient(90deg, #0f172a 0%, #064e3b 50%, #0f172a 100%);
+    border-bottom: 1px solid rgba(16, 185, 129, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    z-index: 99997;
+    color: #e2e8f0;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* Left Pane: Windows 6-Portal Navigation & Quick Switcher Rail */
+  #we4all-win-left-rail {
     position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
-    width: 230px;
-    background: linear-gradient(180deg, #064e3b 0%, #0f172a 38%, #020617 100%);
+    width: 250px;
+    background: linear-gradient(180deg, #064e3b 0%, #0f172a 32%, #020617 100%);
     border-right: 1px solid rgba(16, 185, 129, 0.35);
-    color: #f8fafc;
-    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    padding: 14px 12px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 14px 12px;
     z-index: 99998;
-    user-select: none;
-    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.5);
+    color: #f8fafc;
+    overflow-y: auto;
   }
-  #we4all-win-dock .dock-brand {
-    border-bottom: 1px solid rgba(52, 211, 153, 0.25);
-    padding-bottom: 10px;
-    margin-bottom: 10px;
+
+  /* Right Pane: Live Backend Telemetry, POS Tools & OTA Hot-Swap Manager */
+  #we4all-win-right-dock {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 310px;
+    background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
+    border-left: 1px solid rgba(56, 189, 248, 0.3);
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    z-index: 99998;
+    color: #f8fafc;
+    overflow-y: auto;
   }
-  #we4all-win-dock .dock-title {
-    font-size: 14px;
-    font-weight: 900;
-    color: #34d399;
-    letter-spacing: 0.3px;
-  }
-  #we4all-win-dock .dock-sub {
-    font-size: 10px;
-    color: #a7f3d0;
-    margin-top: 2px;
-    font-weight: 600;
-  }
-  #we4all-win-dock .dock-sec-label {
+
+  .win-sec-hdr {
     font-size: 9px;
+    font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.9px;
     color: #94a3b8;
-    font-weight: 800;
-    margin: 8px 0 5px 4px;
+    margin: 10px 0 6px 4px;
   }
-  #we4all-win-dock button.dock-btn {
+  .win-nav-btn {
     width: 100%;
     text-align: left;
-    background: rgba(15, 23, 42, 0.78);
+    background: rgba(15, 23, 42, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.22);
     color: #e2e8f0;
     border-radius: 10px;
-    padding: 8px 10px;
+    padding: 7px 10px;
     margin-bottom: 5px;
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
-    transition: all 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    transition: all 0.15s ease;
   }
-  #we4all-win-dock button.dock-btn:hover {
-    background: rgba(16, 185, 129, 0.2);
+  .win-nav-btn:hover {
+    background: rgba(16, 185, 129, 0.22);
     border-color: #34d399;
     color: #ffffff;
   }
-  #we4all-win-dock button.dock-btn-admin {
-    background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
-    border-color: #fbbf24;
-    color: #020617;
-    font-weight: 900;
-  }
-  #we4all-win-dock button.dock-btn-admin:hover {
-    background: #fbbf24;
-    color: #020617;
-  }
-  #we4all-win-dock .dock-footer {
-    border-top: 1px solid rgba(148, 163, 184, 0.2);
-    padding-top: 8px;
-    font-size: 10px;
-    color: #64748b;
+  .win-card-box {
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 12px;
+    padding: 10px;
+    margin-bottom: 8px;
+    font-size: 11px;
   }
 `;
 
-const WINDOWS_DOCK_JS = `
-  (function() {
-    if (localStorage.getItem("we4all_win_widescreen") !== "false") {
-      document.body.classList.add("we4all-win-widescreen");
+const WINDOWS_WORKSTATION_JS = `
+  (function () {
+    if (document.getElementById("we4all-win-left-rail")) return;
+
+    // Helper: click any button or tab inside the React app matching text
+    function clickAppButtonByText(patterns) {
+      const buttons = Array.from(document.querySelectorAll("button, a"));
+      for (const pat of patterns) {
+        const found = buttons.find((b) => (b.textContent || "").toLowerCase().includes(pat.toLowerCase()));
+        if (found) {
+          found.click();
+          return true;
+        }
+      }
+      return false;
     }
 
-    if (!document.getElementById("we4all-win-dock")) {
-      const dock = document.createElement("aside");
-      dock.id = "we4all-win-dock";
-      dock.innerHTML = \`
-        <div>
-          <div class="dock-brand">
-            <div class="dock-title">WE4ALL WINDOWS</div>
-            <div class="dock-sub">Live Web Console &bull; Adilabad</div>
+    // Helper: quick-fill portal credentials inside the Account -> Portal Login form
+    window.we4allQuickPortalFill = function (roleLabel, identifier, secret, isFounder) {
+      if (isFounder) {
+        clickAppButtonByText(["Admin Console", "Founder", "Admin"]);
+        setTimeout(() => {
+          const inputs = Array.from(document.querySelectorAll("input"));
+          const userInp = inputs.find((i) => (i.placeholder || "").toLowerCase().includes("founder") || i.autocomplete === "username");
+          const passInp = inputs.find((i) => i.type === "password");
+          if (userInp && passInp) {
+            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+            nativeSetter.call(userInp, identifier);
+            userInp.dispatchEvent(new Event("input", { bubbles: true }));
+            nativeSetter.call(passInp, secret);
+            passInp.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        }, 250);
+        return;
+      }
+
+      // Open Account tab, then Portal Login sub-tab
+      clickAppButtonByText(["Account", "Profile"]);
+      setTimeout(() => {
+        clickAppButtonByText(["Portal Login", "Sign in"]);
+        setTimeout(() => {
+          const inputs = Array.from(document.querySelectorAll("input"));
+          const idInput = inputs.find((i) => (i.placeholder || "").toLowerCase().includes("mobile") || (i.placeholder || "").toLowerCase().includes("email") || i.type === "tel" || i.type === "text");
+          const pinInput = inputs.find((i) => i.type === "password");
+          if (idInput && pinInput) {
+            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+            nativeSetter.call(idInput, identifier);
+            idInput.dispatchEvent(new Event("input", { bubbles: true }));
+            nativeSetter.call(pinInput, secret);
+            pinInput.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        }, 200);
+      }, 200);
+    };
+
+    // 1. Top Bar
+    const topBar = document.createElement("header");
+    topBar.id = "we4all-win-topbar";
+    topBar.innerHTML = \`
+      <div>🖥️ <strong>WE4ALL Windows 11 Desktop Edition</strong> &bull; All 6 Portals Adapted for Widescreen Workstation</div>
+      <div style="display:flex;gap:12px;align-items:center;">
+        <span id="win-top-ota-pill" style="background:#065f46;color:#6ee7b7;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:800;">OTA: Checking...</span>
+        <span style="color:#94a3b8;">Shortcuts: <strong>Ctrl+N</strong> Parallel Window &bull; <strong>Ctrl+P</strong> Print Invoice</span>
+      </div>
+    \`;
+    document.body.appendChild(topBar);
+
+    // 2. Left 6-Portal Navigation Rail
+    const leftRail = document.createElement("aside");
+    leftRail.id = "we4all-win-left-rail";
+    leftRail.innerHTML = \`
+      <div>
+        <div style="border-bottom:1px solid rgba(52,211,153,0.3);padding-bottom:10px;margin-bottom:8px;">
+          <div style="font-size:15px;font-weight:900;color:#34d399;">WE4ALL WORKSTATION</div>
+          <div style="font-size:10px;color:#a7f3d0;font-weight:600;">Windows Native 6-Portal Suite</div>
+        </div>
+
+        <div class="win-sec-hdr">1. Consumer & Modules</div>
+        <button class="win-nav-btn" id="win-nav-store"><span>🛒 Storefront & Categories</span><span>Home</span></button>
+        <button class="win-nav-btn" id="win-nav-services"><span>⚡ 1-Hr Home Services</span><span>Book</span></button>
+        <button class="win-nav-btn" id="win-nav-rides"><span>🛵 P2P Parcel & Rides</span><span>Radar</span></button>
+        <button class="win-nav-btn" id="win-nav-labour"><span>👷 Labour & Mistri Adda</span><span>Hire</span></button>
+        <button class="win-nav-btn" id="win-nav-orders"><span>📦 My Orders & GST Bills</span><span>Ledger</span></button>
+
+        <div class="win-sec-hdr">2. Direct 6-Portal Switcher</div>
+        <button class="win-nav-btn" style="background:linear-gradient(90deg,#f59e0b,#d97706);color:#020617;font-weight:900;border-color:#fbbf24;" onclick="window.we4allQuickPortalFill('Founder','KhodayAnvesh','We4AllFounder@2026',true)">
+          <span>🛡️ 6. Founder Admin Console</span><span>Login</span>
+        </button>
+        <button class="win-nav-btn" onclick="window.we4allQuickPortalFill('Customer','9848011111','123456',false)">
+          <span>🛍️ 1. Customer Portal</span><span>9848011111</span>
+        </button>
+        <button class="win-nav-btn" onclick="window.we4allQuickPortalFill('Merchant','9848022222','123456',false)">
+          <span>🏪 2. Merchant POS Desk</span><span>9848022222</span>
+        </button>
+        <button class="win-nav-btn" onclick="window.we4allQuickPortalFill('Service','9848033333','123456',false)">
+          <span>🔧 3. 1-Hr Service Portal</span><span>9848033333</span>
+        </button>
+        <button class="win-nav-btn" onclick="window.we4allQuickPortalFill('Captain','9848044444','123456',false)">
+          <span>🛵 4. Delivery Captain</span><span>9848044444</span>
+        </button>
+        <button class="win-nav-btn" onclick="window.we4allQuickPortalFill('Labour','9848055555','123456',false)">
+          <span>🧱 5. Labour & Mistri</span><span>9848055555</span>
+        </button>
+
+        <div class="win-sec-hdr">3. Multi-Window Desktop</div>
+        <button class="win-nav-btn" id="win-spawn-parallel" style="border-color:#38bdf8;color:#7dd3fc;">
+          <span>➕ Open Parallel Portal Window</span><span>Ctrl+N</span>
+        </button>
+      </div>
+
+      <div style="border-top:1px solid rgba(148,163,184,0.2);padding-top:8px;font-size:10px;color:#94a3b8;">
+        <div style="color:#34d399;font-weight:800;">● ADILABAD MARKET (m_393_1571)</div>
+        <div>Android + Windows Synced Core</div>
+      </div>
+    \`;
+    document.body.appendChild(leftRail);
+
+    // 3. Right Backend Telemetry, POS & OTA Hot-Swap Dock
+    const rightDock = document.createElement("aside");
+    rightDock.id = "we4all-win-right-dock";
+    rightDock.innerHTML = \`
+      <div>
+        <div style="border-bottom:1px solid rgba(56,189,248,0.3);padding-bottom:10px;margin-bottom:8px;">
+          <div style="font-size:14px;font-weight:900;color:#38bdf8;">CLOUD & OTA ENGINE</div>
+          <div style="font-size:10px;color:#bae6fd;font-weight:600;">Live Frontend ↔ Backend Monitor</div>
+        </div>
+
+        <div class="win-sec-hdr">Over-The-Air (OTA) Auto-Updater</div>
+        <div class="win-card-box">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="color:#94a3b8;">Active Bundle:</span>
+            <strong id="win-ota-ver" style="color:#34d399;">Checking...</strong>
           </div>
-
-          <div class="dock-sec-label">Web Console Navigation</div>
-          <button class="dock-btn dock-btn-admin" id="win-btn-admin">
-            <span>Founder Admin Console</span>
-            <span>/admin</span>
-          </button>
-          <button class="dock-btn" id="win-btn-home">
-            <span>All 5 Partner & User Portals</span>
-            <span>Home</span>
-          </button>
-
-          <div class="dock-sec-label">Multi-Window Workstation</div>
-          <button class="dock-btn" id="win-btn-parallel-admin">
-            <span>+ Separate Admin Window</span>
-            <span>New</span>
-          </button>
-          <button class="dock-btn" id="win-btn-parallel-portal">
-            <span>+ Separate Portal Window</span>
-            <span>New</span>
-          </button>
-
-          <div class="dock-sec-label">Desktop Tools & View</div>
-          <button class="dock-btn" id="win-btn-layout">
-            <span>Toggle Widescreen / Mobile Fit</span>
-            <span>View</span>
-          </button>
-          <button class="dock-btn" id="win-btn-print">
-            <span>Print / Export PDF Invoice</span>
-            <span>Ctrl+P</span>
-          </button>
-          <button class="dock-btn" id="win-btn-reload">
-            <span>Sync Live Cloud Ledger</span>
-            <span>Ctrl+R</span>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="color:#94a3b8;">Bundle Source:</span>
+            <strong id="win-ota-src" style="color:#38bdf8;">Local</strong>
+          </div>
+          <div style="font-size:10px;color:#cbd5e1;margin-bottom:8px;" id="win-ota-msg">Verifying cloud release manifest...</div>
+          <button id="win-btn-ota-check" style="width:100%;background:#10b981;color:#020617;border:none;border-radius:8px;padding:7px;font-size:11px;font-weight:900;cursor:pointer;">
+            🔄 Check & Apply OTA Update Now
           </button>
         </div>
 
-        <div class="dock-footer">
-          <div style="color:#34d399;font-weight:800;margin-bottom:2px;">● LIVE CLOUD CONNECTED</div>
-          <div>Supabase: bdmbziwazpuzbukazmug</div>
-          <div>Market: m_393_1571 (Adilabad)</div>
+        <div class="win-sec-hdr">Frontend ↔ Supabase Connection</div>
+        <div class="win-card-box">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="color:#94a3b8;">Supabase REST API:</span>
+            <strong id="win-db-status" style="color:#34d399;">Checking...</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="color:#94a3b8;">Cloud Latency:</span>
+            <strong id="win-db-latency" style="color:#fbbf24;">-- ms</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="color:#94a3b8;">Approved Partners:</span>
+            <strong id="win-db-partners" style="color:#f8fafc;">--</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="color:#94a3b8;">Approved Products:</span>
+            <strong id="win-db-products" style="color:#f8fafc;">--</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="color:#94a3b8;">Active Markets:</span>
+            <strong id="win-db-markets" style="color:#f8fafc;">--</strong>
+          </div>
+          <button id="win-btn-db-ping" style="width:100%;background:#1e293b;color:#38bdf8;border:1px solid rgba(56,189,248,0.4);border-radius:8px;padding:6px;font-size:10px;font-weight:800;cursor:pointer;">
+            ⚡ Re-Verify All Backend Connections
+          </button>
         </div>
-      \`;
-      document.body.appendChild(dock);
 
-      document.getElementById("win-btn-admin").addEventListener("click", () => {
-        if (window.WE4ALL_DESKTOP) window.WE4ALL_DESKTOP.navigateUrl("/admin");
-        else window.location.href = "/admin";
-      });
-      document.getElementById("win-btn-home").addEventListener("click", () => {
-        if (window.WE4ALL_DESKTOP) window.WE4ALL_DESKTOP.navigateUrl("/");
-        else window.location.href = "/";
-      });
-      document.getElementById("win-btn-parallel-admin").addEventListener("click", () => {
-        if (window.WE4ALL_DESKTOP) window.WE4ALL_DESKTOP.openParallelWindow("/admin", "WE4ALL Founder Admin Console (Isolated Session)");
-      });
-      document.getElementById("win-btn-parallel-portal").addEventListener("click", () => {
-        if (window.WE4ALL_DESKTOP) window.WE4ALL_DESKTOP.openParallelWindow("/", "WE4ALL Partner / Customer Portal (Isolated Session)");
-      });
-      document.getElementById("win-btn-layout").addEventListener("click", () => {
-        const isWide = document.body.classList.toggle("we4all-win-widescreen");
-        localStorage.setItem("we4all_win_widescreen", isWide ? "true" : "false");
-      });
-      document.getElementById("win-btn-print").addEventListener("click", () => {
-        if (window.WE4ALL_DESKTOP) window.WE4ALL_DESKTOP.printPage();
-        else window.print();
-      });
-      document.getElementById("win-btn-reload").addEventListener("click", () => {
-        window.location.reload();
-      });
+        <div class="win-sec-hdr">Windows POS & Office Actions</div>
+        <button class="win-nav-btn" id="win-btn-print"><span>🖨️ Print GST Bill / Export PDF</span><span>Ctrl+P</span></button>
+        <button class="win-nav-btn" id="win-btn-refresh"><span>🔄 Reload Active Workspace</span><span>Ctrl+R</span></button>
+      </div>
+
+      <div style="border-top:1px solid rgba(148,163,184,0.2);padding-top:8px;font-size:10px;color:#64748b;">
+        <div>Project: bdmbziwazpuzbukazmug</div>
+        <div>OTA Channel: Production (SHA-256)</div>
+      </div>
+    \`;
+    document.body.appendChild(rightDock);
+
+    // Wire Left Rail Navigation Buttons
+    document.getElementById("win-nav-store").addEventListener("click", () => clickAppButtonByText(["Home", "Shop", "Store"]));
+    document.getElementById("win-nav-services").addEventListener("click", () => clickAppButtonByText(["Service", "1-Hr", "Repair"]));
+    document.getElementById("win-nav-rides").addEventListener("click", () => clickAppButtonByText(["Ride", "Parcel", "P2P"]));
+    document.getElementById("win-nav-labour").addEventListener("click", () => clickAppButtonByText(["Labour", "Mistri", "Adda"]));
+    document.getElementById("win-nav-orders").addEventListener("click", () => clickAppButtonByText(["Orders", "History", "Bookings"]));
+
+    document.getElementById("win-spawn-parallel").addEventListener("click", () => {
+      if (window.WE4ALL_DESKTOP) window.WE4ALL_DESKTOP.openParallelWindow("WE4ALL Parallel Portal Workstation");
+    });
+    document.getElementById("win-btn-print").addEventListener("click", () => {
+      if (window.WE4ALL_DESKTOP) window.WE4ALL_DESKTOP.printPage();
+      else window.print();
+    });
+    document.getElementById("win-btn-refresh").addEventListener("click", () => window.location.reload());
+
+    // Wire Live Backend Verification
+    async function runBackendDiagnostics() {
+      const statusEl = document.getElementById("win-db-status");
+      statusEl.textContent = "Pinging...";
+      if (window.WE4ALL_DIAGNOSTICS) {
+        const res = await window.WE4ALL_DIAGNOSTICS.verifyBackendAndOta();
+        statusEl.textContent = res.supabaseRestOk ? "ONLINE (RLS OK)" : "OFFLINE";
+        statusEl.style.color = res.supabaseRestOk ? "#34d399" : "#f87171";
+        document.getElementById("win-db-latency").textContent = res.latencyMs + " ms";
+        document.getElementById("win-db-partners").textContent = res.partnersCount + " Verified";
+        document.getElementById("win-db-products").textContent = res.catalogueCount + " Live Items";
+        document.getElementById("win-db-markets").textContent = res.marketsCount + " Zones";
+      }
     }
+    document.getElementById("win-btn-db-ping").addEventListener("click", runBackendDiagnostics);
+    setTimeout(runBackendDiagnostics, 800);
+
+    // Wire OTA Status & 1-Click Hot-Swap Update
+    async function refreshOtaStatus(triggerCheck = false, force = false) {
+      if (!window.WE4ALL_DESKTOP) return;
+      const msgEl = document.getElementById("win-ota-msg");
+      const verEl = document.getElementById("win-ota-ver");
+      const srcEl = document.getElementById("win-ota-src");
+      const pillEl = document.getElementById("win-top-ota-pill");
+      try {
+        const info = await window.WE4ALL_DESKTOP.getOtaStatus();
+        verEl.textContent = "v" + info.activeVersion;
+        srcEl.textContent = info.source;
+        pillEl.textContent = "OTA Ready: v" + info.activeVersion + " (" + info.source + ")";
+
+        if (triggerCheck) {
+          msgEl.textContent = "Checking cloud OTA manifest & SHA-256...";
+          const res = await window.WE4ALL_DESKTOP.checkOtaUpdate(force);
+          verEl.textContent = "v" + res.currentVersion;
+          srcEl.textContent = res.source;
+          msgEl.textContent = res.message;
+          pillEl.textContent = "OTA Synced: v" + res.currentVersion;
+        }
+      } catch (e) {
+        msgEl.textContent = "OTA check note: " + e.message;
+      }
+    }
+
+    document.getElementById("win-btn-ota-check").addEventListener("click", () => refreshOtaStatus(true, true));
+    setTimeout(() => refreshOtaStatus(true, false), 1200);
   })();
 `;
 
-function injectDesktopShell(win) {
+function attachWorkstationEnhancements(win) {
   win.webContents.on("did-finish-load", () => {
-    win.webContents.insertCSS(WINDOWS_DOCK_CSS).catch(() => {});
-    win.webContents.executeJavaScript(WINDOWS_DOCK_JS).catch(() => {});
+    win.webContents.insertCSS(WINDOWS_WORKSTATION_CSS).catch(() => {});
+    win.webContents.executeJavaScript(WINDOWS_WORKSTATION_JS).catch(() => {});
   });
 }
 
-function loadConsoleTarget(win, targetPath = "/") {
-  const fullLiveUrl = LIVE_WEB_CONSOLE_URL + (targetPath.startsWith("/") ? targetPath : "/" + targetPath);
-  win.loadURL(fullLiveUrl).catch(() => {
-    // Automatic offline fallback to local bundled dist/index.html if internet is disconnected
-    const localIndex = path.join(__dirname, "..", "dist", "index.html");
-    win.loadFile(localIndex);
-  });
+function loadActiveBundle(win) {
+  const packagedVer = getPackagedVersion();
+  const active = getActiveIndexHtml(app, packagedVer);
+  win.loadFile(active.indexPath);
 }
 
-function createParallelWindow(targetPath = "/", customTitle = "WE4ALL Parallel Portal Window") {
-  // Uses a fresh isolated partition so you can log into Merchant in Window 1 and Founder Admin in Window 2 simultaneously
-  const partitionName = "persist:we4all_slot_" + Date.now();
+function createParallelWindow(customTitle = "WE4ALL Parallel Portal Workstation") {
+  const partitionName = "persist:we4all_win_slot_" + Date.now();
   const childWin = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 920,
-    minHeight: 680,
+    width: 1440,
+    height: 900,
+    minWidth: 1100,
+    minHeight: 720,
     title: customTitle,
     backgroundColor: "#020617",
     autoHideMenuBar: false,
@@ -220,8 +435,8 @@ function createParallelWindow(targetPath = "/", customTitle = "WE4ALL Parallel P
       nodeIntegration: false
     }
   });
-  injectDesktopShell(childWin);
-  loadConsoleTarget(childWin, targetPath);
+  attachWorkstationEnhancements(childWin);
+  loadActiveBundle(childWin);
 }
 
 function buildWindowsMenu(win) {
@@ -230,60 +445,56 @@ function buildWindowsMenu(win) {
       label: "File",
       submenu: [
         {
-          label: "Open Parallel Portal Window (Isolated Login)",
+          label: "Open Parallel Portal Window (Isolated Session)",
           accelerator: "CmdOrCtrl+N",
-          click: () => createParallelWindow("/", "WE4ALL Parallel Portal Window")
+          click: () => createParallelWindow("WE4ALL Parallel Portal Workstation")
         },
         {
-          label: "Open Parallel Founder Admin Window",
-          accelerator: "CmdOrCtrl+Shift+A",
-          click: () => createParallelWindow("/admin", "WE4ALL Founder Admin Console")
-        },
-        { type: "separator" },
-        {
-          label: "Print / Save GST Invoice as PDF",
+          label: "Print GST Tax Invoice / Export PDF",
           accelerator: "CmdOrCtrl+P",
           click: () => win.webContents.print({ printBackground: true })
         },
         { type: "separator" },
-        { role: "quit", label: "Exit WE4ALL Windows App" }
+        { role: "quit", label: "Exit WE4ALL Windows Workstation" }
       ]
     },
     {
-      label: "Web Console Navigation",
+      label: "OTA Updates & Cloud",
       submenu: [
         {
-          label: "Go to Storefront & All 5 Partner Portals (/)",
-          accelerator: "CmdOrCtrl+1",
-          click: () => loadConsoleTarget(win, "/")
+          label: "Check & Apply Over-The-Air (OTA) Update Now",
+          accelerator: "CmdOrCtrl+U",
+          click: async () => {
+            try {
+              const res = await checkAndApplyOtaUpdate(app, getPackagedVersion(), true);
+              loadActiveBundle(win);
+              dialog.showMessageBox(win, {
+                type: "info",
+                title: "WE4ALL OTA Updater",
+                message: res.message,
+                detail: "Active Version: v" + res.currentVersion + "\nSource: " + res.source + "\nSHA-256: " + (res.sha256 || "Verified")
+              });
+            } catch (e) {
+              dialog.showErrorBox("OTA Update Check", e.message);
+            }
+          }
         },
         {
-          label: "Go to Founder Admin Console (/admin)",
-          accelerator: "CmdOrCtrl+2",
-          click: () => loadConsoleTarget(win, "/admin")
-        },
-        { type: "separator" },
-        {
-          label: "Reload Live Web Console",
+          label: "Reload Workstation",
           accelerator: "CmdOrCtrl+R",
-          click: () => win.reload()
+          click: () => loadActiveBundle(win)
         }
       ]
     },
     {
       label: "View",
       submenu: [
-        {
-          label: "Toggle Widescreen / Standard App Width",
-          accelerator: "CmdOrCtrl+W",
-          click: () => win.webContents.executeJavaScript('document.getElementById("win-btn-layout")?.click();')
-        },
         { role: "togglefullscreen", label: "Toggle Fullscreen (F11)" },
         { role: "zoomIn", label: "Zoom In (Ctrl++)" },
         { role: "zoomOut", label: "Zoom Out (Ctrl+-)" },
-        { role: "resetZoom", label: "Actual Size (Ctrl+0)" },
+        { role: "resetZoom", label: "Reset Zoom (Ctrl+0)" },
         { type: "separator" },
-        { role: "toggleDevTools", label: "Developer Console" }
+        { role: "toggleDevTools", label: "Developer Diagnostics" }
       ]
     }
   ];
@@ -292,11 +503,11 @@ function buildWindowsMenu(win) {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1420,
-    height: 900,
-    minWidth: 960,
-    minHeight: 700,
-    title: "WE4ALL VocalForLocal Super-App — Live Windows Web Console",
+    width: 1520,
+    height: 920,
+    minWidth: 1150,
+    minHeight: 740,
+    title: "WE4ALL VocalForLocal Super-App — Windows 11 Desktop Workstation",
     backgroundColor: "#020617",
     autoHideMenuBar: false,
     webPreferences: {
@@ -307,13 +518,10 @@ function createMainWindow() {
   });
 
   buildWindowsMenu(mainWindow);
-  injectDesktopShell(mainWindow);
-  loadConsoleTarget(mainWindow, "/");
+  attachWorkstationEnhancements(mainWindow);
+  loadActiveBundle(mainWindow);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(LIVE_WEB_CONSOLE_URL)) {
-      return { action: "allow" };
-    }
     if (url.startsWith("http:") || url.startsWith("https:") || url.startsWith("upi:")) {
       shell.openExternal(url);
       return { action: "deny" };
@@ -327,13 +535,21 @@ ipcMain.on("we4all:print", (event) => {
   if (win) win.webContents.print({ printBackground: true });
 });
 
-ipcMain.on("we4all:navigate", (event, targetPath) => {
-  const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
-  if (win) loadConsoleTarget(win, String(targetPath || "/"));
+ipcMain.on("we4all:parallel-window", (_event, payload) => {
+  createParallelWindow(payload?.title || "WE4ALL Parallel Portal Workstation");
 });
 
-ipcMain.on("we4all:parallel-window", (_event, payload) => {
-  createParallelWindow(payload?.targetPath || "/", payload?.title || "WE4ALL Parallel Window");
+ipcMain.handle("we4all:ota-status", () => {
+  return getActiveIndexHtml(app, getPackagedVersion());
+});
+
+ipcMain.handle("we4all:ota-check", async (event, force) => {
+  const res = await checkAndApplyOtaUpdate(app, getPackagedVersion(), Boolean(force));
+  if (res.updated) {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    if (win) setTimeout(() => loadActiveBundle(win), 400);
+  }
+  return res;
 });
 
 app.whenReady().then(() => {
