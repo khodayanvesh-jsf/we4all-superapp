@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WE4ALL VocalForLocal Super-App — Windows Desktop Edition</title>
+  <style>
+    :root {
+      --bg-dark: #020617;
+      --bg-panel: #0f172a;
+      --bg-card: #1e293b;
+      --border: #334155;
+      --accent: #10b981;
+      --accent-hover: #059669;
+      --sky: #38bdf8;
+      --amber: #f59e0b;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-dark);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 56px 1fr 28px;
+      overflow: hidden;
+      user-select: none;
+    }
+    /* Top Windows Command Ribbon */
+    .win-ribbon {
+      background: linear-gradient(90deg, #064e3b 0%, #0f172a 35%, #0f172a 100%);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      gap: 14px;
+    }
+    .brand-box { display: flex; align-items: center; gap: 12px; }
+    .brand-logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--accent); color: #020617;
+      font-weight: 900; font-size: 15px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .brand-title { font-size: 15px; font-weight: 900; color: #34d399; letter-spacing: 0.3px; }
+    .brand-sub { font-size: 11px; color: #a7f3d0; }
+    .portal-tabs { display: flex; gap: 6px; flex-wrap: nowrap; }
+    .portal-tab {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid var(--border);
+      color: #cbd5e1;
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .portal-tab:hover { border-color: var(--accent); color: #fff; }
+    .portal-tab.active {
+      background: var(--accent);
+      color: #020617;
+      border-color: #34d399;
+      font-weight: 900;
+    }
+    .portal-tab.admin-tab.active {
+      background: var(--amber);
+      border-color: #fbbf24;
+      color: #020617;
+    }
+    .ribbon-right { display: flex; align-items: center; gap: 10px; }
+    .badge-pill {
+      background: #065f46; border: 1px solid #10b981; color: #a7f3d0;
+      padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 800;
+    }
+    .btn {
+      background: var(--accent); color: #020617; border: none;
+      padding: 7px 13px; border-radius: 8px; font-size: 12px; font-weight: 800;
+      cursor: pointer; transition: 0.15s;
+    }
+    .btn:hover { background: #34d399; }
+    .btn-sec {
+      background: var(--bg-card); color: var(--text); border: 1px solid var(--border);
+      padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+    .btn-sec:hover { border-color: var(--sky); color: var(--sky); }
+    .btn-amber { background: var(--amber); color: #020617; }
+    .btn-danger { background: var(--danger); color: #fff; }
+
+    /* Main 3-Column Windows Desktop Workspace */
+    .win-workspace {
+      display: grid;
+      grid-template-columns: 245px 1fr 340px;
+      height: 100%;
+      overflow: hidden;
+    }
+    /* Left Sidebar Navigation Tree */
+    .win-sidebar {
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      padding: 14px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow-y: auto;
+    }
+    .nav-group-title {
+      font-size: 10px; font-weight: 900; text-transform: uppercase;
+      color: var(--muted); letter-spacing: 0.8px; margin: 12px 0 6px 6px;
+    }
+    .nav-item {
+      width: 100%; text-align: left;
+      background: transparent; border: 1px solid transparent;
+      color: #cbd5e1; padding: 8px 10px; border-radius: 8px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .nav-item:hover { background: rgba(30, 41, 59, 0.8); color: #fff; }
+    .nav-item.active {
+      background: rgba(16, 185, 129, 0.16);
+      border-color: rgba(16, 185, 129, 0.45);
+      color: #34d399; font-weight: 800;
+    }
+    .nav-count {
+      background: var(--bg-card); color: var(--muted);
+      padding: 1px 7px; border-radius: 10px; font-size: 10px; font-weight: 800;
+    }
+
+    /* Center Primary Desktop Canvas */
+    .win-center {
+      padding: 18px 22px;
+      overflow-y: auto;
+      background: #060d1f;
+    }
+    .center-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    .kpi-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px;
+    }
+    .kpi-card {
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 14px;
+    }
+    .kpi-label { font-size: 11px; color: var(--muted); font-weight: 700; }
+    .kpi-val { font-size: 20px; font-weight: 900; color: var(--text); margin-top: 4px; }
+    .kpi-sub { font-size: 10px; color: #34d399; margin-top: 2px; font-weight: 700; }
+
+    /* Desktop Multi-Column Cards & Data Tables */
+    .desktop-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 14px;
+    }
+    .item-card {
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px; display: flex; flex-direction: column;
+      justify-content: space-between; gap: 10px; transition: 0.15s;
+    }
+    .item-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+    .data-table {
+      width: 100%; border-collapse: collapse; background: var(--bg-panel);
+      border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 12px;
+    }
+    .data-table th {
+      background: #1e293b; color: #94a3b8; text-align: left;
+      padding: 10px 12px; font-size: 11px; text-transform: uppercase;
+    }
+    .data-table td {
+      padding: 10px 12px; border-top: 1px solid var(--border); color: #e2e8f0;
+    }
+    .data-table tr:hover td { background: rgba(30, 41, 59, 0.5); }
+
+    /* Right Inspector / POS Cart / Live Cloud & OTA Telemetry */
+    .win-inspector {
+      background: var(--bg-panel);
+      border-left: 1px solid var(--border);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow-y: auto;
+      gap: 12px;
+    }
+    .panel-box {
+      background: rgba(2, 6, 23, 0.65);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .panel-title {
+      font-size: 12px; font-weight: 900; color: var(--sky);
+      margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .input-field, .select-field {
+      width: 100%; background: #020617; border: 1px solid var(--border);
+      color: #fff; padding: 7px 10px; border-radius: 8px; font-size: 12px; margin-bottom: 8px;
+    }
+    /* Bottom Windows Status Bar */
+    .win-statusbar {
+      background: #020617; border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; font-size: 11px; color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <!-- TOP WINDOWS COMMAND RIBBON -->
+  <header class="win-ribbon">
+    <div class="brand-box">
+      <div class="brand-logo">W4</div>
+      <div>
+        <div class="brand-title">WE4ALL WINDOWS DESKTOP</div>
+        <div class="brand-sub" id="top-market-label">Market: Adilabad Town (m_393_1571) &bull; 0% Commission</div>
+      </div>
+    </div>
+
+    <div class="portal-tabs" id="portal-tabs-bar">
+      <button class="portal-tab active" data-portal="consumer">🛍️ 1. Consumer Store</button>
+      <button class="portal-tab" data-portal="merchant">🏪 2. Merchant POS</button>
+      <button class="portal-tab" data-portal="service">🔧 3. 1-Hr Services</button>
+      <button class="portal-tab" data-portal="rider">🛵 4. Delivery & Rides</button>
+      <button class="portal-tab" data-portal="labour">👷 5. Labour Adda</button>
+      <button class="portal-tab admin-tab" data-portal="admin">🛡️ 6. Founder Admin</button>
+    </div>
+
+    <div class="ribbon-right">
+      <span class="badge-pill" id="active-user-pill">👤 Customer (9848011111)</span>
+      <button class="btn-sec" id="btn-parallel-win" title="Open another independent portal window (Ctrl+N)">➕ Parallel Window</button>
+      <button class="btn-sec" id="btn-print-win" title="Print GST Tax Invoice (Ctrl+P)">🖨️ Print PDF</button>
+    </div>
+  </header>
+
+  <!-- 3-PANE WINDOWS WORKSPACE -->
+  <main class="win-workspace">
+    <!-- LEFT NAVIGATION TREE -->
+    <aside class="win-sidebar">
+      <div id="sidebar-tree-container"></div>
+      <div class="panel-box" style="margin-top:12px;">
+        <div style="font-size:10px;font-weight:900;color:#34d399;margin-bottom:4px;">● SUPABASE CLOUD REALTIME</div>
+        <div style="font-size:11px;color:#cbd5e1;" id="sidebar-sync-text">Synced with Android & Web</div>
+      </div>
+    </aside>
+
+    <!-- CENTER DESKTOP WORKBENCH -->
+    <section class="win-center">
+      <div class="center-header">
+        <div>
+          <h1 style="font-size:20px;font-weight:900;" id="view-title">Adilabad Hyperlocal Storefront</h1>
+          <p style="font-size:12px;color:var(--muted);margin-top:2px;" id="view-subtitle">Browse verified local merchants, 1-hour home services, P2P parcel & rides</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="global-search-input" class="input-field" style="width:260px;margin:0;" placeholder="Search products, shops, services, orders..." />
+          <button class="btn" id="btn-refresh-cloud">🔄 Sync Cloud</button>
+        </div>
+      </div>
+
+      <!-- KPI ROW -->
+      <div class="kpi-grid" id="kpi-row"></div>
+
+      <!-- DYNAMIC PORTAL DESKTOP CONTENT -->
+      <div id="desktop-main-view"></div>
+    </section>
+
+    <!-- RIGHT ACTION INSPECTOR / POS CART / OTA & SUPABASE MONITOR -->
+    <aside class="win-inspector">
+      <div id="inspector-dynamic-pane"></div>
+
+      <div>
+        <!-- OTA AUTO-UPDATER PANEL -->
+        <div class="panel-box" style="margin-bottom:10px;">
+          <div class="panel-title">
+            <span>🔄 OVER-THE-AIR (OTA) UPDATER</span>
+            <span id="ota-source-badge" style="color:#34d399;font-size:10px;">READY</span>
+          </div>
+          <div style="font-size:11px;color:#cbd5e1;margin-bottom:4px;">
+            Installed Version: <strong id="ota-version-text" style="color:#fff;">v3.3.21</strong>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:8px;" id="ota-status-msg">
+            SHA-256 verified cloud channel ready.
+          </div>
+          <button class="btn" style="width:100%;" id="btn-check-ota">Check & Apply OTA Update (Ctrl+U)</button>
+        </div>
+
+        <!-- LIVE SUPABASE CONNECTION TELEMETRY -->
+        <div class="panel-box">
+          <div class="panel-title">
+            <span>⚡ FRONTEND ↔ SUPABASE CLOUD</span>
+            <span id="db-online-badge" style="color:#34d399;font-size:10px;">ONLINE</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:8px;">
+            <div>Latency: <strong id="db-lat-val" style="color:#fbbf24;">-- ms</strong></div>
+            <div>Market: <strong style="color:#34d399;">m_393_1571</strong></div>
+            <div>Partners: <strong id="db-part-val">--</strong></div>
+            <div>Catalogue: <strong id="db-cat-val">--</strong></div>
+          </div>
+          <button class="btn-sec" style="width:100%;" id="btn-verify-backend">Re-Verify Supabase & Edge Auth</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- BOTTOM WINDOWS STATUS BAR -->
+  <footer class="win-statusbar">
+    <div>🖥️ WE4ALL Windows Desktop Native Suite &bull; Market: Adilabad Town (m_393_1571) &bull; Geo-Ad Engine: 1st Local GPS &rarr; 2nd Telangana &rarr; 3rd Brand</div>
+    <div id="statusbar-right">Supabase RLS Active &bull; Press Ctrl+N for Parallel Portal Window &bull; Ctrl+P to Print GST Invoice</div>
+  </footer>
+
+  <script src="./windows-desktop.js"></script>
+</body>
+</html>

@@ -58,10 +58,10 @@ Remove-Item -Path (Join-Path $distDir "*.apk"), (Join-Path $distDir "*.exe"), (J
 
 $otaZipTemp = Join-Path $env:TEMP "we4all-ota-bundle-v$newVer.zip"
 if (Test-Path $otaZipTemp) { Remove-Item $otaZipTemp -Force }
-Compress-Archive -Path (Join-Path $distDir "*") -DestinationPath $otaZipTemp -Force
+Get-ChildItem -Path $distDir -Exclude "WE4ALL*.apk","ota-bundle.zip" | Compress-Archive -DestinationPath $otaZipTemp -Force
 
 $otaSha256 = (Get-FileHash -Path $otaZipTemp -Algorithm SHA256).Hash.ToLower()
-Copy-Item $otaZipTemp (Join-Path $distDir "ota-bundle.zip") -Force
+Copy-Item $otaZipTemp (Join-Path $distDir "ota-bundle.zip") -Force; Copy-Item $otaZipTemp (Join-Path $root "public\ota-bundle.zip") -Force
 
 $otaManifest = @{
     version = $newVer
