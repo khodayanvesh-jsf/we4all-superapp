@@ -19,7 +19,7 @@ Write-Host "`n[1/5] Bumping WE4ALL Version: v$oldVer (build $oldBuild) -> v$newV
 
 $exactFiles = @(
     $pkgPath,
-    (Join-Path $root "package-lock.json"),
+    
     $appGradlePath,
     (Join-Path $root "src\appVersion.js"),
     (Join-Path $root "src\version.js"),
