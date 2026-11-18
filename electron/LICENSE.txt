@@ -1,0 +1,17 @@
+WE4ALL VOCALFORLOCAL SUPER-APP - END USER LICENSE AGREEMENT (EULA) & TERMS OF SERVICE
+Effective Date: November 2026 | Jurisdiction: Adilabad, Telangana, India
+
+IMPORTANT - READ CAREFULLY BEFORE INSTALLING:
+By clicking "I Agree" and installing the WE4ALL VocalForLocal Super-App ("Software") on your Windows computer or Android device, you agree to be bound by the following Terms and Conditions:
+
+1. PLATFORM SCOPE & PORTAL AUTHORIZATION
+WE4ALL operates six (6) integrated portals: Consumer Storefront, Product Merchant Desk, 1-Hour Home Service Provider Portal, Delivery Captain & Bike/Auto/Cab Radar, Labour & Mistri Worksite Adda, and the Founder / Geo-Manager Admin Console. Partner portals require verified KYC documentation and Founder Admin approval before commercial activation.
+
+2. PAYMENTS, CASH ON DELIVERY (COD) & GST LEDGER COMPLIANCE
+Merchants and Service Providers are responsible for accurate stock quantities, pricing, and GST invoice declarations. Cash on Delivery (COD) and direct UPI collections must be confirmed truthfully inside the WE4ALL Order Ledger upon doorstep handoff.
+
+3. DATA PRIVACY, SECURITY & LOCATION SERVICES
+All account sessions, partner KYC documents, and cloud state snapshots are encrypted and protected by Supabase Row-Level Security (RLS). Delivery Captains opt into live GPS telemetry strictly during active duty shifts.
+
+4. ACCEPTANCE OF TERMS
+Click "I Agree" below to accept these Terms & Conditions and proceed with installing the WE4ALL VocalForLocal Super-App on your system.

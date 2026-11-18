@@ -1,0 +1,10 @@
+{
+  "name": "WE4ALL VocalForLocal Super-App",
+  "short_name": "WE4ALL",
+  "description": "6-Portal VocalForLocal Town Super-App for Shopping, 1-Hr Services, P2P Parcel, Rides & Labour Adda",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#10b981",
+  "orientation": "any"
+}

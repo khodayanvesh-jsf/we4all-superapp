@@ -15,3 +15,14 @@ supabase/.temp/
 # Local APK Releases & Backups
 releases/
 *.bak
+
+# Compiled Binaries & Build Outputs
+*.apk
+*.aab
+android/app/build/
+.env
+.env.local
+
+# Exclude large desktop/mobile installers from Git and Vercel source uploads
+*.exe
+/WE4ALL*.apk

@@ -1,0 +1,4 @@
+
+# Exclude large desktop/mobile installers from Git and Vercel source uploads
+*.exe
+/WE4ALL*.apk
