@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
     const publicClient = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: signedIn, error: signInError } = await publicClient.auth.signInWithPassword({ email: accountEmail, password });
     if (signInError || !signedIn?.session) {
-      return json({ ok: false, error: "Incorrect Founder password. Use We4AllFounder@2026." }, 401);
+      return json({ ok: false, error: "After first-use reset, use your new password (We4AllFounder@2026)." }, 401);
     }
 
     await admin.from("we4all_profiles").upsert({
