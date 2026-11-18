@@ -265,7 +265,9 @@
       otp: String(Math.floor(1000 + Math.random() * 9000)),
       createdAt: new Date().toLocaleTimeString()
     };
+    for (const c of cart) { const prd = state.products.find(p => p.id === c.id); if (prd) prd.stock = Math.max(0, prd.stock - c.qty); }
     state.orders.unshift(newOrder);
+    if (window.winTriggerDispatchAlert) window.winTriggerDispatchAlert({ id: newOrder.id, badge: 'NEW MERCHANT POS ORDER (' + newOrder.mode + ')', title: newOrder.items, detail: 'Amount: ₹' + newOrder.total + ' | Customer: ' + newOrder.customer + ' | OTP: ' + newOrder.otp, targetPortal: 'merchant', targetTab: 'POS Order Queue', btnLabel: 'Merchant POS' });
     cart = [];
     activeSubTab = "My Orders & Bills";
     saveState(state);
@@ -307,6 +309,7 @@
       if (vehicle === "4W" && w > 1000) { alert("4W Mini-Truck limit is 1000 kg!"); return; }
     }
     const baseFare = vehicle === "2W" ? 55 : (vehicle === "3W" ? 110 : 260);
+    if (window.winTriggerDispatchAlert) window.winTriggerDispatchAlert({ id: 'NEW-TRIP', badge: 'NEW CAPTAIN RADAR DISPATCH (' + vehicle + ')', title: kind + ': ' + (pickup || 'Adilabad') + ' -> ' + (drop || 'Destination'), detail: 'Fare: ₹' + baseFare + ' | Weight: ' + w + ' kg', targetPortal: 'rider', targetTab: 'All Dispatch Queues', btnLabel: 'Captain Radar' });
     state.ridesAndParcels.unshift({
       id: "TRP-" + Math.floor(100 + Math.random() * 900),
       kind,
@@ -477,7 +480,7 @@
                 <td><strong>${o.id}</strong></td><td>${o.merchant}</td><td>${o.items}</td>
                 <td><strong>${o.total}</strong></td><td>${o.mode}</td><td><code>${o.otp}</code></td>
                 <td><span class="badge-pill">${o.status}</span></td>
-                <td><button class="btn-sec" onclick="window.print()">🖨️ Print GST Bill</button></td>
+                <td><button class="btn-sec" onclick="window.winOpenThermalReceipt({id:'${o.id}',merchant:'${o.merchant}',customer:'${o.customer}',items:'${o.items}',total:${o.total},mode:'${o.mode}',otp:'${o.otp}',createdAt:'${o.createdAt}'})">🧾 80mm GST Receipt</button></td>
               </tr>`).join("")}
             </tbody>
           </table>`;
@@ -554,7 +557,7 @@
       // POS Order Queue
       view.innerHTML = `
         <table class="data-table">
-          <thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Amount</th><th>Payment / COD</th><th>Status</th><th>Merchant POS Action</th></tr></thead>
+          <thead><tr><th colspan="7" style="background:#064e3b;color:#a7f3d0;"><div style="display:flex;justify-content:space-between;align-items:center;"><span>🏪 MERCHANT POS LIVE ORDER & COD CASH DRAWER LEDGER</span><button class="btn" onclick="window.winExportGstCsv('MERCHANT_POS')">📊 Export GST Sales & COD CSV (Ctrl+E)</button></div></th></tr><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Amount</th><th>Payment / COD</th><th>Status</th><th>Merchant POS Action</th></tr></thead>
           <tbody>
             ${state.orders.map(o => `<tr>
               <td><strong>${o.id}</strong></td><td>${o.customer}</td><td>${o.items}</td>
@@ -638,7 +641,7 @@
     view.innerHTML = `
       <div class="panel-box" style="margin-bottom:14px;">
         <div class="panel-title">
-          <span>🛡️ FOUNDER ADMIN & GEO-MANAGER CONSOLE (KhodayAnvesh)</span>
+          <span>🛡️ FOUNDER ADMIN & GEO-MANAGER CONSOLE (KhodayAnvesh)</span><button class="btn" onclick="window.winExportGstCsv('FOUNDER_ADMIN')">📊 Export Full GST & COD Ledger (.CSV) [Ctrl+E]</button>
           <span class="badge-pill">Edge Auth: ${cloudStats.founderAuthOk ? "VERIFIED (we4all-founder-auth)" : "ACTIVE"}</span>
         </div>
         <div style="font-size:12px;color:#cbd5e1;">
@@ -667,10 +670,10 @@
     pane.innerHTML = `
       <div class="panel-box">
         <div class="panel-title">
-          <span>🛒 DESKTOP POS CART & CHECKOUT</span>
+          <span>🛒 POS CART & USB BARCODE (F2)</span>
           <span>${cart.reduce((s, c) => s + c.qty, 0)} Items</span>
         </div>
-        ${cart.length === 0 ? `<div style="font-size:11px;color:var(--muted);padding:10px 0;">Click "Add to Cart" on any product to generate an instant COD or Verified UPI order.</div>` : `
+        <div style="display:flex;gap:5px;margin-bottom:8px;"><input id="pos-barcode-input" class="input-field" style="margin:0;flex:1;" placeholder="Scan USB Barcode (e.g. 890101 or prd_101) [F2]" onkeydown="if(event.key==='Enter'){window.winScanBarcode(this.value);this.value='';}" /><button class="btn" onclick="const el=document.getElementById('pos-barcode-input');window.winScanBarcode(el.value);el.value='';">Scan</button></div><div id="pos-scan-status" style="font-size:10px;color:#38bdf8;margin-bottom:6px;">USB HID Scanner Ready (Codes: 890101 - 890112)</div>${cart.length === 0 ? `<div style="font-size:11px;color:var(--muted);padding:10px 0;">Click "Add to Cart" on any product to generate an instant COD or Verified UPI order.</div>` : `
           <div style="max-height:175px;overflow-y:auto;margin-bottom:8px;">
             ${cart.map(c => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid #1e293b;">
               <span>${c.title} (x${c.qty})</span>
@@ -757,4 +760,169 @@
   renderAll();
   verifySupabaseCloud();
   setTimeout(() => syncOtaPanel(false), 600);
+})();
+// --- USB BARCODE SCANNER & 80MM THERMAL GST RECEIPT ENGINE ---
+function playPosBeep() {
+  try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const g = ctx.createGain(); osc.type = "sine"; osc.frequency.value = 1480; g.gain.value = 0.08; osc.connect(g); g.connect(ctx.destination); osc.start(); setTimeout(() => { osc.stop(); ctx.close(); }, 75); } catch {}
+}
+window.winScanBarcode = function(rawCode) {
+  const code = String(rawCode || "").trim().toLowerCase(); if (!code) return false;
+  const mapIdx = code.startsWith("890") ? "prd_" + code.slice(3) : code;
+  const statusEl = document.getElementById("pos-scan-status");
+  if (typeof window.winAddToCart === "function") {
+    window.winAddToCart(mapIdx); playPosBeep();
+    if (statusEl) { statusEl.textContent = "✔ Scanned: " + code.toUpperCase(); statusEl.style.color = "#34d399"; }
+    return true;
+  }
+  return false;
+};
+window.winOpenThermalReceipt = function(orderObj) {
+  const ord = orderObj || { id: "ORD-POS-" + Math.floor(1000 + Math.random()*9000), merchant: "Sri Laxmi Supermart", customer: "9848011111", items: "POS Counter Sale", total: 555, mode: "COD / POS", otp: "4829", createdAt: new Date().toLocaleString() };
+  const total = Number(ord.total || 0); const taxable = (total / 1.05).toFixed(2); const cgst = ((total - taxable) / 2).toFixed(2);
+  const box = document.getElementById("thermal-receipt-80mm"); if (!box) { window.print(); return; }
+  box.innerHTML = `<div class="rcp-center"><strong style="font-size:13px;">WE4ALL VOCALFORLOCAL POS</strong><br/><span>Adilabad Market (m_393_1571)</span><br/><span>Merchant: ${ord.merchant}</span><br/><span>GSTIN: 36AABCW4412F1Z8</span></div>` +
+    `<div class="rcp-hr"></div><div>Bill No: <strong>${ord.id}</strong><br/>Date: ${ord.createdAt || new Date().toLocaleTimeString()}<br/>Customer: ${ord.customer}</div><div class="rcp-hr"></div>` +
+    `<table><thead><tr><th>ITEM DETAILS</th><th style="text-align:right;">AMT</th></tr></thead><tbody><tr><td>${ord.items}</td><td style="text-align:right;">${total.toFixed(2)}</td></tr></tbody></table>` +
+    `<div class="rcp-hr"></div><table><tr><td>Taxable Value:</td><td style="text-align:right;">${taxable}</td></tr><tr><td>CGST (2.5%):</td><td style="text-align:right;">${cgst}</td></tr><tr><td>SGST (2.5%):</td><td style="text-align:right;">${cgst}</td></tr><tr><td><strong>GRAND TOTAL:</strong></td><td style="text-align:right;"><strong>${total.toFixed(2)}</strong></td></tr></table>` +
+    `<div class="rcp-hr"></div><div class="rcp-center">Mode: <strong>${ord.mode}</strong> | OTP: <strong>${ord.otp}</strong><br/>0% Platform Commission &bull; VocalForLocal<br/>*** THANK YOU - VISIT AGAIN ***</div>`;
+  document.getElementById("thermal-preview-modal").style.display = "flex";
+};
+(function initUsbScannerWedge() {
+  let buf = ""; let lastKeyTime = 0;
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "F2") { e.preventDefault(); document.getElementById("pos-barcode-input")?.focus(); return; }
+    const now = Date.now(); if (now - lastKeyTime > 65) buf = ""; lastKeyTime = now;
+    if (e.key === "Enter" && buf.length >= 5 && document.activeElement?.id !== "global-search-input") { window.winScanBarcode(buf); buf = ""; }
+    else if (e.key.length === 1) { buf += e.key; }
+  });
+})();
+// --- 1-CLICK GST SALES & COD LEDGER CSV EXPORT ENGINE (Ctrl+E) ---
+window.winExportGstCsv = function(portalScope) {
+  const rows = [
+    ["Order_ID","Timestamp","Market_Zone","Merchant_Name","Merchant_GSTIN","Customer_Mobile","Items_Ordered","Payment_Mode","Order_Status","Delivery_OTP","Taxable_Value_INR","CGST_2.5_INR","SGST_2.5_INR","Total_Amount_INR","Platform_Fee_INR"]
+  ];
+  let sumTaxable = 0, sumCgst = 0, sumSgst = 0, sumTotal = 0, sumCod = 0, sumUpi = 0;
+  const list = (typeof state !== "undefined" && Array.isArray(state.orders)) ? state.orders : [];
+  for (const o of list) {
+    const gross = Number(o.total || 0);
+    const taxable = Number((gross / 1.05).toFixed(2));
+    const halfGst = Number(((gross - taxable) / 2).toFixed(2));
+    sumTaxable += taxable; sumCgst += halfGst; sumSgst += halfGst; sumTotal += gross;
+    if (String(o.mode).includes("COD")) sumCod += gross; else sumUpi += gross;
+    rows.push([
+      o.id, o.createdAt || "Today", "m_393_1571 (Adilabad)", o.merchant, "36AABCW4412F1Z8",
+      o.customer, `"${String(o.items || "").replace(/"/g, '""')}"`, o.mode, o.status, o.otp,
+      taxable.toFixed(2), halfGst.toFixed(2), halfGst.toFixed(2), gross.toFixed(2), "0.00"
+    ]);
+  }
+  rows.push([]);
+  rows.push(["SUMMARY_TOTALS", `Scope: ${portalScope || "ALL"}`, `Orders: ${list.length}`, `COD_Cash_INR: ${sumCod.toFixed(2)}`, `Verified_UPI_INR: ${sumUpi.toFixed(2)}`, "", "", "", "", "TOTALS:", sumTaxable.toFixed(2), sumCgst.toFixed(2), sumSgst.toFixed(2), sumTotal.toFixed(2), "0.00"]);
+  const csvContent = "\uFEFF" + rows.map(r => r.join(",")).join("\r\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const dateStr = new Date().toISOString().slice(0, 10);
+  link.href = URL.createObjectURL(blob);
+  link.download = `WE4ALL-GST-COD-Ledger-m_393_1571-${dateStr}.csv`;
+  document.body.appendChild(link); link.click(); link.remove();
+};
+window.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "e") { e.preventDefault(); window.winExportGstCsv("SHORTCUT_CTRL_E"); }
+});
+// --- MERCHANT POS LOW-STOCK ALERTS & INLINE QUICK-RESTOCK ENGINE ---
+window.winAdjustStock = function(prdId, delta) {
+  const p = state.products.find(x => x.id === prdId);
+  if (!p) return;
+  p.stock = Math.max(0, Number(p.stock || 0) + Number(delta));
+  saveState(state);
+};
+window.winSetExactStockPrice = function(prdId) {
+  const p = state.products.find(x => x.id === prdId);
+  if (!p) return;
+  const sEl = document.getElementById("stk-inp-" + prdId);
+  const pEl = document.getElementById("prc-inp-" + prdId);
+  if (sEl) p.stock = Math.max(0, Number(sEl.value || 0));
+  if (pEl && Number(pEl.value) > 0) p.price = Number(pEl.value);
+  saveState(state);
+};
+window.winBulkRestockLow = function(addQty) {
+  let count = 0;
+  for (const p of state.products) {
+    if (Number(p.stock || 0) <= 20) { p.stock = Number(p.stock || 0) + Number(addQty || 30); count++; }
+  }
+  saveState(state);
+};
+// --- LIVE ORDER & RIDE SOUND CHIME + REAL-TIME NOTIFICATION BANNER ---
+window.we4allSoundMuted = false;
+window.playOrderChime = function() {
+  if (window.we4allSoundMuted) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1318.5].forEach((freq, idx) => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = "triangle"; osc.frequency.value = freq;
+      const start = ctx.currentTime + idx * 0.14;
+      gain.gain.setValueAtTime(0.18, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(start); osc.stop(start + 0.36);
+    });
+    setTimeout(() => ctx.close(), 900);
+  } catch {}
+};
+
+window.winTriggerDispatchAlert = function(payload, broadcast = true) {
+  window.playOrderChime();
+  if (broadcast && syncChannel) syncChannel.postMessage({ type: "DISPATCH_ALERT", payload });
+  let banner = document.getElementById("we4all-live-alert-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "we4all-live-alert-banner";
+    banner.style.cssText = "position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:99999;min-width:520px;max-width:740px;background:linear-gradient(90deg,#064e3b,#0f172a,#1e3a8a);border:2px solid #34d399;border-radius:14px;padding:12px 16px;color:#fff;box-shadow:0 20px 50px rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:space-between;gap:14px;";
+    document.body.appendChild(banner);
+  }
+  banner.style.display = "flex";
+  banner.innerHTML = `
+    <div>
+      <div style="font-size:11px;font-weight:900;color:#34d399;letter-spacing:0.6px;">🔔 ${payload.badge || "NEW LIVE DISPATCH ALERT"} &bull; ${payload.id}</div>
+      <div style="font-size:14px;font-weight:900;margin-top:2px;">${payload.title}</div>
+      <div style="font-size:11px;color:#cbd5e1;margin-top:2px;">${payload.detail}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;white-space:nowrap;">
+      <button class="btn" onclick="window.winJumpToPortal('${payload.targetPortal}','${payload.targetTab}')">⚡ Open ${payload.btnLabel || "Queue"}</button>
+      <button class="btn-sec" onclick="document.getElementById('we4all-live-alert-banner').style.display='none'">✖</button>
+    </div>`;
+  clearTimeout(window._we4allAlertTimer);
+  window._we4allAlertTimer = setTimeout(() => { if (banner) banner.style.display = "none"; }, 10000);
+};
+
+window.winJumpToPortal = function(portal, subTab) {
+  const btn = document.querySelector(`#portal-tabs-bar button[data-portal="${portal}"]`);
+  if (btn) btn.click();
+  if (subTab) { activeSubTab = subTab; renderAll(); }
+  const b = document.getElementById("we4all-live-alert-banner");
+  if (b) b.style.display = "none";
+};
+
+window.winToggleChimeMute = function() {
+  window.we4allSoundMuted = !window.we4allSoundMuted;
+  const btn = document.getElementById("btn-chime-toggle");
+  if (btn) btn.textContent = window.we4allSoundMuted ? "🔕 Alerts: Muted" : "🔔 Alerts: ON";
+  if (!window.we4allSoundMuted) window.playOrderChime();
+};
+
+(function attachRibbonBellAndSync() {
+  const rightBox = document.querySelector(".ribbon-right");
+  if (rightBox && !document.getElementById("btn-chime-toggle")) {
+    const bellBtn = document.createElement("button");
+    bellBtn.id = "btn-chime-toggle";
+    bellBtn.className = "btn-sec";
+    bellBtn.textContent = "🔔 Alerts: ON";
+    bellBtn.onclick = window.winToggleChimeMute;
+    rightBox.prepend(bellBtn);
+  }
+  if (syncChannel) {
+    syncChannel.addEventListener("message", (ev) => {
+      if (ev.data && ev.data.type === "DISPATCH_ALERT") window.winTriggerDispatchAlert(ev.data.payload, false);
+    });
+  }
 })();

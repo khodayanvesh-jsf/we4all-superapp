@@ -174,7 +174,7 @@ $h = @{ "apikey" = $pubKey; "Authorization" = "Bearer $pubKey"; "Content-Type" =
 
 $markets = Invoke-RestMethod -Uri "$supaUrl/rest/v1/we4all_markets?select=*" -Method Get -Headers $h
 $partners = Invoke-RestMethod -Uri "$supaUrl/rest/v1/we4all_partners?select=id,display_name,partner_type&approval_status=eq.approved" -Method Get -Headers $h
-$products = Invoke-RestMethod -Uri "$supaUrl/rest/v1/we4all_partners?select=id,title&approval_status=eq.approved" -Method Get -Headers $h
+$products = Invoke-RestMethod -Uri "$supaUrl/rest/v1/we4all_partners?select=id,display_name&approval_status=eq.approved" -Method Get -Headers $h
 $founderAuth = Invoke-RestMethod -Uri "$supaUrl/functions/v1/we4all-founder-auth" -Method Post -Headers $h -Body '{"username":"KhodayAnvesh","password":"We4AllFounder@2026"}'
 
 Write-Host "   -> Supabase Markets Connected  : $($markets.Count) active zone(s) (Adilabad m_393_1571)" -ForegroundColor Green

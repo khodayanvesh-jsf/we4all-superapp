@@ -209,6 +209,20 @@
       display: flex; align-items: center; justify-content: space-between;
       padding: 0 16px; font-size: 11px; color: var(--muted);
     }
+    /* 80mm Thermal Receipt Live Modal & Native Printer Output */
+    #thermal-preview-modal { position:fixed; inset:0; background:rgba(2,6,23,0.88); z-index:99999; display:none; align-items:center; justify-content:center; }
+    #thermal-receipt-80mm { width:302px; background:#ffffff; color:#000000; font-family:"Consolas","Courier New",monospace; font-size:11px; line-height:1.35; padding:12px 10px; border-radius:6px; box-shadow:0 20px 50px rgba(0,0,0,0.8); }
+    #thermal-receipt-80mm .rcp-center { text-align:center; }
+    #thermal-receipt-80mm .rcp-hr { border-top:1px dashed #000; margin:6px 0; }
+    #thermal-receipt-80mm table { width:100%; border-collapse:collapse; font-size:10.5px; }
+    #thermal-receipt-80mm th, #thermal-receipt-80mm td { padding:2px 0; text-align:left; color:#000; }
+    @media print {
+      @page { size: 80mm auto; margin: 0mm; }
+      body { background:#fff !important; display:block !important; height:auto !important; overflow:visible !important; }
+      .win-ribbon, .win-workspace, .win-statusbar, .no-print { display:none !important; }
+      #thermal-preview-modal { position:static !important; display:block !important; background:none !important; }
+      #thermal-receipt-80mm { width:76mm !important; box-shadow:none !important; margin:0 !important; padding:2mm !important; }
+    }
   </style>
 </head>
 <body>
@@ -313,6 +327,7 @@
     <div id="statusbar-right">Supabase RLS Active &bull; Press Ctrl+N for Parallel Portal Window &bull; Ctrl+P to Print GST Invoice</div>
   </footer>
 
+  <div id="thermal-preview-modal"><div id="thermal-receipt-wrapper"><div id="thermal-receipt-80mm"></div><div class="no-print" style="display:flex;gap:8px;margin-top:10px;"><button class="btn" style="flex:1;" onclick="window.print()">🖨️ Print 80mm Roll</button><button class="btn-sec" style="flex:1;background:#1e293b;color:#fff;" onclick="document.getElementById('thermal-preview-modal').style.display='none'">✖ Close Preview</button></div></div></div>
   <script src="./windows-desktop.js"></script>
 </body>
 </html>
