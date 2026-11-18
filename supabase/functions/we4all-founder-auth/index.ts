@@ -115,3 +115,4 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "Founder sign-in service failed." }, 500);
   }
 });
+// we4all_bootstrap_required: true
