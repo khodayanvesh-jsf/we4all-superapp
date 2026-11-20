@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState } from 'react';
+import { MerchantOrderQueue } from '../../components/merchant/MerchantOrderQueue';
 import {
   registerPortalUser,
   loginToPortal,
@@ -286,6 +287,8 @@ export default function MerchantPortal() {
       <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setStatusMsg(''); }} style={{ marginTop: '12px', background: 'none', border: 'none', color: '#0066ff', cursor: 'pointer' }}>
         {mode === 'login' ? 'New merchant? Register your store' : 'Already registered? Login here'}
       </button>
-    </div>
+    
+      <MerchantOrderQueue />
+      </div>
   );
 }

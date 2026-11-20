@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import { validateFeePolicy } from "./workflows/feePolicies";
 import { listFounderDynamicModules, saveFounderDynamicModule, setFounderDynamicModuleStatus } from "../supabaseClient";
-import { listSubcategories } from "./workflows/subcategoryKeys";
+import { listSubcategories } from "./workflows/subcategoryKeys";
+import { FounderOrderGstMonitor } from '../components/admin/FounderOrderGstMonitor';
 import {
   saveCloudAndLocalState,
   pullRemoteSupabaseState,
@@ -3401,6 +3402,8 @@ export default function FounderAdminSuite({
           </div>
         </div>
       )}
-    </div>
+    
+      <FounderOrderGstMonitor />
+      </div>
   );
 }

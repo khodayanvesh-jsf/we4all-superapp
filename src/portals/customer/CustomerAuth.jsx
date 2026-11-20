@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { CustomerActiveOrdersPanel } from '../../components/customer/CustomerActiveOrdersPanel';
 import {
   registerPortalUser,
   loginToPortal,
@@ -187,6 +188,8 @@ export default function CustomerAuth({ onAuthSuccess }) {
       <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setStatusMsg({ text: '', type: '' }); }} style={{ marginTop: '14px', background: 'none', border: 'none', color: '#0066ff', cursor: 'pointer', padding: 0, fontSize: '14px' }}>
         {mode === 'login' ? 'New to WE4ALL? Create a Customer Account' : 'Already have an account? Login here'}
       </button>
-    </div>
+    
+      <CustomerActiveOrdersPanel />
+      </div>
   );
 }
