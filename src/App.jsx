@@ -518,7 +518,7 @@ function AppContent() {
       try {
         const res = await checkForSelfHostedOta({
           currentVersion: APP_VERSION,
-          autoInstall: Capacitor.isNativePlatform(),
+          autoInstall: false,
           applyImmediately: false
         });
         if (!active) return;

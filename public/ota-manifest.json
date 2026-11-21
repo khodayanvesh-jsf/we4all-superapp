@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.40",
-    "latestAvailableVersion":  "3.3.40",
-    "versionCode":  370,
-    "bundleFile":  "we4all-ota-v3.3.40.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.40.zip",
+    "version":  "3.3.41",
+    "latestAvailableVersion":  "3.3.41",
+    "versionCode":  371,
+    "bundleFile":  "we4all-ota-v3.3.41.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.41.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "9a73a4e900f152da9c5411f682fbe90dbb3aee2fd3b8d655010a94f1b7161aad",
-    "sizeKb":  719,
-    "releasedAt":  "2026-11-21T22:28:50Z",
+    "sha256":  "2b8f155a3266bbc5c90928ffbea3a82dfe626b3f00a9b27b7e87b65c000c02da",
+    "sizeKb":  1480.2,
+    "releasedAt":  "2026-11-21T22:35:37Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.40: Rider Captain Pro Desk - Live GPS Go Online duty toggle, 12s auto-polling radar \u0026 3-card KPI bar."
+    "releaseNotes":  "WE4ALL v3.3.41: Fixed OTA 25% stall (check-only on open, downloadFailed diagnostics \u0026 Android Java-safe STORE zip)."
 }
