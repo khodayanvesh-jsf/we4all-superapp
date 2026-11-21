@@ -1,13 +1,13 @@
-﻿{
-    "version":  "3.3.29",
-    "latestAvailableVersion":  "3.3.29",
-    "versionCode":  359,
-    "bundleFile":  "we4all-ota-v3.3.29.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.29.zip",
-    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL-v3.3.29.apk",
-    "sha256":  "52d791561997c570323de18e8cd9c05a3e25f36a28e809d004dae3c808006038",
-    "sizeKb":  719,
-    "releasedAt":  "2026-11-21T20:38:11Z",
+{
+    "version":  "3.3.31",
+    "latestAvailableVersion":  "3.3.31",
+    "versionCode":  361,
+    "bundleFile":  "we4all-ota-v3.3.31.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.31.zip",
+    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
+    "sha256":  "5a34d078b067149bd8482d14fced24b9e1902b1eae63f1ce7315871331347543",
+    "sizeKb":  720,
+    "releasedAt":  "2026-11-21T21:18:07Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.29: Modern UI motion, Android Back button navigation, floating menu moved into Accounts, and one-time device permissions."
+    "releaseNotes":  "WE4ALL v3.3.31: Royal Violet \u0026 Coral 2026 UI rebrand, animated 3-slide promo carousel \u0026 styled shop hero."
 }
