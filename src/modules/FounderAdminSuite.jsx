@@ -4,6 +4,7 @@ import { validateFeePolicy } from "./workflows/feePolicies";
 import { listFounderDynamicModules, saveFounderDynamicModule, setFounderDynamicModuleStatus } from "../supabaseClient";
 import { listSubcategories } from "./workflows/subcategoryKeys";
 import { FounderOrderGstMonitor } from '../components/admin/FounderOrderGstMonitor';
+import { FounderChangeRequestsQueue } from '../components/admin/FounderChangeRequestsQueue';
 import {
   saveCloudAndLocalState,
   pullRemoteSupabaseState,
@@ -3403,7 +3404,7 @@ export default function FounderAdminSuite({
         </div>
       )}
     
-      <FounderOrderGstMonitor />
+      <><FounderOrderGstMonitor /><FounderChangeRequestsQueue /></>
       </div>
   );
 }

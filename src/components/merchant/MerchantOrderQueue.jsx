@@ -1,44 +1,48 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../../supabaseClient';
 import { useMerchantOrderQueue } from '../../hooks/useMerchantOrderQueue';
+import { DoorstepUpiQrModal } from '../shared/DoorstepUpiQrModal';
+import { PartnerChangeRequestModal } from '../partner/PartnerChangeRequestModal';
 
+import { PendingPartnerGate } from '../partner/PendingPartnerGate';
 const INR = '\u20B9';
 const TIMES = '\u00D7';
 const DOT = '\u00B7';
 
-const TERMINAL_STATUSES = [
-  'delivered',
-  'completed',
-  'cancelled',
-  'canceled',
-  'rejected',
-  'failed',
-];
+const TERMINAL_STATUSES = ['delivered', 'cancelled', 'disputed', 'refunded'];
 
 function getNextAction(status) {
-  const key = (status || 'placed').toLowerCase().trim();
+  const key = (status || 'awaiting_payment').toLowerCase().trim();
 
-  if (['placed', 'pending', 'created', 'new'].includes(key)) {
+  if (key === 'awaiting_payment' || key === 'paid') {
     return {
       nextStatus: 'accepted',
       label: 'Accept Order',
       buttonClass: 'bg-emerald-600 hover:bg-emerald-700 text-white',
     };
   }
-  if (['accepted', 'confirmed'].includes(key)) {
+  if (key === 'accepted') {
     return {
       nextStatus: 'preparing',
       label: 'Start Packing',
       buttonClass: 'bg-blue-600 hover:bg-blue-700 text-white',
     };
   }
-  if (['preparing', 'packing', 'packed', 'ready', 'ready_for_pickup'].includes(key)) {
+  if (key === 'preparing') {
     return {
-      nextStatus: 'out_for_delivery',
-      label: 'Out for Delivery',
+      nextStatus: 'ready_for_pickup',
+      label: 'Mark Ready for Pickup',
+      buttonClass: 'bg-amber-600 hover:bg-amber-700 text-white',
+    };
+  }
+  if (key === 'ready_for_pickup' || key === 'assigned') {
+    return {
+      nextStatus: 'picked_up',
+      label: 'Hand Off to Rider',
       buttonClass: 'bg-indigo-600 hover:bg-indigo-700 text-white',
     };
   }
-  if (['out_for_delivery', 'dispatched', 'in_transit', 'picked_up'].includes(key)) {
+  if (key === 'picked_up') {
     return {
       nextStatus: 'delivered',
       label: 'Mark Delivered',
@@ -50,8 +54,8 @@ function getNextAction(status) {
 }
 
 function canReject(status) {
-  const key = (status || 'placed').toLowerCase().trim();
-  return ['placed', 'pending', 'created', 'new', 'accepted', 'confirmed'].includes(key);
+  const key = (status || 'awaiting_payment').toLowerCase().trim();
+  return ['awaiting_payment', 'paid', 'accepted'].includes(key);
 }
 
 function formatAddress(address) {
@@ -94,9 +98,63 @@ function getBadgeStyle(state) {
   };
 }
 
-export function MerchantOrderQueue({ partnerId = null }) {
+export function MerchantOrderQueue({
+  partnerId = null,
+  merchantVpa = '',
+  merchantName = 'WE4ALL Partner Store',
+}) {
   const [filter, setFilter] = useState('active');
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [qrOrder, setQrOrder] = useState(null);
+  const [changeReqOpen, setChangeReqOpen] = useState(false);
+  const [resolvedVpa, setResolvedVpa] = useState(merchantVpa || '');
+  const [profileSnapshot, setProfileSnapshot] = useState({});
+
+  useEffect(() => {
+    let active = true;
+
+    async function hydrateMerchantMeta() {
+      if (merchantVpa) {
+        setResolvedVpa(merchantVpa);
+      }
+
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+      if (!active || !user) return;
+
+      const meta = user.user_metadata || {};
+      const fallbackVpa =
+        merchantVpa ||
+        meta.upi_id ||
+        meta.upiId ||
+        (typeof localStorage !== 'undefined'
+          ? localStorage.getItem('we4all_merchant_vpa') || ''
+          : '');
+
+      if (fallbackVpa) setResolvedVpa(fallbackVpa);
+
+      const { data: profileRow } = await supabase
+        .from('we4all_profiles')
+        .select('full_name, business_name, area, phone')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (active) {
+        setProfileSnapshot({
+          full_name: profileRow?.full_name || meta.full_name || '',
+          business_name: profileRow?.business_name || meta.business_name || merchantName,
+          area: profileRow?.area || '',
+          phone: profileRow?.phone || user.phone || '',
+          upi_id: fallbackVpa,
+        });
+      }
+    }
+
+    hydrateMerchantMeta();
+    return () => {
+      active = false;
+    };
+  }, [merchantVpa, merchantName]);
 
   const {
     orders,
@@ -139,7 +197,7 @@ export function MerchantOrderQueue({ partnerId = null }) {
   ];
 
   return (
-    <section className="w-full max-w-2xl mx-auto p-4 space-y-4">
+    <section className="w-full max-w-2xl mx-auto p-4 space-y-4"><PendingPartnerGate portalRole="merchant" partnerName={profileSnapshot.business_name || merchantName} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-900">
@@ -150,13 +208,21 @@ export function MerchantOrderQueue({ partnerId = null }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${badge.wrapper}`}
           >
             <span className={`w-2 h-2 rounded-full ${badge.dot}`} />
             {badge.text}
           </span>
+
+          <button
+            type="button"
+            onClick={() => setChangeReqOpen(true)}
+            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+          >
+            Request Profile Change
+          </button>
 
           <button
             type="button"
@@ -226,11 +292,13 @@ export function MerchantOrderQueue({ partnerId = null }) {
             const nextAction = getNextAction(order.status);
             const showReject = canReject(order.status);
             const isBusy = updatingId === order.id;
-            const statusLower = (order.status || '').toLowerCase().trim();
+            const statusLower = (order.status || 'awaiting_payment')
+              .toLowerCase()
+              .trim();
             const isCodPending =
               (order.payment_method || '').toLowerCase() === 'cod' &&
               !order.cod_collected_at &&
-              !['cancelled', 'canceled', 'rejected'].includes(statusLower);
+              !['cancelled', 'refunded'].includes(statusLower);
             const displayNo =
               order.order_number || `WE4-${order.id.slice(0, 8).toUpperCase()}`;
             const addressText = formatAddress(order.delivery_address);
@@ -247,7 +315,7 @@ export function MerchantOrderQueue({ partnerId = null }) {
                         #{displayNo}
                       </span>
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase bg-slate-100 text-slate-700">
-                        {(order.status || 'placed').replace(/_/g, ' ')}
+                        {statusLower.replace(/_/g, ' ')}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
@@ -268,7 +336,9 @@ export function MerchantOrderQueue({ partnerId = null }) {
                     </p>
                     <p className="text-[11px] font-medium text-slate-500 uppercase">
                       {order.payment_method || 'UPI'}{' '}
-                      {order.payment_status ? `(${order.payment_status})` : ''}
+                      {order.payment_status
+                        ? `(${order.payment_status.replace(/_/g, ' ')})`
+                        : ''}
                     </p>
                   </div>
                 </div>
@@ -329,14 +399,24 @@ export function MerchantOrderQueue({ partnerId = null }) {
                     )}
 
                     {isCodPending && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => markCodCollected(order.id)}
-                        className="py-2 px-3 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 disabled:opacity-50"
-                      >
-                        Mark COD Collected
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => setQrOrder(order)}
+                          className="py-2 px-3 rounded-xl text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 disabled:opacity-50"
+                        >
+                          Show Doorstep UPI QR
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => markCodCollected(order.id)}
+                          className="py-2 px-3 rounded-xl text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 disabled:opacity-50"
+                        >
+                          Mark COD Collected
+                        </button>
+                      </>
                     )}
 
                     {showReject && (
@@ -356,6 +436,22 @@ export function MerchantOrderQueue({ partnerId = null }) {
           })}
         </div>
       )}
+
+      <DoorstepUpiQrModal
+        open={Boolean(qrOrder)}
+        onClose={() => setQrOrder(null)}
+        order={qrOrder}
+        merchantVpa={resolvedVpa}
+        merchantName={profileSnapshot.business_name || merchantName}
+        onSettled={() => refetch()}
+      />
+
+      <PartnerChangeRequestModal
+        open={changeReqOpen}
+        onClose={() => setChangeReqOpen(false)}
+        portalRole="merchant"
+        currentProfile={profileSnapshot}
+      />
     </section>
   );
 }

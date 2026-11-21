@@ -2,6 +2,21 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom')) return 'vendor-react';
+            if (id.includes('@supabase')) return 'vendor-supabase';
+            if (id.includes('@capacitor') || id.includes('@capgo') || id.includes('@aparajita')) return 'vendor-capacitor';
+            if (id.includes('qrcode')) return 'vendor-qr';
+            return 'vendor';
+          }
+        },
+      },
+    },
+  },
   plugins: [react()],
   server: {
     port: 3000,

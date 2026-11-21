@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Customer2026Experience } from '../../components/customer/Customer2026Experience';
 import {
   fetchActiveMerchantsWithCatalog,
   placeCustomerOrder,
@@ -407,6 +408,8 @@ export default function CustomerMarketplace() {
           )}
         </div>
       )}
-    </div>
+    
+      <Customer2026Experience />
+      </div>
   );
 }

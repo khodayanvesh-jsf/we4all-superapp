@@ -1,0 +1,57 @@
+:root,
+[data-theme="light"] {
+  --we4-bg: #f8fafc;
+  --we4-surface: #ffffff;
+  --we4-surface-muted: #f1f5f9;
+  --we4-border: #e2e8f0;
+  --we4-text: #0f172a;
+  --we4-text-muted: #475569;
+  --we4-accent: #059669;
+  --we4-accent-strong: #047857;
+  --we4-accent-soft: #ecfdf5;
+  --we4-warn-soft: #fffbeb;
+  --we4-warn-text: #b45309;
+  --we4-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="dark"] {
+  --we4-bg: #020617;
+  --we4-surface: #0f172a;
+  --we4-surface-muted: #1e293b;
+  --we4-border: #334155;
+  --we4-text: #f8fafc;
+  --we4-text-muted: #94a3b8;
+  --we4-accent: #10b981;
+  --we4-accent-strong: #34d399;
+  --we4-accent-soft: rgba(16, 185, 129, 0.14);
+  --we4-warn-soft: rgba(245, 158, 11, 0.14);
+  --we4-warn-text: #fcd34d;
+  --we4-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.we4-surface {
+  background-color: var(--we4-surface);
+  color: var(--we4-text);
+  border-color: var(--we4-border);
+}
+
+.we4-page {
+  background-color: var(--we4-bg);
+  color: var(--we4-text);
+}
+
+.we4-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--we4-surface-muted) 25%,
+    var(--we4-border) 50%,
+    var(--we4-surface-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: we4Shimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes we4Shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

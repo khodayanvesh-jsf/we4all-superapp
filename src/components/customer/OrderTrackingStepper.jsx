@@ -8,37 +8,62 @@ const TIMES = '\u00D7';
 const ORDER_STEPS = [
   {
     id: 'placed',
-    matches: ['placed', 'pending', 'created', 'new'],
+    matches: ['awaiting_payment', 'paid'],
     label: 'Order Placed',
-    description: 'Sent to partner store',
+    description: 'Received and awaiting store confirmation',
   },
   {
     id: 'accepted',
-    matches: ['accepted', 'confirmed'],
+    matches: ['accepted'],
     label: 'Confirmed by Store',
     description: 'Partner has accepted your order',
   },
   {
     id: 'preparing',
-    matches: ['preparing', 'packing', 'packed', 'ready', 'ready_for_pickup'],
+    matches: ['preparing'],
     label: 'Packing Items',
-    description: 'Items are being packed for dispatch',
+    description: 'Your items are being prepared',
   },
   {
-    id: 'out_for_delivery',
-    matches: ['out_for_delivery', 'dispatched', 'in_transit', 'picked_up'],
+    id: 'ready_for_pickup',
+    matches: ['ready_for_pickup', 'assigned'],
+    label: 'Ready for Pickup',
+    description: 'Packed and awaiting delivery captain',
+  },
+  {
+    id: 'picked_up',
+    matches: ['picked_up'],
     label: 'Out for Delivery',
-    description: 'Rider is on the way',
+    description: 'Rider has picked up your order and is on the way',
   },
   {
     id: 'delivered',
-    matches: ['delivered', 'completed'],
+    matches: ['delivered'],
     label: 'Delivered',
     description: 'Order completed',
   },
 ];
 
-const CANCELLED_STATUSES = ['cancelled', 'canceled', 'rejected', 'failed'];
+const EXCEPTION_BANNERS = {
+  cancelled: {
+    title: 'Order Cancelled',
+    body: 'This order was cancelled. Any prepaid UPI or Cashfree amount will be refunded automatically.',
+    boxClass: 'bg-rose-50 border-rose-200 text-rose-800',
+    subClass: 'text-rose-600',
+  },
+  refunded: {
+    title: 'Order Refunded',
+    body: 'A refund has been processed for this order.',
+    boxClass: 'bg-amber-50 border-amber-200 text-amber-900',
+    subClass: 'text-amber-700',
+  },
+  disputed: {
+    title: 'Order Under Review',
+    body: 'This order is currently marked disputed. WE4ALL support is reviewing it.',
+    boxClass: 'bg-amber-50 border-amber-200 text-amber-900',
+    subClass: 'text-amber-700',
+  },
+};
 
 function formatAddress(address) {
   if (!address) return '';
@@ -114,8 +139,8 @@ export function OrderTrackingStepper({
     );
   }
 
-  const statusKey = (order.status || 'placed').toLowerCase().trim();
-  const isCancelled = CANCELLED_STATUSES.includes(statusKey);
+  const statusKey = (order.status || 'awaiting_payment').toLowerCase().trim();
+  const exceptionBanner = EXCEPTION_BANNERS[statusKey] || null;
   const currentStepIndex = ORDER_STEPS.findIndex((step) =>
     step.matches.includes(statusKey)
   );
@@ -142,7 +167,7 @@ export function OrderTrackingStepper({
             )}
             {order.payment_status && (
               <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px] font-medium capitalize">
-                {order.payment_status}
+                {order.payment_status.replace(/_/g, ' ')}
               </span>
             )}
             {order.cod_collected_at && (
@@ -170,11 +195,11 @@ export function OrderTrackingStepper({
         </div>
       </div>
 
-      {isCancelled ? (
-        <div className="mt-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm">
-          <p className="font-semibold">Order Cancelled</p>
-          <p className="text-xs mt-1 text-rose-600">
-            This order was cancelled. Any prepaid UPI amount will be refunded automatically.
+      {exceptionBanner ? (
+        <div className={`mt-4 p-3.5 rounded-xl border text-sm ${exceptionBanner.boxClass}`}>
+          <p className="font-semibold">{exceptionBanner.title}</p>
+          <p className={`text-xs mt-1 ${exceptionBanner.subClass}`}>
+            {exceptionBanner.body}
           </p>
         </div>
       ) : (

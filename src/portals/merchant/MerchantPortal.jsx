@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { MerchantOrderQueue } from '../../components/merchant/MerchantOrderQueue';
+import { PendingPartnerGate } from '../../components/partner/PendingPartnerGate';
 import {
   registerPortalUser,
   loginToPortal,
@@ -288,7 +289,7 @@ export default function MerchantPortal() {
         {mode === 'login' ? 'New merchant? Register your store' : 'Already registered? Login here'}
       </button>
     
-      <MerchantOrderQueue />
+      <PendingPartnerGate portalRole="merchant"><MerchantOrderQueue /></PendingPartnerGate>
       </div>
   );
 }

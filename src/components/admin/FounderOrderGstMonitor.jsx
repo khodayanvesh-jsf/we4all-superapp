@@ -9,12 +9,17 @@ import {
 const INR = '\u20B9';
 
 const ADMIN_STATUS_OPTIONS = [
-  'placed',
+  'awaiting_payment',
+  'paid',
   'accepted',
   'preparing',
-  'out_for_delivery',
+  'ready_for_pickup',
+  'assigned',
+  'picked_up',
   'delivered',
   'cancelled',
+  'disputed',
+  'refunded',
 ];
 
 const FILTER_TABS = [
@@ -22,7 +27,7 @@ const FILTER_TABS = [
   { key: 'active', label: 'Active' },
   { key: 'stuck', label: 'Stuck' },
   { key: 'delivered', label: 'Delivered' },
-  { key: 'cancelled', label: 'Cancelled' },
+  { key: 'cancelled', label: 'Cancelled / Refunded' },
 ];
 
 function getBadgeStyle(state) {
@@ -148,12 +153,7 @@ export function FounderOrderGstMonitor() {
         return false;
       }
       if (filter === 'stuck' && !isOrderStuck(order)) return false;
-      if (
-        filter === 'delivered' &&
-        !['delivered', 'completed'].includes(statusKey)
-      ) {
-        return false;
-      }
+      if (filter === 'delivered' && statusKey !== 'delivered') return false;
       if (
         filter === 'cancelled' &&
         !CANCELLED_ORDER_STATUSES.includes(statusKey)
@@ -378,7 +378,7 @@ export function FounderOrderGstMonitor() {
                   const displayNo =
                     order.order_number ||
                     `WE4-${order.id.slice(0, 8).toUpperCase()}`;
-                  const statusValue = (order.status || 'placed')
+                  const statusValue = (order.status || 'awaiting_payment')
                     .toLowerCase()
                     .trim();
                   const isCodPending =
@@ -419,7 +419,7 @@ export function FounderOrderGstMonitor() {
                           {order.payment_method || 'UPI'}
                         </span>
                         <div className="text-[11px] text-slate-500 capitalize">
-                          {order.payment_status || 'pending'}
+                          {(order.payment_status || 'pending').replace(/_/g, ' ')}
                         </div>
                         {isCodPending && (
                           <button

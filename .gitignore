@@ -26,3 +26,9 @@ android/app/build/
 # Exclude large desktop/mobile installers from Git and Vercel source uploads
 *.exe
 /WE4ALL*.apk
+*.bak_*
+apk-releases/*.apk
+apk-releases/*.aab
+*.jks
+*.keystore
+keystore.properties

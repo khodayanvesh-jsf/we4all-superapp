@@ -3,18 +3,14 @@ import { supabase } from '../supabaseClient';
 
 export const TERMINAL_ORDER_STATUSES = [
   'delivered',
-  'completed',
   'cancelled',
-  'canceled',
-  'rejected',
-  'failed',
+  'disputed',
+  'refunded',
 ];
 
 export const CANCELLED_ORDER_STATUSES = [
   'cancelled',
-  'canceled',
-  'rejected',
-  'failed',
+  'refunded',
 ];
 
 const STUCK_THRESHOLD_MS = 30 * 60 * 1000;
