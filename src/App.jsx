@@ -159,7 +159,7 @@ function MobilePhoneShell({
   return (
     <div
       className={
-        "w-full max-w-[420px] mx-auto overflow-hidden flex flex-col min-h-screen sm:min-h-[850px] sm:max-h-[92vh] sm:my-2 sm:rounded-[40px] sm:border-[8px] relative transition-all shadow-2xl " +
+        "w-full max-w-[420px] mx-auto overflow-hidden flex flex-col h-[100dvh] max-h-[100dvh] sm:h-[850px] sm:max-h-[92vh] sm:my-2 sm:rounded-[40px] sm:border-[8px] relative transition-all shadow-2xl " +
         (brightTheme
           ? "bg-white text-slate-900 sm:border-emerald-700/80"
           : "bg-[#071118] text-white sm:border-slate-800")
@@ -248,7 +248,7 @@ function MobilePhoneShell({
 
       <div
         className={
-          "flex-1 overflow-y-auto p-3 space-y-3 pb-24 " +
+          "flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3 pb-24 " +
           (brightTheme
             ? "bg-slate-50 text-slate-900"
             : "bg-gradient-to-b from-[#071118] to-[#04090e] text-white")
@@ -501,8 +501,10 @@ function AppContent() {
         setOtaProgress(null);
         triggerToast('Update downloaded and queued. It will activate at the next safe app background/relaunch.');
       } catch (error) {
+        const errMsg = selfHostErr?.message || error?.message || 'OTA update failed. Tap Download Latest APK to install.';
         setOtaProgress(null);
-        triggerToast(selfHostErr?.message || error?.message || 'OTA update failed. The current app bundle remains active.');
+        setAppUpdateInfo((prev) => ({ ...(prev || {}), otaError: errMsg }));
+        triggerToast(errMsg);
       }
     }
   };

@@ -1549,6 +1549,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
           <div role="status" className={`rounded-2xl border p-3 text-xs ${appUpdateInfo.updateAvailable ? "border-amber-400/40 bg-amber-950/40 text-amber-100" : "border-emerald-500/30 bg-emerald-950/30 text-emerald-100"}`}>
             {checkingUpdate ? "Checking for the latest WE4ALL release…" : otaProgress?.msg || (appUpdateInfo.updateAvailable ? `New update v${appUpdateInfo.latestAvailableVersion} is ready to install (zero user data loss).` : `Already on the latest version (v${appUpdateInfo.currentBundleVersion || appUpdateInfo.installedAppVersion || APP_VERSION}). No action needed.`)}
             {appUpdateInfo.releaseNotes && <p className="mt-2 text-[10px] text-slate-300">{appUpdateInfo.releaseNotes}</p>}
+            {appUpdateInfo.otaError && <p className="mt-2 rounded-lg bg-rose-950/70 border border-rose-500/40 px-2.5 py-1.5 text-[11px] font-bold text-rose-200">{appUpdateInfo.otaError}</p>}
             {otaProgress && <progress className="mt-2 h-2 w-full accent-emerald-400" max="100" value={otaProgress.pct || 0} />}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

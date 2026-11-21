@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.37",
-    "latestAvailableVersion":  "3.3.37",
-    "versionCode":  367,
-    "bundleFile":  "we4all-ota-v3.3.37.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.37.zip",
+    "version":  "3.3.38",
+    "latestAvailableVersion":  "3.3.38",
+    "versionCode":  368,
+    "bundleFile":  "we4all-ota-v3.3.38.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.38.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "5e0169ed74119a7969764eb682ffa131257f0e9f6792a1f83202be3f6e4e80ce",
+    "sha256":  "16f06789d4dfde6cb83f89199cd59981cb5b717fd21a5e35473e39da11e01c4b",
     "sizeKb":  718,
-    "releasedAt":  "2026-11-21T22:09:59Z",
+    "releasedAt":  "2026-11-21T22:16:37Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.37: Admin Console Stage 4 complete - Security Audit Ledger, Portal Kill-Switches \u0026 Live Health Monitor."
+    "releaseNotes":  "WE4ALL v3.3.38: Fixed pinned Header \u0026 Footer, 20s OTA error display \u0026 Admin Console wiring."
 }

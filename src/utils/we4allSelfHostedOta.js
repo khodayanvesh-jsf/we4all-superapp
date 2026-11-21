@@ -138,8 +138,8 @@ async function downloadOrReuseNativeBundle({ bundleUrl, remoteVersion, onProgres
 
       const downloaded = await withTimeout(
         CapacitorUpdater.download({ url: bundleUrl, version: remoteVersion }),
-        45_000,
-        'OTA download timed out on device. Tap Download Latest APK for direct install.'
+        20_000,
+        'Native OTA download stalled on device (20s timeout). Tap Download Latest APK below for instant 1-tap install.'
       );
       if (!downloaded?.id) {
         throw new Error('Updater did not return a valid bundle ID.');

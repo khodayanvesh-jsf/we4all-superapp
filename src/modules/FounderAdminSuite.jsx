@@ -1101,31 +1101,31 @@ export default function FounderAdminSuite({
 
   const updateCurrentDbList = (nextList) => {
     if (adminDbTab === "merchants") {
-      setMerchants(nextList);
+      setMerchants?.(nextList);
       saveCloudAndLocalState({ merchants: nextList });
     } else if (adminDbTab === "users") {
-      setRegisteredUsers(nextList);
+      setRegisteredUsers?.(nextList);
       saveCloudAndLocalState({ registeredUsers: nextList });
     } else if (adminDbTab === "stock") {
-      setProducts(nextList);
+      setProducts?.(nextList);
       saveCloudAndLocalState({ products: nextList });
     } else if (adminDbTab === "service_providers") {
-      setServiceProviders(nextList);
+      setServiceProviders?.(nextList);
       saveCloudAndLocalState({ serviceProviders: nextList });
     } else if (adminDbTab === "decorators") {
-      setDecorators(nextList);
+      setDecorators?.(nextList);
       saveCloudAndLocalState({ decorators: nextList });
     } else if (adminDbTab === "halls") {
-      setFunctionHalls(nextList);
+      setFunctionHalls?.(nextList);
       saveCloudAndLocalState({ functionHalls: nextList });
     } else if (adminDbTab === "captains") {
-      setRiders(nextList);
+      setRiders?.(nextList);
       saveCloudAndLocalState({ riders: nextList });
     } else if (adminDbTab === "labour_workers") {
-      setLabourWorkers(nextList);
+      setLabourWorkers?.(nextList);
       saveCloudAndLocalState({ labourWorkers: nextList });
     } else if (adminDbTab === "orders") {
-      setOrders(nextList);
+      setOrders?.(nextList);
       saveCloudAndLocalState({ orders: nextList });
     }
   };
