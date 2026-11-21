@@ -209,7 +209,7 @@ export default function MerchantPortal({
 
   return (
     <div className="space-y-3 text-xs text-white">
-      <div className="bg-slate-900 p-3 rounded-2xl border border-emerald-500/40 flex justify-between items-center">
+      <div className="bg-gradient-to-r from-indigo-950 via-violet-950 to-slate-900 p-3.5 rounded-3xl border border-violet-500/40 shadow-lg flex justify-between items-center we4-fade-up">
         <div>
           <h3 className="font-black text-emerald-400 text-xs">
             {currentUser?.fullName || "Sri Laxmi Supermart"}

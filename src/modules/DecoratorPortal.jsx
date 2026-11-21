@@ -165,7 +165,7 @@ export default function DecoratorPortal({
 
   return (
     <div className="space-y-3 text-xs text-white">
-      <div className="bg-slate-900 p-3 rounded-2xl border border-amber-500/40 flex justify-between items-center gap-2">
+      <div className="bg-gradient-to-r from-rose-950 via-fuchsia-950 to-violet-950 p-3.5 rounded-3xl border border-rose-400/40 shadow-lg flex justify-between items-center gap-2 we4-fade-up">
         <div>
           <h3 className="font-black text-amber-400 text-xs">{currentUser?.businessName || currentUser?.fullName || "Decorator / Function Hall Desk"}</h3>
           <p className="text-[10px] text-slate-400">Hall availability · Reverse bids · Portfolio · Booking ledger</p>

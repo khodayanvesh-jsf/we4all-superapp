@@ -5,6 +5,8 @@ import { listFounderDynamicModules, saveFounderDynamicModule, setFounderDynamicM
 import { listSubcategories } from "./workflows/subcategoryKeys";
 import { FounderOrderGstMonitor } from '../components/admin/FounderOrderGstMonitor';
 import { FounderChangeRequestsQueue } from '../components/admin/FounderChangeRequestsQueue';
+import { FounderPromoNewsPublisher } from '../components/admin/FounderPromoNewsPublisher';
+import { FounderSecurityAuditPanel } from '../components/admin/FounderSecurityAuditPanel';
 import {
   saveCloudAndLocalState,
   pullRemoteSupabaseState,

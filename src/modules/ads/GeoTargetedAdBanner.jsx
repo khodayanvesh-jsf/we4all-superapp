@@ -41,10 +41,18 @@ export default function GeoTargetedAdBanner({
   const effectiveAds = Array.isArray(ads) ? ads : (Array.isArray(adsList) ? adsList : []);
   const effectiveZone = selectedZone || userZone || "Adilabad";
   const [activeSlideIdx, setActiveSlideIdx] = useState(0);
+  const [customSlides, setCustomSlides] = useState(() => {
+    try { const r = JSON.parse(localStorage.getItem('we4all_custom_promo_slides_v1') || '[]'); return Array.isArray(r) ? r : []; } catch { return []; }
+  });
+  useEffect(() => {
+    const onUpdate = (e) => { if (Array.isArray(e?.detail?.slides)) setCustomSlides(e.detail.slides); };
+    window.addEventListener('we4all:promo-slides-updated', onUpdate);
+    return () => window.removeEventListener('we4all:promo-slides-updated', onUpdate);
+  }, []);
 
   const tierWeight = { GEO_LOCAL: 1, STATE_LEVEL: 2, BRAND_NATIONAL: 3 };
   const sortedAds = [...effectiveAds].sort((a, b) => (tierWeight[a.tier] || 9) - (tierWeight[b.tier] || 9));
-  const slides = sortedAds.length > 0 ? sortedAds : FEATURED_PROMO_SLIDES;
+  const slides = sortedAds.length > 0 ? sortedAds : (customSlides.length > 0 ? customSlides : FEATURED_PROMO_SLIDES);
 
   useEffect(() => {
     if (slides.length <= 1) return undefined;

@@ -316,7 +316,7 @@ export default function RiderCaptainPortal({
   return (
     <div className="space-y-3 text-xs text-white">
       {/* CAPTAIN VEHICLE IDENTITY & STRICT LOCK HEADER */}
-      <div className="bg-slate-900 p-3 rounded-2xl border border-teal-500/40 space-y-2">
+      <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-violet-950 p-3.5 rounded-3xl border border-indigo-400/40 shadow-lg space-y-2 we4-fade-up">
         <div className="flex justify-between items-start gap-2">
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -434,7 +434,7 @@ export default function RiderCaptainPortal({
                 className={`rounded-lg py-2 px-1 text-[8px] font-black ${radarServiceFilter === value ? "bg-cyan-400 text-slate-950" : "text-slate-300 bg-slate-900"}`}>{label}</button>
             ))}
           </div>
-          <div className="bg-slate-900 p-3 rounded-2xl border border-teal-500/40 space-y-2">
+          <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-violet-950 p-3.5 rounded-3xl border border-indigo-400/40 shadow-lg space-y-2 we4-fade-up">
             <div className="flex justify-between items-center">
               <div>
                 <div className="flex items-center justify-between gap-2">
