@@ -111,3 +111,48 @@ button:active:not(:disabled), a:active, [role="button"]:active {
   70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
   100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
 }
+.w4-shop-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #f5f3ff 0%, #fdf2f8 55%, #fff7ed 100%);
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  box-shadow: 0 8px 24px rgba(109, 40, 217, 0.08);
+  color: #1e1b4b;
+}
+.w4-shop-hero p:first-child {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7c3aed;
+  margin-bottom: 4px;
+}
+.w4-shop-hero h2 {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.15;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+.w4-shop-hero p:last-child {
+  font-size: 11px;
+  color: #475569;
+  line-height: 1.35;
+  margin: 0;
+}
+.w4-shop-hero button {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  border: none;
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.28);
+  cursor: pointer;
+}

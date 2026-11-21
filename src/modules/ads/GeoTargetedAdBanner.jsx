@@ -1,116 +1,119 @@
 import React, { useState, useEffect } from "react";
 
+const FEATURED_PROMO_SLIDES = [
+  {
+    id: "promo_instant",
+    badge: "⚡ FLASH DELIVERY",
+    title: "30-Min Town Delivery · 0% Markup",
+    subtitle: "Fresh groceries, veggies & daily essentials straight from trusted local shops",
+    cta: "Explore Stores",
+    icon: "🛍️",
+    gradient: "from-violet-600 via-fuchsia-600 to-rose-500",
+  },
+  {
+    id: "promo_services",
+    badge: "✨ VERIFIED PROS",
+    title: "1-Hour Home Experts at Your Door",
+    subtitle: "AC repair, electricians, plumbers & Mistri toli — transparent upfront pricing",
+    cta: "Book Service",
+    icon: "🛠️",
+    gradient: "from-blue-600 via-indigo-600 to-violet-700",
+  },
+  {
+    id: "promo_rides",
+    badge: "🚀 TOWN MOBILITY",
+    title: "Bike, Auto & Same-Hour Parcels",
+    subtitle: "Fast local rides and 2W/3W parcel drops across town with live OTP safety",
+    cta: "Book Ride",
+    icon: "🛵",
+    gradient: "from-orange-500 via-rose-500 to-pink-600",
+  },
+];
+
 export default function GeoTargetedAdBanner({
   ads,
   adsList = [],
   selectedZone,
   userZone = "Adilabad",
   userState = "Telangana",
-  brightTheme = true,
   onSelectAdAction
 }) {
   const effectiveAds = Array.isArray(ads) ? ads : (Array.isArray(adsList) ? adsList : []);
   const effectiveZone = selectedZone || userZone || "Adilabad";
-  const [selectedTier, setSelectedTier] = useState("ALL_PRIORITY");
   const [activeSlideIdx, setActiveSlideIdx] = useState(0);
 
   const tierWeight = { GEO_LOCAL: 1, STATE_LEVEL: 2, BRAND_NATIONAL: 3 };
-  const sortedAds = [...effectiveAds]
-    .filter((ad) => selectedTier === "ALL_PRIORITY" || ad.tier === selectedTier)
-    .sort((a, b) => (tierWeight[a.tier] || 9) - (tierWeight[b.tier] || 9));
+  const sortedAds = [...effectiveAds].sort((a, b) => (tierWeight[a.tier] || 9) - (tierWeight[b.tier] || 9));
+  const slides = sortedAds.length > 0 ? sortedAds : FEATURED_PROMO_SLIDES;
 
   useEffect(() => {
-    if ((sortedAds || []).length <= 1) return;
+    if (slides.length <= 1) return undefined;
     const timer = setInterval(() => {
-      setActiveSlideIdx((prev) => (prev + 1) % (sortedAds || []).length);
-    }, 4500);
+      setActiveSlideIdx((prev) => (prev + 1) % slides.length);
+    }, 3800);
     return () => clearInterval(timer);
-  }, [(sortedAds || []).length, selectedTier]);
+  }, [slides.length]);
 
-  if ((sortedAds || []).length === 0) {
-    return (
-      <div
-        className={`rounded-2xl p-2.5 border text-[10px] flex items-center justify-between ${
-          brightTheme
-            ? "bg-emerald-50/70 border-emerald-300 text-slate-700"
-            : "bg-slate-900 border-emerald-500/30 text-slate-300"
-        }`}
-      >
-        <span>
-          <strong className="text-emerald-600">Geo-Ad Engine Ready:</strong> 1st {effectiveZone} GPS &rarr; 2nd {userState} &rarr; 3rd Brand Ads
-        </span>
-        <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[8px]">
-          0% Markup
-        </span>
-      </div>
-    );
-  }
-
-  const currentAd = sortedAds[activeSlideIdx % Math.max((sortedAds || []).length, 1)] || sortedAds[0];
+  const current = slides[activeSlideIdx % slides.length] || slides[0];
+  const isLiveAd = sortedAds.length > 0;
+  const gradient = current.gradient || "from-violet-600 via-indigo-600 to-fuchsia-600";
 
   return (
     <div
-      className={`rounded-2xl p-2.5 border transition-all space-y-2 ${
-        brightTheme
-          ? "bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 border-emerald-400 text-slate-900 shadow-sm"
-          : "bg-gradient-to-r from-emerald-950/90 via-teal-950/80 to-slate-900 border-emerald-500/40 text-white"
-      }`}
+      onClick={() => onSelectAdAction && onSelectAdAction(current)}
+      className={`relative overflow-hidden rounded-3xl p-4 text-white bg-gradient-to-r ${gradient} shadow-lg cursor-pointer we4-fade-up`}
     >
-      <div className="flex items-center justify-between gap-1 flex-wrap">
-        <div className="flex gap-1 flex-wrap">
-          {[
-            { id: "ALL_PRIORITY", label: "Auto 1-2-3" },
-            { id: "GEO_LOCAL", label: `1. ${effectiveZone} GPS` },
-            { id: "STATE_LEVEL", label: `2. ${userState}` },
-            { id: "BRAND_NATIONAL", label: "3. Brand Ads" }
-          ].map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => {
-                setSelectedTier(t.id);
-                setActiveSlideIdx(0);
-              }}
-              className={`px-2 py-0.5 rounded-full text-[9px] font-black cursor-pointer ${
-                selectedTier === t.id
-                  ? "bg-emerald-600 text-white"
-                  : brightTheme
-                  ? "bg-white text-slate-700 border border-slate-300"
-                  : "bg-slate-800 text-slate-300"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <span className="text-[9px] font-bold text-emerald-600">
-          {(activeSlideIdx % (sortedAds || []).length) + 1}/{(sortedAds || []).length}
-        </span>
-      </div>
+      <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/15 blur-2xl" />
+      <div className="pointer-events-none absolute -left-6 -bottom-10 h-24 w-24 rounded-full bg-black/15 blur-2xl" />
 
-      <div className="flex items-center justify-between gap-2.5">
-        <div className="flex-1 min-w-0">
-          <span className="bg-amber-400 text-slate-950 text-[8px] font-black px-1.5 py-0.5 rounded uppercase">
-            {currentAd.tier === "GEO_LOCAL"
-              ? `1ST PRIORITY: ${currentAd.regionLabel}`
-              : currentAd.tier === "STATE_LEVEL"
-              ? `2ND PRIORITY: ${currentAd.regionLabel}`
-              : `3RD PRIORITY: ${currentAd.regionLabel}`}
-          </span>
-          <p className="text-xs font-black truncate mt-1">{currentAd.title}</p>
-          <p className={`text-[10px] truncate ${brightTheme ? "text-slate-600" : "text-slate-300"}`}>
-            {currentAd.subtitle}
-          </p>
+      <div className="relative flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[9px] font-black tracking-wider uppercase">
+              {isLiveAd ? `SPONSORED · ${current.regionLabel || effectiveZone}` : current.badge}
+            </span>
+            <span className="text-[9px] font-bold text-white/80">{userState}</span>
+          </div>
+          <h3 className="text-sm font-black leading-snug tracking-tight truncate">{current.title}</h3>
+          <p className="text-[11px] text-white/90 leading-snug line-clamp-2">{current.subtitle}</p>
         </div>
-        {currentAd.image && (
+
+        {current.image ? (
           <img
-            src={currentAd.image}
-            alt={currentAd.title}
-            onClick={() => onSelectAdAction && onSelectAdAction(currentAd)}
-            className="w-12 h-12 rounded-xl object-cover border border-emerald-400/50 shrink-0 cursor-pointer"
+            src={current.image}
+            alt={current.title}
+            className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/40 shadow-md shrink-0"
           />
+        ) : (
+          <div className="w-13 h-13 rounded-2xl bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center text-2xl shadow-inner shrink-0 p-2.5">
+            {current.icon || "✨"}
+          </div>
         )}
       </div>
+
+      {slides.length > 1 && (
+        <div className="relative flex items-center justify-between mt-3 pt-1">
+          <div className="flex items-center gap-1.5">
+            {slides.map((s, idx) => (
+              <button
+                key={s.id || idx}
+                type="button"
+                aria-label={`Slide ${idx + 1}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSlideIdx(idx);
+                }}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  idx === activeSlideIdx % slides.length ? "w-6 bg-white" : "w-1.5 bg-white/40 hover:bg-white/70"
+                }`}
+              />
+            ))}
+          </div>
+          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/20">
+            {current.cta || "Tap to Explore"} &rarr;
+          </span>
+        </div>
+      )}
     </div>
   );
 }
