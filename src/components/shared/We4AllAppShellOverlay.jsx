@@ -60,7 +60,7 @@ export function We4AllAppShellOverlay({ appVersion = APP_VERSION }) {
       )}
 
       {/* Compact non-intrusive Update & Security pill */}
-      <div className="fixed top-3 right-3 z-40">
+      <div className="fixed bottom-20 right-3 z-40">
         <button
           type="button"
           onClick={() => setDrawerOpen(true)}

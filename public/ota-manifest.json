@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.26",
-    "latestAvailableVersion":  "3.3.26",
-    "versionCode":  356,
-    "bundleFile":  "we4all-ota-v3.3.26.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.26.zip",
+    "version":  "3.3.27",
+    "latestAvailableVersion":  "3.3.27",
+    "versionCode":  357,
+    "bundleFile":  "we4all-ota-v3.3.27.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.27.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "fdd3318c1ebd69090f0440e8d058bb4f676710b4a45d4a6e4df0bfe07664aa5a",
-    "sizeKb":  1413,
-    "releasedAt":  "2026-11-21T19:22:37Z",
+    "sha256":  "ffc2a9795677718c9b18e02eaa21a35e12e77001067133d4acc9e11bba33b89d",
+    "sizeKb":  22530,
+    "releasedAt":  "2026-11-21T20:07:15Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.26: Zero-data-loss auto OTA updates, fixed Accounts update check, and direct Download Latest APK."
+    "releaseNotes":  "WE4ALL v3.3.27: Guest profile tabs gated until login, fixed registration bootstrap \u0026 login fetch errors, cleared Menu overlap."
 }

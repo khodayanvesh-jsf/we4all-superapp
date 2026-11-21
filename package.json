@@ -1,7 +1,7 @@
 {
     "name": "we-4-all-super-app",
     "private": true,
-    "version": "3.3.26",
+    "version": "3.3.27",
     "type": "module",
     "scripts": {
         "dev": "vite",

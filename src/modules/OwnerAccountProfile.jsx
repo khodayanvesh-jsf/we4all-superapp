@@ -443,7 +443,22 @@ export default function OwnerAccountProfile(rawProps = {}) {
     const bootstrap = await bootstrapCustomerAccount({
       fullName: profilePayload.full_name, phone: profilePayload.phone, area: profilePayload.area
     });
-    if (bootstrap?.ok !== true) throw new Error("Your account exists, but setup could not finish. Sign in and try again.");
+    if (bootstrap?.ok !== true) {
+      const { data: existingCustRole } = await supabase
+        .from("we4all_user_roles")
+        .select("role,status")
+        .eq("user_id", user.id)
+        .eq("role", "customer")
+        .maybeSingle();
+      if (!existingCustRole) {
+        const { error: insertRoleErr } = await supabase
+          .from("we4all_user_roles")
+          .insert({ user_id: user.id, role: "customer", status: "approved" });
+        if (insertRoleErr && !String(insertRoleErr.code || "").includes("23505")) {
+          throw new Error("Your account exists, but setup could not finish. Sign in and try again.");
+        }
+      }
+    }
 
     const customer = {
       id: user.id, authUserId: user.id,
@@ -590,24 +605,35 @@ export default function OwnerAccountProfile(rawProps = {}) {
       let data = signedIn.data;
       if (identity.phone && signedIn.error) {
         const digits10 = cleanPhoneDigits(identity.phone);
-        const pilotAlias = digits10.length === 10 ? `pilot.${digits10}@we4all.app` : "";
+        const aliasCandidates = digits10.length === 10
+          ? [`pilot.${digits10}@we4all.app`, `w4all-91${digits10}@login.we4all.invalid`]
+          : [];
         let recoveredSession = null;
-        if (pilotAlias) {
-          const aliasTry = await supabase.auth.signInWithPassword({ email: pilotAlias, password: loginForm.pin });
-          if (!aliasTry.error && aliasTry.data?.session?.access_token) {
-            recoveredSession = aliasTry.data;
+        for (const aliasEmail of aliasCandidates) {
+          try {
+            const aliasTry = await supabase.auth.signInWithPassword({ email: aliasEmail, password: loginForm.pin });
+            if (!aliasTry.error && aliasTry.data?.session?.access_token) {
+              recoveredSession = aliasTry.data;
+              break;
+            }
+          } catch {
+            // try next alias
           }
         }
         if (!recoveredSession) {
-          const trial = await supabase.functions.invoke("we4all-trial-otp-auth", {
-            body: { action: "trial_pin_login", phone: identity.phone, pin: loginForm.pin }
-          });
-          if (!trial.error && trial.data?.session?.access_token && trial.data?.session?.refresh_token) {
-            const { error } = await supabase.auth.setSession({
-              access_token: trial.data.session.access_token,
-              refresh_token: trial.data.session.refresh_token
+          try {
+            const trial = await supabase.functions.invoke("we4all-trial-otp-auth", {
+              body: { action: "trial_pin_login", phone: identity.phone, pin: loginForm.pin }
             });
-            if (!error) recoveredSession = trial.data;
+            if (!trial.error && trial.data?.session?.access_token && trial.data?.session?.refresh_token) {
+              const { error } = await supabase.auth.setSession({
+                access_token: trial.data.session.access_token,
+                refresh_token: trial.data.session.refresh_token
+              });
+              if (!error) recoveredSession = trial.data;
+            }
+          } catch {
+            // handled cleanly by direct alias sign-in above
           }
         }
         if (!recoveredSession) {
@@ -853,13 +879,15 @@ export default function OwnerAccountProfile(rawProps = {}) {
       )}
 
       {/* Account Navigation Tabs */}
-      <div className={`grid ${partnerApplication ? "grid-cols-2 md:grid-cols-5" : "grid-cols-2 md:grid-cols-4"} gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800`}>
+      <div className={`grid ${!isLoggedIn ? "grid-cols-2" : partnerApplication ? "grid-cols-2 md:grid-cols-5" : "grid-cols-2 md:grid-cols-4"} gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800`}>
         {[
           { id: isLoggedIn ? "account_details" : "kyc_gate", label: isLoggedIn ? "📋 Account Details" : "🔐 Login / Register" },
-          { id: "profile_upi", label: "✏️ Profile & UPI" },
-          { id: "addresses", label: "📍 Addresses" },
+          ...(isLoggedIn ? [
+            { id: "profile_upi", label: "✏️ Profile & UPI" },
+            { id: "addresses", label: "📍 Addresses" }
+          ] : []),
           { id: "about_app", label: "ℹ️ About App" },
-          ...(partnerApplication ? [{ id: "partner_kyc", label: "🛡️ Partner application" }] : [])
+          ...(isLoggedIn && partnerApplication ? [{ id: "partner_kyc", label: "🛡️ Partner application" }] : [])
         ].map((t) => (
           <button
             key={t.id}
@@ -1212,7 +1240,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         </div>
       )}
 
-      {subTab === "profile_upi" && (
+      {isLoggedIn && subTab === "profile_upi" && (
         <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3.5 shadow-xl" aria-label="Profile and UPI settings">
           <div className="flex justify-between items-center border-b border-slate-800 pb-2">
             <div>
@@ -1341,7 +1369,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
         </section>
       )}
 
-      {subTab === "addresses" && (
+      {isLoggedIn && subTab === "addresses" && (
         <section className="bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-3.5 shadow-xl" aria-label="Saved delivery addresses">
           <div className="flex justify-between items-center border-b border-slate-800 pb-2">
             <div>
