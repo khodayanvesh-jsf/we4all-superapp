@@ -144,6 +144,18 @@ function MobilePhoneShell({
   children
 }) {
   const t = getLangText(lang);
+  const DEFAULT_SHELL_NEWS = "🔥 0% Platform Markup on Adilabad Kirana & Fresh Mandi Veg  •  ⚡ 1-Hr Verified Electricians, Plumbers & AC Pros Live  •  🛵 Instant Bike, Auto & Same-Hour Parcel Drops  •  🎉 Book Function Halls & Event Decorators Direct  •  ";
+  const [liveNewsTicker, setLiveNewsTicker] = useState(() => {
+    try { return localStorage.getItem("we4all_live_news_ticker_v1") || DEFAULT_SHELL_NEWS; } catch { return DEFAULT_SHELL_NEWS; }
+  });
+  useEffect(() => {
+    const onNewsUpdate = (evt) => {
+      const txt = String(evt?.detail?.text || "").trim();
+      if (txt) setLiveNewsTicker(txt);
+    };
+    window.addEventListener("we4all:news-ticker-updated", onNewsUpdate);
+    return () => window.removeEventListener("we4all:news-ticker-updated", onNewsUpdate);
+  }, []);
   return (
     <div
       className={
@@ -157,7 +169,7 @@ function MobilePhoneShell({
         className={
           "px-3 py-2 flex justify-between items-center text-[11px] border-b shrink-0 " +
           (brightTheme
-            ? "bg-emerald-950 text-white border-emerald-800"
+            ? "bg-indigo-950 text-white border-violet-800"
             : "bg-slate-950 text-slate-100 border-emerald-950/60")
         }
       >
