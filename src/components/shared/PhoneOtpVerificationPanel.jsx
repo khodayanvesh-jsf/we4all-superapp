@@ -10,6 +10,10 @@ const PORTAL_OPTIONS = [
   { id: 'labour', label: 'Labour Adda / Mistri (Admin Approval)', autoApproved: false },
 ];
 
+const DEFAULT_PILOT_MODE =
+  typeof import.meta !== 'undefined' &&
+  String(import.meta.env?.VITE_TRIAL_OTP_MODE ?? 'true').toLowerCase() !== 'false';
+
 function normalizeIndianPhone(raw) {
   const digits = String(raw || '').replace(/\D/g, '');
   if (digits.length === 10) return `+91${digits}`;
@@ -17,20 +21,40 @@ function normalizeIndianPhone(raw) {
   return '';
 }
 
+async function extractFnError(err, fallback) {
+  if (!err) return fallback;
+  try {
+    if (err.context && typeof err.context.json === 'function') {
+      const parsed = await err.context.json();
+      if (parsed?.error) return String(parsed.error);
+    }
+  } catch {
+    // ignore parse failure
+  }
+  return err.message || fallback;
+}
+
 export function PhoneOtpVerificationPanel({
   defaultRole = 'customer',
   allowRoleSelection = true,
   onVerified,
 }) {
+  // authMode: 'pilot_otp' (zero SMS cost) | 'pilot_pin' (returning pilot PIN) | 'sms_otp' (live SMS hook)
+  const [authMode, setAuthMode] = useState(DEFAULT_PILOT_MODE ? 'pilot_otp' : 'sms_otp');
   const [step, setStep] = useState('phone');
   const [phoneInput, setPhoneInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
+  const [pinInput, setPinInput] = useState('');
+  const [trialChallengeId, setTrialChallengeId] = useState('');
+  const [trialPreviewCode, setTrialPreviewCode] = useState('');
   const [selectedRole, setSelectedRole] = useState(defaultRole);
   const [fullName, setFullName] = useState('');
   const [businessName, setBusinessName] = useState('');
+  const [areaName, setAreaName] = useState('Adilabad');
   const [cooldown, setCooldown] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showPilotFallbackBtn, setShowPilotFallbackBtn] = useState(false);
   const [info, setInfo] = useState('');
 
   useEffect(() => {
@@ -41,10 +65,89 @@ export function PhoneOtpVerificationPanel({
     return () => window.clearInterval(t);
   }, [cooldown]);
 
-  const handleSendOtp = async (e) => {
-    e?.preventDefault?.();
+  const resetMessages = () => {
     setError('');
     setInfo('');
+    setShowPilotFallbackBtn(false);
+  };
+
+  const syncPortalRole = async (userId) => {
+    let roleStatus = selectedRole === 'customer' ? 'approved' : 'pending_admin_approval';
+    const { data: existingRole } = await supabase
+      .from('we4all_user_roles')
+      .select('role, status')
+      .eq('user_id', userId)
+      .eq('role', selectedRole)
+      .maybeSingle();
+
+    if (existingRole?.status) {
+      return existingRole.status;
+    }
+
+    const { data: insertedRole, error: roleErr } = await supabase
+      .from('we4all_user_roles')
+      .insert({
+        user_id: userId,
+        role: selectedRole,
+        status: roleStatus,
+      })
+      .select('role, status')
+      .single();
+
+    if (roleErr) throw new Error(roleErr.message);
+    return insertedRole?.status || roleStatus;
+  };
+
+  const handlePilotPinSignIn = async (e) => {
+    e?.preventDefault?.();
+    resetMessages();
+
+    const e164 = normalizeIndianPhone(phoneInput);
+    if (!e164) {
+      setError('Enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+    if (!/^\d{6}$/.test(pinInput)) {
+      setError('Enter your 6-digit account PIN.');
+      return;
+    }
+
+    setBusy(true);
+    const { data, error: fnErr } = await supabase.functions.invoke('we4all-trial-otp-auth', {
+      body: { action: 'trial_pin_login', phone: e164, pin: pinInput },
+    });
+
+    if (fnErr || !data?.ok || !data?.session?.access_token) {
+      setBusy(false);
+      setError(data?.error || (await extractFnError(fnErr, 'Invalid mobile number or 6-digit PIN.')));
+      return;
+    }
+
+    const { error: sessErr } = await supabase.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    });
+    if (sessErr) {
+      setBusy(false);
+      setError(sessErr.message);
+      return;
+    }
+
+    setBusy(false);
+    setInfo('Signed in with zero-cost Pilot PIN!');
+    onVerified?.({
+      user: data.user,
+      session: data.session,
+      phone: e164,
+      role: selectedRole,
+      status: 'approved',
+      mode: 'pilot_pin',
+    });
+  };
+
+  const handleSendOtp = async (e) => {
+    e?.preventDefault?.();
+    resetMessages();
 
     const e164 = normalizeIndianPhone(phoneInput);
     if (!e164) {
@@ -52,6 +155,48 @@ export function PhoneOtpVerificationPanel({
       return;
     }
 
+    if (authMode === 'pilot_otp') {
+      if (!fullName.trim()) {
+        setError('Enter your full name to generate a zero-cost Pilot OTP.');
+        return;
+      }
+      if (selectedRole !== 'customer' && !businessName.trim()) {
+        setError('Enter your shop, service, or trade name for partner registration.');
+        return;
+      }
+
+      setBusy(true);
+      const { data, error: fnErr } = await supabase.functions.invoke('we4all-trial-otp-auth', {
+        body: {
+          action: 'request',
+          phone: e164,
+          requested_role: selectedRole,
+          full_name: fullName.trim(),
+          business_name: businessName.trim(),
+          area: areaName.trim() || 'Adilabad',
+          zone_id: 'adilabad_master',
+          latitude: 19.6641,
+          longitude: 78.532,
+        },
+      });
+      setBusy(false);
+
+      if (fnErr || data?.ok !== true || !data?.challenge_id) {
+        setError(data?.error || (await extractFnError(fnErr, 'Pilot OTP service unavailable.')));
+        return;
+      }
+
+      const code = String(data.trial_code || '');
+      setTrialChallengeId(data.challenge_id);
+      setTrialPreviewCode(code);
+      setOtpInput(code);
+      setStep('otp');
+      setCooldown(30);
+      setInfo(`Zero-cost Pilot OTP generated (${code}). Set a 6-digit PIN below to finish.`);
+      return;
+    }
+
+    // Live SMS OTP via Supabase Auth Send SMS Hook
     setBusy(true);
     const { error: otpErr } = await supabase.auth.signInWithOtp({
       phone: e164,
@@ -68,26 +213,97 @@ export function PhoneOtpVerificationPanel({
 
     if (otpErr) {
       setError(otpErr.message);
+      setShowPilotFallbackBtn(true);
       return;
     }
 
     setStep('otp');
     setCooldown(30);
-    setInfo(`6-digit OTP sent to ${e164}.`);
+    setInfo(`6-digit SMS OTP sent to ${e164}.`);
   };
 
   const handleVerifyOtp = async (e) => {
     e?.preventDefault?.();
-    setError('');
-    setInfo('');
+    resetMessages();
 
     const e164 = normalizeIndianPhone(phoneInput);
     const cleanOtp = String(otpInput || '').replace(/\D/g, '').slice(0, 6);
     if (cleanOtp.length !== 6) {
-      setError('Enter the 6-digit OTP sent to your mobile.');
+      setError('Enter the 6-digit OTP code.');
       return;
     }
 
+    if (authMode === 'pilot_otp') {
+      if (!/^\d{6}$/.test(pinInput)) {
+        setError('Create a 6-digit account PIN for future zero-cost logins.');
+        return;
+      }
+
+      setBusy(true);
+      const { data: trialData, error: fnErr } = await supabase.functions.invoke('we4all-trial-otp-auth', {
+        body: {
+          action: 'verify',
+          phone: e164,
+          challenge_id: trialChallengeId,
+          code: cleanOtp,
+          pin: pinInput,
+          requested_role: selectedRole,
+          full_name: fullName.trim() || 'WE4ALL Member',
+          business_name: businessName.trim(),
+          area: areaName.trim() || 'Adilabad',
+          zone_id: 'adilabad_master',
+          latitude: 19.6641,
+          longitude: 78.532,
+        },
+      });
+
+      if (fnErr || trialData?.ok !== true) {
+        setBusy(false);
+        setError(trialData?.error || (await extractFnError(fnErr, 'Could not verify Pilot OTP.')));
+        return;
+      }
+
+      if (trialData.session?.access_token && trialData.session?.refresh_token) {
+        const { error: sessErr } = await supabase.auth.setSession({
+          access_token: trialData.session.access_token,
+          refresh_token: trialData.session.refresh_token,
+        });
+        if (sessErr) {
+          setBusy(false);
+          setError(sessErr.message);
+          return;
+        }
+      }
+
+      let roleStatus = selectedRole === 'customer' ? 'approved' : 'pending_admin_approval';
+      if (trialData.user?.id && trialData.session?.access_token) {
+        try {
+          roleStatus = await syncPortalRole(trialData.user.id);
+        } catch (roleErr) {
+          setBusy(false);
+          setError(roleErr.message);
+          return;
+        }
+      }
+
+      setBusy(false);
+      setInfo(
+        roleStatus === 'approved'
+          ? 'Pilot account verified! Consumer portal unlocked.'
+          : 'Pilot account verified! Partner application submitted for WE4ALL Admin approval.'
+      );
+      onVerified?.({
+        user: trialData.user || { id: trialData.user_id, phone: e164 },
+        session: trialData.session || null,
+        phone: e164,
+        role: selectedRole,
+        status: roleStatus,
+        mode: 'pilot_otp',
+      });
+      return;
+    }
+
+    // Live SMS OTP verification
     setBusy(true);
     const { data: verifyData, error: verifyErr } = await supabase.auth.verifyOtp({
       phone: e164,
@@ -101,36 +317,13 @@ export function PhoneOtpVerificationPanel({
       return;
     }
 
-    const userId = verifyData.user.id;
-    let roleStatus = selectedRole === 'customer' ? 'approved' : 'pending';
-
-    // Register portal role (Postgres trigger enforces customer=approved, partners=pending & locked)
-    const { data: existingRole } = await supabase
-      .from('we4all_user_roles')
-      .select('role, status')
-      .eq('user_id', userId)
-      .eq('role', selectedRole)
-      .maybeSingle();
-
-    if (existingRole?.status) {
-      roleStatus = existingRole.status;
-    } else {
-      const { data: insertedRole, error: roleErr } = await supabase
-        .from('we4all_user_roles')
-        .insert({
-          user_id: userId,
-          role: selectedRole,
-          status: roleStatus,
-        })
-        .select('role, status')
-        .single();
-
-      if (roleErr) {
-        setBusy(false);
-        setError(roleErr.message);
-        return;
-      }
-      if (insertedRole?.status) roleStatus = insertedRole.status;
+    let roleStatus;
+    try {
+      roleStatus = await syncPortalRole(verifyData.user.id);
+    } catch (roleErr) {
+      setBusy(false);
+      setError(roleErr.message);
+      return;
     }
 
     setBusy(false);
@@ -145,6 +338,7 @@ export function PhoneOtpVerificationPanel({
       phone: e164,
       role: selectedRole,
       status: roleStatus,
+      mode: 'sms_otp',
     });
   };
 
@@ -152,17 +346,97 @@ export function PhoneOtpVerificationPanel({
     <div className="max-w-md mx-auto rounded-3xl border p-5 shadow-md space-y-4 text-xs we4-surface">
       <div>
         <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600">
-          WE4ALL Mobile OTP Registration
+          WE4ALL Mobile OTP &amp; Pilot Auth
         </p>
         <h2 className="text-base font-black mt-0.5">
-          {step === 'phone' ? 'Verify Your Mobile Number' : 'Enter 6-Digit OTP'}
+          {authMode === 'pilot_pin'
+            ? 'Returning Pilot PIN Sign-In'
+            : step === 'phone'
+              ? 'Verify Your Mobile Number'
+              : 'Enter 6-Digit OTP'}
         </h2>
         <p className="opacity-70 mt-0.5">
-          One mobile number per account. Consumers enter instantly; partner portals require Admin approval.
+          Zero-cost Pilot OTP for testing, Live SMS OTP for production, plus 4-Digit Quick PIN unlock.
         </p>
       </div>
 
-      {step === 'phone' ? (
+      {/* Mode Switcher */}
+      <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100 text-slate-700 font-bold text-[11px]">
+        {[
+          { id: 'pilot_otp', label: 'Pilot OTP (Free)' },
+          { id: 'pilot_pin', label: 'Pilot PIN' },
+          { id: 'sms_otp', label: 'Live SMS' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => {
+              setAuthMode(tab.id);
+              setStep('phone');
+              resetMessages();
+            }}
+            className={`py-1.5 rounded-lg transition ${
+              authMode === tab.id ? 'bg-emerald-600 text-white shadow-sm' : 'hover:bg-white/70'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {authMode === 'pilot_pin' ? (
+        <form onSubmit={handlePilotPinSignIn} className="space-y-3">
+          <div>
+            <label className="block font-semibold mb-1 opacity-80">10-Digit Mobile Number</label>
+            <div className="flex items-center rounded-xl border border-slate-300 overflow-hidden">
+              <span className="px-3 py-2.5 bg-slate-100 text-slate-700 font-bold border-r border-slate-300">
+                +91
+              </span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                placeholder="98480XXXXX"
+                className="flex-1 px-3 py-2.5 bg-transparent outline-none font-bold tracking-wider"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block font-semibold mb-1 opacity-80">6-Digit Account PIN</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="******"
+              className="w-full text-center text-lg tracking-[0.4em] font-black rounded-xl border border-slate-300 px-3 py-2.5 bg-transparent outline-none"
+            />
+          </div>
+
+          {error && (
+            <p className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
+              {error}
+            </p>
+          )}
+          {info && (
+            <p className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">
+              {info}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy || phoneInput.length < 10 || pinInput.length !== 6}
+            className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {busy ? 'Signing in...' : 'Sign In with Pilot PIN'}
+          </button>
+        </form>
+      ) : step === 'phone' ? (
         <form onSubmit={handleSendOtp} className="space-y-3">
           {allowRoleSelection && (
             <div>
@@ -193,18 +467,30 @@ export function PhoneOtpVerificationPanel({
           </div>
 
           {selectedRole !== 'customer' && (
-            <div>
-              <label className="block font-semibold mb-1 opacity-80">
-                Shop / Service / Trade Name
-              </label>
-              <input
-                type="text"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="e.g. Sri Laxmi Supermart"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 bg-transparent"
-              />
-            </div>
+            <>
+              <div>
+                <label className="block font-semibold mb-1 opacity-80">
+                  Shop / Service / Trade Name
+                </label>
+                <input
+                  type="text"
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  placeholder="e.g. Sri Laxmi Supermart"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 bg-transparent"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 opacity-80">Town / Area</label>
+                <input
+                  type="text"
+                  value={areaName}
+                  onChange={(e) => setAreaName(e.target.value)}
+                  placeholder="Adilabad"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 bg-transparent"
+                />
+              </div>
+            </>
           )}
 
           <div>
@@ -226,9 +512,21 @@ export function PhoneOtpVerificationPanel({
           </div>
 
           {error && (
-            <p className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
-              {error}
-            </p>
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold space-y-2">
+              <p>{error}</p>
+              {showPilotFallbackBtn && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('pilot_otp');
+                    resetMessages();
+                  }}
+                  className="w-full py-2 rounded-lg bg-emerald-600 text-white font-bold"
+                >
+                  Switch to Zero-Cost Pilot OTP
+                </button>
+              )}
+            </div>
           )}
 
           <button
@@ -236,14 +534,24 @@ export function PhoneOtpVerificationPanel({
             disabled={busy || phoneInput.length < 10}
             className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50"
           >
-            {busy ? 'Sending OTP...' : 'Send 6-Digit OTP'}
+            {busy
+              ? 'Generating OTP...'
+              : authMode === 'pilot_otp'
+                ? 'Generate Zero-Cost Pilot OTP'
+                : 'Send 6-Digit SMS OTP'}
           </button>
         </form>
       ) : (
         <form onSubmit={handleVerifyOtp} className="space-y-3">
+          {authMode === 'pilot_otp' && trialPreviewCode && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 font-bold text-center">
+              Pilot Test Code (Zero SMS Cost): <span className="tracking-widest text-sm">{trialPreviewCode}</span>
+            </div>
+          )}
+
           <div>
             <label className="block font-semibold mb-1 opacity-80">
-              6-Digit OTP Code (Auto-fills on Android SMS)
+              6-Digit OTP Code {authMode === 'sms_otp' ? '(Auto-fills on Android SMS)' : '(Auto-filled)'}
             </label>
             <input
               type="text"
@@ -256,6 +564,23 @@ export function PhoneOtpVerificationPanel({
               className="w-full text-center text-xl tracking-[0.5em] font-black rounded-xl border border-emerald-400 px-3 py-3 bg-transparent outline-none"
             />
           </div>
+
+          {authMode === 'pilot_otp' && (
+            <div>
+              <label className="block font-semibold mb-1 opacity-80">
+                Set 6-Digit Account PIN (for returning logins)
+              </label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="******"
+                className="w-full text-center text-lg tracking-[0.4em] font-black rounded-xl border border-slate-300 px-3 py-2.5 bg-transparent outline-none"
+              />
+            </div>
+          )}
 
           {info && (
             <p className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">
@@ -271,10 +596,10 @@ export function PhoneOtpVerificationPanel({
 
           <button
             type="submit"
-            disabled={busy || otpInput.length !== 6}
+            disabled={busy || otpInput.length !== 6 || (authMode === 'pilot_otp' && pinInput.length !== 6)}
             className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50"
           >
-            {busy ? 'Verifying OTP...' : 'Verify OTP & Continue'}
+            {busy ? 'Verifying...' : 'Verify OTP & Continue'}
           </button>
 
           <div className="flex items-center justify-between pt-1">
@@ -283,7 +608,9 @@ export function PhoneOtpVerificationPanel({
               onClick={() => {
                 setStep('phone');
                 setOtpInput('');
-                setError('');
+                setTrialChallengeId('');
+                setTrialPreviewCode('');
+                resetMessages();
               }}
               className="font-semibold opacity-75 hover:underline"
             >
@@ -295,7 +622,7 @@ export function PhoneOtpVerificationPanel({
               onClick={handleSendOtp}
               className="font-bold text-indigo-600 disabled:opacity-40"
             >
-              {cooldown > 0 ? `Resend OTP in ${cooldown}s` : 'Resend OTP'}
+              {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend OTP'}
             </button>
           </div>
         </form>

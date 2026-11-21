@@ -42,6 +42,8 @@ import AdminSecurityGate from "./modules/AdminSecurityGate";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
 import { We4AllAppShellOverlay } from './components/shared/We4AllAppShellOverlay';
+import { PendingPartnerGate } from './components/partner/PendingPartnerGate';
+import { Customer2026Experience } from './components/customer/Customer2026Experience';
 import {
   saveCloudAndLocalState,
   loadCloudAndLocalState,
@@ -1329,6 +1331,20 @@ function AppContent() {
 
           {footerTab === "home" && (
             <>
+              <Customer2026Experience
+                townName={geoMarkets.find((m) => m.id === selectedZoneFilter)?.display_name || "Adilabad Town"}
+                onSelectSector={(sectorId) => {
+                  const map = { daily_needs: "stores", home_services: "services", rides: "taxi", decorators: "events", labour: "labour", parcels: "parcel", medicines: "stores", bakery: "stores" };
+                  setCustomerHomeSubTab(map[sectorId] || "stores");
+                  if (sectorId === "medicines") setSearchQuery("medicine");
+                  if (sectorId === "bakery") setSearchQuery("bakery");
+                }}
+                onSearch={(q) => setSearchQuery(q)}
+                onQuickAdd={(item) => {
+                  if (item?.title) setSearchQuery(item.title);
+                  triggerToast(`Showing ${item?.title || "repeat item"}`);
+                }}
+              />
               <div className="grid grid-cols-6 gap-1 bg-slate-200/80 p-1 rounded-xl text-[10px] font-black text-slate-800">
                 {[
                   { id: "stores", label: "Stores" },
@@ -2132,8 +2148,10 @@ function AppContent() {
       </div>
     );
 
+    const partnerDisplayName = currentUser?.businessName || currentUser?.fullName || currentUser?.name || "WE4ALL Partner";
     if (portalRole === "merchant") {
       return (
+        <PendingPartnerGate portalRole="merchant" partnerName={partnerDisplayName}>
         <MerchantPortal
           footerTab={footerTab}
           setFooterTab={setFooterTab}
@@ -2150,11 +2168,13 @@ function AppContent() {
           onTriggerToast={triggerToast}
           renderAccountTab={renderPartnerAccountTab}
         />
+        </PendingPartnerGate>
       );
     }
 
     if (portalRole === "service_provider") {
       return (
+        <PendingPartnerGate portalRole="service_provider" partnerName={partnerDisplayName}>
         <ServiceProviderPortal
           footerTab={footerTab}
           setFooterTab={setFooterTab}
@@ -2169,11 +2189,13 @@ function AppContent() {
           onTriggerToast={triggerToast}
           renderAccountTab={renderPartnerAccountTab}
         />
+        </PendingPartnerGate>
       );
     }
 
     if (portalRole === "decorator") {
       return (
+        <PendingPartnerGate portalRole="decorator" partnerName={partnerDisplayName}>
         <DecoratorPortal
           footerTab={footerTab}
           setFooterTab={setFooterTab}
@@ -2188,11 +2210,13 @@ function AppContent() {
           onTriggerToast={triggerToast}
           renderAccountTab={renderPartnerAccountTab}
         />
+        </PendingPartnerGate>
       );
     }
 
     if (portalRole === "rider") {
       return (
+        <PendingPartnerGate portalRole="rider" partnerName={partnerDisplayName}>
         <RiderCaptainPortal
           footerTab={footerTab}
           setFooterTab={setFooterTab}
@@ -2208,11 +2232,13 @@ function AppContent() {
           onReportError={(title, detail) => triggerToast(title + ": " + detail)}
           renderAccountTab={renderPartnerAccountTab}
         />
+        </PendingPartnerGate>
       );
     }
 
     if (portalRole === "labour") {
       return (
+        <PendingPartnerGate portalRole="labour" partnerName={partnerDisplayName}>
         <LabourWorksitePortal
           mode="worker"
           categories={LABOUR_TRADE_CATEGORIES}
@@ -2224,6 +2250,7 @@ function AppContent() {
           brightTheme={brightTheme}
           onToast={triggerToast}
         />
+        </PendingPartnerGate>
       );
     }
 

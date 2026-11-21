@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { APP_VERSION } from '../../appVersion.js';
 import { supabase } from '../../supabaseClient';
 import { hasLocalPin } from '../../utils/we4allQuickAuth';
 import { BottomSheet } from '../ui/BottomSheet';
@@ -6,7 +7,7 @@ import { PinBiometricLockScreen } from './PinBiometricLockScreen';
 import { OtaUpdateBanner } from './OtaUpdateBanner';
 import { PhoneOtpVerificationPanel } from './PhoneOtpVerificationPanel';
 
-export function We4AllAppShellOverlay({ appVersion = '3.3.23' }) {
+export function We4AllAppShellOverlay({ appVersion = APP_VERSION }) {
   const [user, setUser] = useState(null);
   const [locked, setLocked] = useState(false);
   const [pinSetupOpen, setPinSetupOpen] = useState(false);

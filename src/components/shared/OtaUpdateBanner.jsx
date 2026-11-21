@@ -1,10 +1,11 @@
+import { APP_VERSION } from '../../appVersion.js';
 import React, { useEffect, useState } from 'react';
 import {
   checkForSelfHostedOta,
   getInstalledOtaVersion,
 } from '../../utils/we4allSelfHostedOta';
 
-export function OtaUpdateBanner({ currentVersion = '3.3.23' }) {
+export function OtaUpdateBanner({ currentVersion = APP_VERSION }) {
   const [displayVersion, setDisplayVersion] = useState(currentVersion);
   const [checking, setChecking] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
