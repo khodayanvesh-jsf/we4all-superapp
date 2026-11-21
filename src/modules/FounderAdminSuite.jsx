@@ -1000,7 +1000,7 @@ export default function FounderAdminSuite({
                 <span className="font-bold text-[11px]">{item.label}</span>
                 <span
                   className={`px-2 py-0.5 rounded text-[9px] font-black ${
-                    checked ? "bg-emerald-400 text-slate-950" : "bg-slate-800 text-amber-300"
+                    checked ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow" : "bg-slate-800 text-amber-300"
                   }`}
                 >
                   {checked ? "CHECKED \u2713" : "CLICK TO CHECK"}
@@ -1286,7 +1286,7 @@ export default function FounderAdminSuite({
                 onClick={() => { setApprovalQueueSubTab(sub.id); if (sub.id === "product_approvals") refreshManagedListings(); }}
                 className={`py-2 px-1 rounded-xl font-black text-[10px] cursor-pointer ${
                   approvalQueueSubTab === sub.id
-                    ? "bg-emerald-400 text-slate-950"
+                    ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow"
                     : "text-slate-400 hover:text-white"
                 }`}
               >
@@ -2977,6 +2977,28 @@ export default function FounderAdminSuite({
   const [newsDraft, setNewsDraft] = useState(() => {
     try { return localStorage.getItem("we4all_live_news_ticker_v1") || ""; } catch { return ""; }
   });
+  const [workflowGroup, setWorkflowGroup] = useState("all");
+  const ADMIN_WORKFLOW_GROUPS = [
+    { id: "all", label: "All Modules", tabs: null },
+    { id: "approvals_kyc", label: "Approvals & KYC", tabs: ["approvals", "portal_users", "geo_managers"] },
+    { id: "orders_data", label: "Orders & Data", tabs: ["database", "categories", "live_locator"] },
+    { id: "growth_ads", label: "Growth & Ads", tabs: ["geo_ads", "modules", "monetization"] },
+    { id: "security_qa", label: "Security & QA", tabs: ["security_server", "founder_profile", "telemetry", "testing"] }
+  ];
+  const activeWorkflowObj = ADMIN_WORKFLOW_GROUPS.find((g) => g.id === workflowGroup) || ADMIN_WORKFLOW_GROUPS[0];
+  const groupedAdminTabs = activeWorkflowObj.tabs
+    ? visibleAdminTabs.filter((tab) => activeWorkflowObj.tabs.includes(tab.id))
+    : visibleAdminTabs;
+
+  const handleSelectWorkflowGroup = (groupId) => {
+    setWorkflowGroup(groupId);
+    const targetGroup = ADMIN_WORKFLOW_GROUPS.find((g) => g.id === groupId);
+    if (targetGroup?.tabs?.length) {
+      const firstAllowed = visibleAdminTabs.find((t) => targetGroup.tabs.includes(t.id));
+      if (firstAllowed) setFounderTab(firstAllowed.id);
+    }
+  };
+
   const handlePublishLiveNews = () => {
     const clean = String(newsDraft || "").trim();
     if (!clean) {
@@ -3084,19 +3106,38 @@ export default function FounderAdminSuite({
             </button>
           </div>
         )}
+
+        {adminAccess?.role !== "city_manager" && (
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {ADMIN_WORKFLOW_GROUPS.map((grp) => (
+              <button
+                key={grp.id}
+                type="button"
+                onClick={() => handleSelectWorkflowGroup(grp.id)}
+                className={`px-3 py-1.5 rounded-full text-[10px] font-black shrink-0 border transition cursor-pointer ${
+                  workflowGroup === grp.id
+                    ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white border-violet-400 shadow"
+                    : "bg-slate-900/90 text-slate-300 border-slate-800 hover:border-violet-500/50"
+                }`}
+              >
+                {grp.label}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {adminDisplayMode === "web" ? (
         <div className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-4 gap-5">
           <aside className="space-y-1.5">
-            {visibleAdminTabs.map((tab) => (
+            {groupedAdminTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setFounderTab(tab.id)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold border cursor-pointer ${
                   founderTab === tab.id
-                    ? "bg-emerald-500/15 border-emerald-400 text-emerald-300"
+                    ? "bg-gradient-to-r from-violet-600/30 to-indigo-600/30 border-violet-400 text-white shadow"
                     : "bg-slate-900/80 border-slate-800 text-slate-400"
                 }`}
               >
@@ -3119,14 +3160,14 @@ export default function FounderAdminSuite({
               <span className="text-[10px] text-purple-200 font-bold">On-the-Go Governance</span>
             </div>
             <div className="flex gap-1 overflow-x-auto p-2 bg-slate-950 border-b border-slate-800 shrink-0">
-              {visibleAdminTabs.map((tab) => (
+              {groupedAdminTabs.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setFounderTab(tab.id)}
                   className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black shrink-0 cursor-pointer ${
                     founderTab === tab.id
-                      ? "bg-emerald-400 text-slate-950"
+                      ? "bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow"
                       : "bg-slate-900 text-slate-400"
                   }`}
                 >
