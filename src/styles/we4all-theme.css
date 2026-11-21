@@ -87,3 +87,27 @@ button:active:not(:disabled), a:active, [role="button"]:active {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+/* Hide ugly native scrollbars on horizontal filter/category strips */
+.overflow-x-auto {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.overflow-x-auto::-webkit-scrollbar {
+  display: none;
+}
+
+.we4-pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #34d399;
+  box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+  animation: we4PulseDot 1.8s infinite;
+}
+
+@keyframes we4PulseDot {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.75); }
+  70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
