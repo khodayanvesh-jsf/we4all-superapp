@@ -1,20 +1,12 @@
-import { Capacitor } from '@capacitor/core';
-import { CapacitorUpdater } from '@capgo/capacitor-updater';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { APP_VERSION } from '../appVersion.js';
 
+const We4AllOta = registerPlugin('We4AllOta');
 const MANIFEST_URL = 'https://we-4-all-super-app.vercel.app/ota-manifest.json';
 export const DEFAULT_APK_URL = 'https://we-4-all-super-app.vercel.app/WE4ALL.apk';
 const STORED_VER_KEY = 'we4all_active_ota_version';
 
 let activeDownloadPromise = null;
-let activeProgressListeners = new Set();
-let lastAutoCheckAt = 0;
-
-function emitProgress(payload) {
-  for (const fn of activeProgressListeners) {
-    try { fn(payload); } catch { /* ignore */ }
-  }
-}
 
 export function compareSemver(remoteVer, localVer) {
   const a = String(remoteVer || '0.0.0').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
@@ -31,12 +23,10 @@ export async function getInstalledOtaVersion(fallbackVersion = APP_VERSION) {
   let highest = String(fallbackVersion || APP_VERSION || '0.0.0');
   if (Capacitor.isNativePlatform()) {
     try {
-      const curr = await CapacitorUpdater.current();
-      const bundleVer = curr?.bundle?.version;
-      if (bundleVer && bundleVer !== 'builtin' && compareSemver(bundleVer, highest) > 0) {
-        highest = bundleVer;
-      }
-    } catch { /* ignore */ }
+      const info = await We4AllOta.getActiveVersion();
+      const bundleVer = String(info?.version || '').trim();
+      if (bundleVer && compareSemver(bundleVer, highest) > 0) highest = bundleVer;
+    } catch { /* older APK */ }
     return highest;
   }
   try {
@@ -60,97 +50,6 @@ export async function fetchLatestOtaManifest(manifestUrl = MANIFEST_URL) {
     releaseNotes: String(manifest?.releaseNotes || '').trim(),
     releasedAt: manifest?.releasedAt || manifest?.publishedAt || '',
   };
-}
-
-function withTimeout(promise, ms, message) {
-  let timer;
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error(message)), ms);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => window.clearTimeout(timer));
-}
-
-async function downloadOrReuseNativeBundle({ bundleUrl, remoteVersion, onProgress }) {
-  if (typeof onProgress === 'function') activeProgressListeners.add(onProgress);
-
-  if (activeDownloadPromise) {
-    emitProgress({ pct: 30, msg: `Resuming active WE4ALL v${remoteVersion} download...` });
-    try {
-      return await activeDownloadPromise;
-    } finally {
-      if (typeof onProgress === 'function') activeProgressListeners.delete(onProgress);
-    }
-  }
-
-  activeDownloadPromise = (async () => {
-    try {
-      const listed = await CapacitorUpdater.list();
-      const bundles = Array.isArray(listed?.bundles) ? listed.bundles : [];
-      const existingSuccess = bundles.find((b) => b?.version === remoteVersion && String(b?.status || '').toLowerCase() === 'success');
-      if (existingSuccess?.id) {
-        emitProgress({ pct: 88, msg: `Using verified cached WE4ALL v${remoteVersion} bundle...` });
-        return existingSuccess;
-      }
-      for (const b of bundles) {
-        if (b?.version === remoteVersion && b?.id) {
-          try { await CapacitorUpdater.delete({ id: b.id }); } catch { /* ignore */ }
-        }
-      }
-    } catch { /* list optional */ }
-
-    emitProgress({ pct: 15, msg: `Verifying WE4ALL v${remoteVersion} bundle on server...` });
-    const headRes = await withTimeout(
-      fetch(`${bundleUrl}?t=${Date.now()}`, { method: 'HEAD', cache: 'no-store' }),
-      10_000,
-      'OTA server check timed out (10s). Check internet/DNS or tap Download Latest APK.'
-    );
-    if (!headRes.ok) throw new Error(`OTA bundle v${remoteVersion} unavailable (HTTP ${headRes.status}).`);
-    const contentType = String(headRes.headers.get('content-type') || '').toLowerCase();
-    if (contentType.includes('text/html')) {
-      throw new Error(`OTA bundle URL returned HTML instead of ZIP (${bundleUrl}). Tap Download Latest APK.`);
-    }
-
-    emitProgress({ pct: 25, msg: `Downloading WE4ALL v${remoteVersion} (zero data loss)...` });
-    let downloadSub = null;
-    let failSub = null;
-    let rejectOnFailEvent = null;
-    const failEventPromise = new Promise((_, reject) => { rejectOnFailEvent = reject; });
-
-    try {
-      if (typeof CapacitorUpdater.addListener === 'function') {
-        downloadSub = await CapacitorUpdater.addListener('download', (evt) => {
-          const rawPct = Number(evt?.percent ?? 0);
-          const mapped = Math.min(88, Math.max(26, 25 + Math.round(rawPct * 0.63)));
-          emitProgress({ pct: mapped, msg: `Downloading WE4ALL v${remoteVersion} (${rawPct}%)...` });
-        });
-        failSub = await CapacitorUpdater.addListener('downloadFailed', (evt) => {
-          const detail = evt?.version ? `v${evt.version}` : `v${remoteVersion}`;
-          rejectOnFailEvent?.(new Error(`Native Android OTA downloadFailed for ${detail}. Try Private DNS (dns.google) or tap Download Latest APK.`));
-        });
-      }
-
-      const downloaded = await withTimeout(
-        Promise.race([
-          CapacitorUpdater.download({ url: bundleUrl, version: remoteVersion }),
-          failEventPromise,
-        ]),
-        30_000,
-        `Native OTA download timed out at 30s (${bundleUrl}). On Indian mobile networks try Private DNS (dns.google) or tap Download Latest APK.`
-      );
-      if (!downloaded?.id) throw new Error('Updater did not return a valid bundle ID.');
-      return downloaded;
-    } finally {
-      try { await downloadSub?.remove?.(); } catch { /* ignore */ }
-      try { await failSub?.remove?.(); } catch { /* ignore */ }
-    }
-  })();
-
-  try {
-    return await activeDownloadPromise;
-  } finally {
-    activeDownloadPromise = null;
-    if (typeof onProgress === 'function') activeProgressListeners.delete(onProgress);
-  }
 }
 
 export async function checkForSelfHostedOta({
@@ -183,23 +82,51 @@ export async function checkForSelfHostedOta({
   }
   if (!bundleUrl) throw new Error('OTA bundle URL missing in manifest. Tap Download Latest APK instead.');
 
-  const downloaded = await downloadOrReuseNativeBundle({ bundleUrl, remoteVersion, onProgress });
-  if (applyImmediately) {
-    onProgress?.({ pct: 95, msg: `Activating WE4ALL v${remoteVersion} (zero user data loss)...` });
-    await CapacitorUpdater.set({ id: downloaded.id });
-    onProgress?.({ pct: 100, msg: `Installed WE4ALL v${remoteVersion}.` });
-    return { status: 'applied', updateAvailable: false, installedVersion: remoteVersion, remoteVersion, bundleId: downloaded.id, apkDownloadUrl, releaseNotes, checkedAt };
-  }
-  onProgress?.({ pct: 95, msg: `Queueing WE4ALL v${remoteVersion} for safe activation...` });
-  await CapacitorUpdater.next({ id: downloaded.id });
-  onProgress?.({ pct: 100, msg: `WE4ALL v${remoteVersion} ready and will activate safely on next open.` });
-  return { status: 'queued-for-next-launch', updateAvailable: false, installedVersion, remoteVersion, bundleId: downloaded.id, apkDownloadUrl, releaseNotes, checkedAt };
+  if (activeDownloadPromise) return activeDownloadPromise;
+
+  activeDownloadPromise = (async () => {
+    let progressSub = null;
+    try {
+      onProgress?.({ pct: 10, msg: `Connecting to WE4ALL server for v${remoteVersion}...` });
+      if (typeof We4AllOta.addListener === 'function') {
+        progressSub = await We4AllOta.addListener('otaProgress', (evt) => {
+          onProgress?.({
+            pct: Number(evt?.pct ?? 20),
+            msg: String(evt?.msg || `Installing WE4ALL v${remoteVersion}...`),
+          });
+        });
+      }
+      const res = await We4AllOta.downloadAndApply({
+        url: `${bundleUrl}?t=${Date.now()}`,
+        version: remoteVersion,
+        applyNow: Boolean(applyImmediately),
+      });
+      onProgress?.({ pct: 100, msg: `WE4ALL v${remoteVersion} installed cleanly (zero data loss).` });
+      return {
+        status: applyImmediately ? 'applied' : 'queued-for-next-launch',
+        updateAvailable: false,
+        installedVersion: remoteVersion,
+        remoteVersion,
+        bundleId: res?.path || remoteVersion,
+        apkDownloadUrl,
+        releaseNotes,
+        checkedAt,
+      };
+    } catch (err) {
+      const msg = err?.message || String(err || 'OTA download failed');
+      if (/not implemented/i.test(msg)) {
+        throw new Error('Install WE4ALL-v3.3.43.apk once to activate the new 100% free built-in OTA engine.');
+      }
+      throw new Error(msg);
+    } finally {
+      try { await progressSub?.remove?.(); } catch { /* ignore */ }
+      activeDownloadPromise = null;
+    }
+  })();
+
+  return activeDownloadPromise;
 }
 
 export async function initSelfHostedOta({ currentVersion = APP_VERSION } = {}) {
-  if (Capacitor.isNativePlatform()) {
-    try { await CapacitorUpdater.notifyAppReady(); } catch (err) { console.warn('[WE4ALL OTA] notifyAppReady warning:', err); }
-  }
-  lastAutoCheckAt = Date.now();
   return { platform: Capacitor.isNativePlatform() ? 'native' : 'web', currentVersion, ready: true };
 }
