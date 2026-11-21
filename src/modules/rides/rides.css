@@ -1,1 +1,45 @@
-.w4-journey{--ride-green:#124d3a;--ride-lime:#d8ef98;color:#19352c;font:14px/1.5 system-ui,sans-serif;background:#f4f6ed;border-radius:22px;padding:18px}.w4-journey *{box-sizing:border-box}.w4-journey h2{font-size:30px;line-height:1.05;letter-spacing:-.045em;margin:8px 0 12px;font-weight:900}.w4-journey h3{font-size:17px;font-weight:800;margin:0 0 10px}.w4-journey p{margin:8px 0}.w4-journey small{color:#49635b}.w4-journey .ride-hero{padding:22px;border-radius:18px;background:#ffe9bb;margin-bottom:16px}.w4-journey .ride-eyebrow{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.w4-journey .ride-panel{background:#fff;border:1px solid #ceddce;border-radius:16px;padding:16px;margin:12px 0}.w4-journey .ride-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}.w4-journey button{min-height:44px;padding:10px 16px;border-radius:12px;border:1px solid #bacfba;background:white;color:var(--ride-green);font:inherit;font-weight:750;cursor:pointer}.w4-journey button.primary{background:var(--ride-green);color:white;border-color:var(--ride-green)}.w4-journey button:disabled{opacity:.5;cursor:not-allowed}.w4-journey button:focus-visible,.w4-journey input:focus-visible,.w4-journey select:focus-visible{outline:3px solid #9c5328;outline-offset:2px}.w4-journey label{display:block;font-weight:700;margin:12px 0}.w4-journey input,.w4-journey select{display:block;width:100%;margin-top:6px;padding:12px;background:#fff;color:#19352c;border:1px solid #a4b7aa;border-radius:10px;font:inherit}.w4-journey .ride-vehicles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.w4-journey button[aria-pressed=true]{background:var(--ride-lime);border-color:#124d3a}.w4-journey .ride-steps{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px}.w4-journey .ride-steps li{background:#eff3ea;padding:6px 10px;border-radius:30px;font-size:11px}.w4-journey .ride-steps li[aria-current=step]{background:#124d3a;color:white}.w4-journey .ride-error{color:#922c22;background:#fff0ec;padding:12px;border-radius:10px}.w4-journey .ride-muted{color:#49635b}.w4-journey .ride-count{font-weight:900;font-size:28px}.w4-journey .ride-badge{font-size:11px;background:#e8f2d4;border-radius:20px;padding:5px 10px}.w4-shop-hero{background:#e6f0ce;color:#17392b;border-radius:22px;padding:24px;margin:8px 0 16px;display:flex;align-items:center;justify-content:space-between;gap:14px}.w4-shop-hero h2{font-size:clamp(24px,5vw,36px);font-weight:900;line-height:1.05;letter-spacing:-.04em;margin:8px 0}.w4-shop-hero p{max-width:40ch;font-size:13px}.w4-shop-hero button{min-height:44px;background:#124d3a;color:white;font-weight:800;padding:10px 16px;border-radius:12px;white-space:nowrap}.w4-shop-products{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:12px}.w4-shop-products>div{min-width:0}.w4-shop-products button{min-height:44px}.w4-shop-products h3{font-size:16px!important}.w4-shop-products select{min-height:40px}.w4-shop-products .w4-product-motif{background:#eef4e5;border-radius:10px;padding:14px;font-size:22px;color:#345f44;margin-bottom:12px}.w4-shop-hero button:focus-visible{outline:3px solid #9c5328;outline-offset:3px}@media(max-width:420px){.w4-shop-hero{align-items:flex-start;flex-direction:column}.w4-journey{padding:12px}.w4-journey .ride-vehicles button{padding:10px 5px}}
+.w4-journey{--ride-primary:#4f46e5;--ride-violet:#6d28d9;--ride-coral:#f97316;--ride-surface:#ffffff;--ride-bg:#f8f7ff;color:#1e1b4b;font:14px/1.5 system-ui,-apple-system,sans-serif;background:var(--ride-bg);border-radius:24px;padding:18px;border:1px solid #e0e7ff}
+.w4-journey *{box-sizing:border-box}
+.w4-journey h2{font-size:26px;line-height:1.1;letter-spacing:-.035em;margin:6px 0 8px;font-weight:900;color:#ffffff}
+.w4-journey h3{font-size:16px;font-weight:800;margin:0 0 8px;color:#1e1b4b}
+.w4-journey p{margin:8px 0}
+.w4-journey small{color:#64748b}
+.w4-journey .ride-hero{padding:20px;border-radius:20px;background:linear-gradient(135deg,#312e81 0%,#4f46e5 55%,#7c3aed 100%);color:#fff;margin-bottom:14px;box-shadow:0 10px 25px -8px rgba(79,70,229,.35)}
+.w4-journey .ride-hero p{color:#e0e7ff;font-size:13px;margin:4px 0 10px}
+.w4-journey .ride-eyebrow{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#c7d2fe}
+.w4-journey .ride-panel{background:var(--ride-surface);border:1px solid #e2e8f0;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 4px 12px -4px rgba(15,23,42,.06)}
+.w4-journey .ride-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}
+.w4-journey button{min-height:44px;padding:10px 15px;border-radius:12px;border:1px solid #cbd5e1;background:#fff;color:#312e81;font:inherit;font-weight:750;cursor:pointer;transition:transform .12s ease,background .15s ease,border-color .15s ease}
+.w4-journey button:active{transform:scale(.98)}
+.w4-journey button.primary{background:linear-gradient(135deg,#4f46e5,#6d28d9);color:#fff;border-color:#4f46e5;box-shadow:0 6px 14px -4px rgba(79,70,229,.4)}
+.w4-journey button.coral{background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border-color:#ea580c}
+.w4-journey button:disabled{opacity:.5;cursor:not-allowed}
+.w4-journey button:focus-visible,.w4-journey input:focus-visible,.w4-journey select:focus-visible{outline:3px solid #f97316;outline-offset:2px}
+.w4-journey label{display:block;font-weight:750;font-size:12px;color:#334155;margin:12px 0}
+.w4-journey input,.w4-journey select{display:block;width:100%;margin-top:6px;padding:12px 14px;background:#f8fafc;color:#0f172a;border:1px solid #cbd5e1;border-radius:12px;font:inherit}
+.w4-journey .ride-vehicles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.w4-journey .ride-service-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px}
+.w4-journey .ride-chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px}
+.w4-journey .ride-chip{min-height:30px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe}
+.w4-journey button[aria-pressed=true]{background:#eef2ff;border-color:#4f46e5;color:#312e81;box-shadow:0 0 0 2px rgba(79,70,229,.18)}
+.w4-journey .ride-steps{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.w4-journey .ride-steps li{background:#f1f5f9;color:#475569;padding:6px 10px;border-radius:30px;font-size:11px;font-weight:700}
+.w4-journey .ride-steps li[aria-current=step]{background:#4f46e5;color:#fff}
+.w4-journey .ride-error{color:#9f1239;background:#fff1f2;border:1px solid #fecdd3;padding:12px;border-radius:12px;font-weight:700}
+.w4-journey .ride-muted{color:#64748b;font-size:12px}
+.w4-journey .ride-count{font-weight:900;font-size:26px;color:#4f46e5}
+.w4-journey .ride-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.28);border-radius:20px;padding:4px 10px}
+.w4-journey .ride-panel .ride-badge{background:#eef2ff;color:#4338ca;border-color:#c7d2fe}
+.w4-journey .ride-nav-link{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:8px 14px;border-radius:12px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;text-decoration:none;border:1px solid #c7d2fe}
+.w4-shop-hero{background:linear-gradient(135deg,#312e81 0%,#4f46e5 55%,#7c3aed 100%);color:#fff;border-radius:22px;padding:24px;margin:8px 0 16px;display:flex;align-items:center;justify-content:space-between;gap:14px}
+.w4-shop-hero h2{font-size:clamp(24px,5vw,36px);font-weight:900;line-height:1.05;letter-spacing:-.04em;margin:8px 0;color:#fff}
+.w4-shop-hero p{max-width:40ch;font-size:13px;color:#e0e7ff}
+.w4-shop-hero button{min-height:44px;background:#f97316;color:#fff;font-weight:800;padding:10px 16px;border-radius:12px;white-space:nowrap;border:none}
+.w4-shop-products{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:12px}
+.w4-shop-products>div{min-width:0}
+.w4-shop-products button{min-height:44px}
+.w4-shop-products h3{font-size:16px!important}
+.w4-shop-products select{min-height:40px}
+.w4-shop-products .w4-product-motif{background:#eef2ff;border-radius:10px;padding:14px;font-size:22px;color:#4f46e5;margin-bottom:12px}
+.w4-shop-hero button:focus-visible{outline:3px solid #f97316;outline-offset:3px}
+@media(max-width:420px){.w4-shop-hero{align-items:flex-start;flex-direction:column}.w4-journey{padding:12px}.w4-journey .ride-vehicles button{padding:10px 5px;font-size:12px}}

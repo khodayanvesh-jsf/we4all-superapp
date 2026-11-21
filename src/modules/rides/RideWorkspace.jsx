@@ -4,6 +4,19 @@ import { createRideClient, getDeviceLocation, isActiveTrip, TRIP_LABELS, TRIP_ST
 import './rides.css';
 
 const callRide = createRideClient(supabase);
+const QUICK_LANDMARKS = [
+  'Collectorate Chowk, Adilabad',
+  'RIMS Hospital, Adilabad',
+  'Adilabad Bus Stand',
+  'Adilabad Railway Station',
+  'Vinayak Chowk, Adilabad'
+];
+const VEHICLE_META = {
+  '2W': { icon: '🛵', cap: '1 Rider / <= 15 kg' },
+  '3W': { icon: '🛺', cap: '3 Riders / <= 80 kg' },
+  '4W': { icon: '🚗', cap: '4 Riders / Heavy' }
+};
+
 export default function RideWorkspace({ currentUser, mode = 'customer', onSignIn = () => {}, onShop, api = callRide, locate = getDeviceLocation }) {
   const isRider = mode === 'rider';
   const signedIn = Boolean(currentUser?.authUserId && !currentUser?.isGuest);
@@ -55,7 +68,6 @@ export default function RideWorkspace({ currentUser, mode = 'customer', onSignIn
     finally { mutation.current = false; if (generation === lifecycle.current) setBusy(false); }
   };
 
-  // Foreground, opt-in presence only. No background tracking or saved GPS trail.
   useEffect(() => {
     if (!isRider || !online) return;
     let stopped = false;
@@ -74,7 +86,6 @@ export default function RideWorkspace({ currentUser, mode = 'customer', onSignIn
         if (!stopped && generation === lifecycle.current) {
           setError(`${e.message} Go online again after checking location access.`);
           setSnapshot(s => ({ ...s, presence: { ...s?.presence, online: false } }));
-          // Best effort; server lease also expires if connectivity has been lost.
           await api('availability', { online: false }).catch(() => {});
         }
       } finally { mutation.current = false; }
@@ -104,55 +115,97 @@ export default function RideWorkspace({ currentUser, mode = 'customer', onSignIn
   const ready = signedIn && snapshot?.enabled && !busy;
 
   return <section className="w4-journey" aria-label={isRider ? 'Rider workspace' : 'Book a ride'}>
-    <div className="ride-hero"><div className="ride-eyebrow">WE4ALL · {isRider ? 'Partner workspace' : 'Rides & parcels'}</div>
-      <h2>{isRider ? 'Ready to ride.' : 'Get there your way.'}</h2>
-      <p>{isRider ? 'See nearby requests and manage each trip in one place.' : 'Choose your pickup, destination and vehicle.'}</p>
-      <span className="ride-badge">Trial trips · No charge or payout</span>
+    <div className="ride-hero">
+      <div className="ride-eyebrow">WE4ALL · {isRider ? 'Captain Dispatch Pro' : 'Rides & Same-Hour Parcels'}</div>
+      <h2>{isRider ? 'Ready to ride.' : 'Book a Ride or Parcel.'}</h2>
+      <p>{isRider ? 'See nearby live requests, navigate to pickup, and complete verified handoffs.' : 'Pick your vehicle, pin your GPS pickup, and track your approved local Captain live.'}</p>
+      <span className="ride-badge">⚡ Zero-Fee Pilot Dispatch · Verified Local Captains</span>
     </div>
-    <div className="ride-row"><button type="button" onClick={refresh} disabled={!signedIn || busy}>Refresh trips</button>{onShop && <button type="button" onClick={onShop}>Back to shopping</button>}</div>
+    <div className="ride-row">
+      <button type="button" onClick={refresh} disabled={!signedIn || busy}>{busy ? 'Syncing…' : '🔄 Refresh trips'}</button>
+      {onShop && <button type="button" onClick={onShop}>🛍️ Back to shopping</button>}
+    </div>
     {error && <p role="alert" className="ride-error">{error}</p>}
     {!signedIn && <p><button type="button" className="primary" onClick={onSignIn}>Sign in to request a trip</button></p>}
-    {signedIn && !snapshot && !error && <p role="status">Loading your trips…</p>}
-    {snapshot?.enabled === false && <p role="status">Ride testing has not opened here yet. You can still explore the booking form.</p>}
+    {signedIn && !snapshot && !error && <p role="status">Loading your live dispatch workspace…</p>}
+    {snapshot?.enabled === false && <p role="status" className="ride-panel">Ride dispatch is currently paused for this zone. You can still preview the booking form below.</p>}
     {isRider ? <div className="ride-panel">
-      <div className="ride-row"><h3>{online ? 'Online · location sharing on' : 'Offline'}</h3><button type="button" className="primary" disabled={!signedIn || busy || (!snapshot?.enabled && !online)} onClick={availability}>{online ? 'Go offline' : 'Go online'}</button></div>
-      <p className="ride-muted">Going online shares your current location with WE4ALL to find nearby requests. Your assigned customer can see your last reported location during the trip. Keep this screen open; availability expires after two minutes without an update.</p>
-      {snapshot?.vehicle && <p>Reviewed vehicle: {VEHICLES.find(v => v.id === snapshot.vehicle)?.label} · {snapshot.vehicleRegistration}</p>}
+      <div className="ride-row">
+        <h3>{online ? '🟢 Online · Live GPS Active' : '⚪ Offline'}</h3>
+        <button type="button" className={online ? 'coral' : 'primary'} disabled={!signedIn || busy || (!snapshot?.enabled && !online)} onClick={availability}>{online ? 'Go offline' : 'Go online'}</button>
+      </div>
+      <p className="ride-muted">Going online shares your live GPS with WE4ALL to match nearby requests. Keep this screen active; server lease expires after 2 minutes without a ping.</p>
+      {snapshot?.vehicle && <p><strong>Reviewed vehicle:</strong> {VEHICLES.find(v => v.id === snapshot.vehicle)?.label} · {snapshot.vehicleRegistration}</p>}
       <p><span className="ride-count">{completed.length}</span> completed in your latest 30 trips</p>
-      <small>Trial trips do not create earnings or payout records.</small>
+      <small>Pilot trips are verified on-server and do not create synthetic payouts.</small>
     </div> : !active && <form className="ride-panel" onSubmit={requestTrip}>
-      <label>Service<select value={form.service} onChange={e => setForm({ ...form, service: e.target.value })}><option value="passenger">Passenger ride</option><option value="parcel">Send a parcel</option></select></label>
-      <label>Pickup address<input value={form.pickup} onChange={e => setForm({ ...form, pickup: e.target.value })} maxLength={160} required placeholder="Building, street and landmark" /></label>
-      <button type="button" disabled={busy} onClick={() => run(async () => setLocation(await locate()))}>{location ? 'Refresh pickup location' : 'Use my location for pickup'}</button>
-      <p className="ride-muted">{location ? `Pickup pin captured · accuracy ${Math.round(location.accuracy)} m. Refresh it if you move.` : 'Stand at the pickup point, then allow location access. This pin is used to find nearby riders.'}</p>
-      <label>Destination<input value={form.drop} onChange={e => setForm({ ...form, drop: e.target.value })} maxLength={160} required placeholder="Destination address and landmark" /></label>
-      <div className="ride-vehicles" aria-label="Vehicle">{VEHICLES.map(v => <button type="button" key={v.id} aria-pressed={v.id === form.vehicle} onClick={() => setForm({ ...form, vehicle: v.id })}>{v.label}</button>)}</div>
-      <p className="ride-muted">Trial requests only. Route estimates, paid fares and navigation are not available yet.</p>
-      <button className="primary" type="submit" disabled={signedIn && !ready}>{busy ? 'Saving…' : signedIn ? 'Request trial trip' : 'Sign in to request'}</button>
+      <div className="ride-service-grid" role="group" aria-label="Service type">
+        <button type="button" aria-pressed={form.service === 'passenger'} onClick={() => setForm({ ...form, service: 'passenger' })}>🛵 Passenger Ride</button>
+        <button type="button" aria-pressed={form.service === 'parcel'} onClick={() => setForm({ ...form, service: 'parcel' })}>📦 Send a Parcel</button>
+      </div>
+      <label>Pickup address
+        <input value={form.pickup} onChange={e => setForm({ ...form, pickup: e.target.value })} maxLength={160} required placeholder="Building, street and landmark" />
+      </label>
+      <div className="ride-chips">
+        {QUICK_LANDMARKS.map(lm => <button key={`p-${lm}`} type="button" className="ride-chip" onClick={() => setForm(f => ({ ...f, pickup: lm }))}>{lm.split(',')[0]}</button>)}
+      </div>
+      <div className="ride-row" style={{ marginTop: 10 }}>
+        <button type="button" className={location ? '' : 'coral'} disabled={busy} onClick={() => run(async () => setLocation(await locate()))}>{location ? '📍 Refresh pickup GPS pin' : '📍 Use my GPS for pickup'}</button>
+      </div>
+      <p className="ride-muted">{location ? `✅ Pickup pin captured · accuracy ${Math.round(location.accuracy)} m. Refresh if you move.` : 'Tap above at your pickup point to share your GPS pin so nearby Captains can match.'}</p>
+      <label>Destination
+        <input value={form.drop} onChange={e => setForm({ ...form, drop: e.target.value })} maxLength={160} required placeholder="Destination address and landmark" />
+      </label>
+      <div className="ride-chips">
+        {QUICK_LANDMARKS.map(lm => <button key={`d-${lm}`} type="button" className="ride-chip" onClick={() => setForm(f => ({ ...f, drop: lm }))}>{lm.split(',')[0]}</button>)}
+      </div>
+      <label>Choose Vehicle Class</label>
+      <div className="ride-vehicles" aria-label="Vehicle">
+        {VEHICLES.map(v => <button type="button" key={v.id} aria-pressed={v.id === form.vehicle} onClick={() => setForm({ ...form, vehicle: v.id })}>
+          <div>{VEHICLE_META[v.id]?.icon || '🛵'} {v.label}</div>
+          <small style={{ display: 'block', fontSize: 10, fontWeight: 600 }}>{VEHICLE_META[v.id]?.cap || ''}</small>
+        </button>)}
+      </div>
+      <p className="ride-muted">Pilot dispatch mode: server-verified Captain matching with zero platform booking fee.</p>
+      <button className="primary" style={{ width: '100%', marginTop: 8 }} type="submit" disabled={signedIn && !ready}>{busy ? 'Dispatching…' : signedIn ? (form.service === 'parcel' ? 'Request Parcel Captain' : 'Request Ride Now') : 'Sign in to request'}</button>
     </form>}
     {active && <article className="ride-panel" aria-label="Current trip">
-      <div className="ride-row"><h3>{TRIP_LABELS[active.status]}</h3><span className="ride-badge">{active.service === 'parcel' ? 'Parcel' : 'Passenger'} · {VEHICLES.find(v => v.id === active.vehicle)?.label}</span></div>
+      <div className="ride-row">
+        <h3>{TRIP_LABELS[active.status]}</h3>
+        <span className="ride-badge">{active.service === 'parcel' ? '📦 Parcel' : '🛵 Passenger'} · {VEHICLES.find(v => v.id === active.vehicle)?.label}</span>
+      </div>
       <p><strong>{active.pickup}</strong> → <strong>{active.drop}</strong></p>
       <ol className="ride-steps">{TRIP_STEPS.map(step => <li key={step} aria-current={active.status === step ? 'step' : undefined}>{TRIP_LABELS[step]}</li>)}</ol>
-      {!isRider && active.rider_name && <p>Your rider: {active.rider_name} · {active.vehicle_registration}</p>}
-      {!isRider && active.rider_id && <p className="ride-muted">{active.rider_location ? `Last reported location: ${Number(active.rider_location.lat).toFixed(4)}, ${Number(active.rider_location.lng).toFixed(4)} · ${new Date(active.rider_location.at).toLocaleTimeString()}` : 'Rider location is currently unavailable.'}</p>}
-      {active.status === 'requested' && <p className="ride-muted">Waiting for an approved rider nearby. Requests expire after ten minutes.</p>}
+      {!isRider && active.rider_name && <p><strong>Your Captain:</strong> {active.rider_name} · {active.vehicle_registration}</p>}
+      {!isRider && active.rider_id && <p className="ride-muted">{active.rider_location ? `Live Captain GPS: ${Number(active.rider_location.lat).toFixed(4)}, ${Number(active.rider_location.lng).toFixed(4)} · ${new Date(active.rider_location.at).toLocaleTimeString()}` : 'Captain location is currently updating…'}</p>}
+      <div className="ride-row" style={{ marginBottom: 10 }}>
+        {!isRider && active.rider_location && <a className="ride-nav-link" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${active.rider_location.lat},${active.rider_location.lng}`}>🗺️ Track Captain on Map</a>}
+        {isRider && active.pickup && <a className="ride-nav-link" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(active.status === 'in_progress' ? active.drop : active.pickup)}`}>🧭 Navigate to {active.status === 'in_progress' ? 'Drop' : 'Pickup'}</a>}
+      </div>
+      {active.status === 'requested' && <p className="ride-muted">Broadcasting to approved nearby Captains. Requests expire after 10 minutes.</p>}
       <div className="ride-row">
         {isRider && active.status === 'accepted' && <button type="button" className="primary" disabled={!ready} onClick={() => act('arrive', active)}>I’m at pickup</button>}
-        {!isRider && active.status === 'at_pickup' && <button type="button" className="primary" disabled={!ready} onClick={() => act('start', active)}>{active.service === 'parcel' ? 'Confirm parcel handed over' : 'I’m with my rider · start trip'}</button>}
-        {isRider && active.status === 'at_pickup' && <p>Waiting for the customer to confirm pickup.</p>}
+        {!isRider && active.status === 'at_pickup' && <button type="button" className="primary" disabled={!ready} onClick={() => act('start', active)}>{active.service === 'parcel' ? 'Confirm parcel handed over' : 'I’m with my Captain · start trip'}</button>}
+        {isRider && active.status === 'at_pickup' && <p className="ride-muted">Waiting for customer to confirm pickup handoff.</p>}
         {isRider && active.status === 'in_progress' && <button type="button" className="primary" disabled={!ready} onClick={() => act('finish', active)}>Reached destination</button>}
         {!isRider && active.status === 'awaiting_confirmation' && <button type="button" className="primary" disabled={!ready} onClick={() => act('complete', active)}>Confirm trip completed</button>}
-        {isRider && active.status === 'awaiting_confirmation' && <p>Waiting for customer confirmation.</p>}
+        {isRider && active.status === 'awaiting_confirmation' && <p className="ride-muted">Waiting for customer completion confirmation.</p>}
         {['requested','accepted','at_pickup'].includes(active.status) && <button type="button" disabled={busy} onClick={() => act('cancel', active)}>Cancel trip</button>}
       </div>
       <small>Trip reference: {active.id.slice(0, 8)}</small>
     </article>}
-    {isRider && !active && <div className="ride-panel"><h3>Nearby requests</h3>
-      {!online && <p>Go online to see requests matching your reviewed vehicle.</p>}
-      {online && !(snapshot?.offers || []).length && <p>No requests nearby yet. We’ll refresh while this screen is open.</p>}
-      {(snapshot?.offers || []).map(offer => <article className="ride-panel" key={offer.id}><h3>{offer.service === 'parcel' ? 'Parcel delivery' : 'Passenger ride'}</h3><p>Pickup approximately {offer.distance_km} km away · {offer.vehicle}</p><small>Exact pickup and destination are shared after acceptance.</small><p><button type="button" className="primary" disabled={!ready || !online} onClick={() => act('accept', offer)}>Accept request</button></p></article>)}
+    {isRider && !active && <div className="ride-panel"><h3>📡 Nearby Live Requests</h3>
+      {!online && <p className="ride-muted">Go online to receive passenger and parcel requests matching your approved vehicle.</p>}
+      {online && !(snapshot?.offers || []).length && <p className="ride-muted">No requests nearby yet. Auto-refreshing every 10 seconds while online.</p>}
+      {(snapshot?.offers || []).map(offer => <article className="ride-panel" key={offer.id}>
+        <div className="ride-row">
+          <h3>{offer.service === 'parcel' ? '📦 Parcel Delivery' : '🛵 Passenger Ride'}</h3>
+          <span className="ride-badge">{offer.distance_km} km away · {offer.vehicle}</span>
+        </div>
+        <small>Exact pickup and destination unlock immediately after acceptance.</small>
+        <p><button type="button" className="primary" style={{ width: '100%' }} disabled={!ready || !online} onClick={() => act('accept', offer)}>Accept Request</button></p>
+      </article>)}
     </div>}
-    {trips.some(t => !isActiveTrip(t)) && <details className="ride-panel"><summary>Recent trips</summary>{trips.filter(t => !isActiveTrip(t)).map(trip => <p key={trip.id}><strong>{TRIP_LABELS[trip.status]}</strong> · {trip.pickup} → {trip.drop}</p>)}</details>}
+    {trips.some(t => !isActiveTrip(t)) && <details className="ride-panel"><summary style={{ fontWeight: 800, cursor: 'pointer' }}>Recent trips ({trips.filter(t => !isActiveTrip(t)).length})</summary>{trips.filter(t => !isActiveTrip(t)).map(trip => <p key={trip.id}><strong>{TRIP_LABELS[trip.status]}</strong> · {trip.pickup} → {trip.drop}</p>)}</details>}
   </section>;
 }

@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.41",
-    "latestAvailableVersion":  "3.3.41",
-    "versionCode":  371,
-    "bundleFile":  "we4all-ota-v3.3.41.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.41.zip",
+    "version":  "3.3.42",
+    "latestAvailableVersion":  "3.3.42",
+    "versionCode":  372,
+    "bundleFile":  "we4all-ota-v3.3.42.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.42.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "2b8f155a3266bbc5c90928ffbea3a82dfe626b3f00a9b27b7e87b65c000c02da",
-    "sizeKb":  1480.2,
-    "releasedAt":  "2026-11-21T22:35:37Z",
+    "sha256":  "4b8d735cdb0ca720fcce5db45274277368354d0a2e5c35d8d4e9334da89a8241",
+    "sizeKb":  1484.1,
+    "releasedAt":  "2026-11-21T22:40:48Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.41: Fixed OTA 25% stall (check-only on open, downloadFailed diagnostics \u0026 Android Java-safe STORE zip)."
+    "releaseNotes":  "WE4ALL v3.3.42: 2026 Royal Violet Ride \u0026 Parcel Workspace with Adilabad landmark chips, live Captain map tracking \u0026 1-tap navigation."
 }
