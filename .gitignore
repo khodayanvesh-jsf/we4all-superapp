@@ -32,3 +32,13 @@ apk-releases/*.aab
 *.jks
 *.keystore
 keystore.properties
+.env.local
+.env.*.local
+*.bak
+*.bak_*
+*.jks
+*.keystore
+keystore.properties
+apk-releases/*.apk
+apk-releases/*.aab
+ota-bundles/*.zip
