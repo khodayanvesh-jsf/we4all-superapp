@@ -175,7 +175,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       }
       const user = data.user;
       const activation = await activateSupabaseAccount(user.id);
-      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
+      if (!activation.ok) console.warn("WE4ALL cloud state restore skipped during login:", activation.reason);
       if (activation.changed && typeof window !== "undefined") {
         window.location.reload();
         return;
@@ -662,7 +662,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
       if (rolesError) throw rolesError;
 
       const activation = await activateSupabaseAccount(user.id);
-      if (!activation.ok) throw new Error(activation.reason || "Could not restore your Supabase account data.");
+      if (!activation.ok) console.warn("WE4ALL cloud state restore skipped during login:", activation.reason);
       if (activation.changed && typeof window !== "undefined") {
         window.location.reload();
         return;
