@@ -197,8 +197,8 @@ function MobilePhoneShell({
         </span>
         <div className="flex-1 overflow-hidden whitespace-nowrap">
           <div className="we4-marquee-track text-[10px] font-bold text-violet-100">
-            <span>🔥 0% Platform Markup on Adilabad Kirana &amp; Fresh Mandi Veg &nbsp;•&nbsp; ⚡ 1-Hr Verified Electricians, Plumbers &amp; AC Pros Live &nbsp;•&nbsp; 🛵 Instant Bike, Auto &amp; Same-Hour Parcel Drops &nbsp;•&nbsp; 🎉 Book Function Halls &amp; Event Decorators Direct &nbsp;•&nbsp;</span>
-            <span>🔥 0% Platform Markup on Adilabad Kirana &amp; Fresh Mandi Veg &nbsp;•&nbsp; ⚡ 1-Hr Verified Electricians, Plumbers &amp; AC Pros Live &nbsp;•&nbsp; 🛵 Instant Bike, Auto &amp; Same-Hour Parcel Drops &nbsp;•&nbsp; 🎉 Book Function Halls &amp; Event Decorators Direct &nbsp;•&nbsp;</span>
+            <span className="pr-8">{liveNewsTicker}</span>
+            <span className="pr-8">{liveNewsTicker}</span>
           </div>
         </div>
         <span className="sr-only" data-testid="installed-app-version">INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER} | OTA BUNDLE {appUpdateInfo?.currentBundleVersion || "BUILT-IN"}</span>
@@ -398,6 +398,18 @@ function AppContent() {
   const [appUpdateInfo, setAppUpdateInfo] = useState(
     savedCloud?.appUpdateInfo || INITIAL_APP_UPDATE_INFO
   );
+  const DEFAULT_LIVE_NEWS = "🔥 0% Platform Markup on Adilabad Kirana & Fresh Mandi Veg  •  ⚡ 1-Hr Verified Electricians, Plumbers & AC Pros Live  •  🛵 Instant Bike, Auto & Same-Hour Parcel Drops  •  🎉 Book Function Halls & Event Decorators Direct  •  ";
+  const [liveNewsTicker, setLiveNewsTicker] = useState(() => {
+    try { return localStorage.getItem("we4all_live_news_ticker_v1") || DEFAULT_LIVE_NEWS; } catch { return DEFAULT_LIVE_NEWS; }
+  });
+  useEffect(() => {
+    const onNewsUpdate = (evt) => {
+      const txt = String(evt?.detail?.text || "").trim();
+      if (txt) setLiveNewsTicker(txt);
+    };
+    window.addEventListener("we4all:news-ticker-updated", onNewsUpdate);
+    return () => window.removeEventListener("we4all:news-ticker-updated", onNewsUpdate);
+  }, []);
   const [otaProgress, setOtaProgress] = useState(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const otaLaunchCheckStarted = useRef(false);

@@ -2974,9 +2974,23 @@ export default function FounderAdminSuite({
     </div>
   );
 
+  const [newsDraft, setNewsDraft] = useState(() => {
+    try { return localStorage.getItem("we4all_live_news_ticker_v1") || ""; } catch { return ""; }
+  });
+  const handlePublishLiveNews = () => {
+    const clean = String(newsDraft || "").trim();
+    if (!clean) {
+      onTriggerToast("Enter a news announcement before publishing.");
+      return;
+    }
+    try { localStorage.setItem("we4all_live_news_ticker_v1", clean); } catch {}
+    window.dispatchEvent(new CustomEvent("we4all:news-ticker-updated", { detail: { text: clean } }));
+    onTriggerToast("Live Town News Ticker updated across the app!");
+  };
+
   return (
-    <div className="min-h-screen bg-[#04090e] text-slate-100 flex flex-col font-sans text-xs">
-      <header className="bg-slate-900 border-b border-emerald-500/40 px-5 py-3 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-50">
+    <div className="min-h-screen bg-[#070615] text-slate-100 flex flex-col font-sans text-xs">
+      <header className="bg-gradient-to-r from-indigo-950 via-violet-950 to-slate-950 border-b border-violet-500/35 px-5 py-3 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-50 shadow-lg">
         <div className="flex items-center gap-3">
           <label className="w-10 h-10 rounded-full border-2 border-amber-400 bg-emerald-950 flex items-center justify-center text-[8px] font-black text-amber-300 overflow-hidden cursor-pointer">
             {founderLogoUrl ? (
@@ -3023,6 +3037,54 @@ export default function FounderAdminSuite({
           </button>
         </div>
       </header>
+
+      {/* Stage 1: Founder Command KPI Strip + Live Town News Ticker Publisher */}
+      <section className="px-4 pt-3 pb-1 space-y-2.5 max-w-6xl w-full mx-auto">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <button type="button" onClick={() => setFounderTab("approvals")} className="rounded-2xl border border-violet-500/30 bg-slate-900/90 p-3 text-left hover:border-violet-400 transition">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-violet-300">Pending Approvals</p>
+            <p className="text-xl font-black text-white mt-0.5">{totalPendingCount}</p>
+            <p className="text-[9px] text-slate-400">KYC, Products &amp; Halls</p>
+          </button>
+          <button type="button" onClick={() => setFounderTab("portal_users")} className="rounded-2xl border border-indigo-500/30 bg-slate-900/90 p-3 text-left hover:border-indigo-400 transition">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">Active Accounts</p>
+            <p className="text-xl font-black text-white mt-0.5">{managedUsers.filter((u) => u.portal_status === "active").length}</p>
+            <p className="text-[9px] text-slate-400">Verified Portal Users</p>
+          </button>
+          <button type="button" onClick={() => setFounderTab("database")} className="rounded-2xl border border-fuchsia-500/30 bg-slate-900/90 p-3 text-left hover:border-fuchsia-400 transition">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">Live Orders</p>
+            <p className="text-xl font-black text-white mt-0.5">{safeOrders.length}</p>
+            <p className="text-[9px] text-slate-400">COD &amp; UPI Transactions</p>
+          </button>
+          <button type="button" onClick={() => setFounderTab("geo_managers")} className="rounded-2xl border border-rose-500/30 bg-slate-900/90 p-3 text-left hover:border-rose-400 transition">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-rose-300">Geo Managers</p>
+            <p className="text-xl font-black text-white mt-0.5">{geoManagers.length}</p>
+            <p className="text-[9px] text-slate-400">Assigned Town Zones</p>
+          </button>
+        </div>
+
+        {adminAccess?.role !== "city_manager" && (
+          <div className="rounded-2xl border border-violet-500/35 bg-gradient-to-r from-indigo-950/90 via-violet-950/80 to-slate-900 p-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <span className="shrink-0 inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-rose-300">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" /> Top News Ticker
+            </span>
+            <input
+              type="text"
+              value={newsDraft}
+              onChange={(e) => setNewsDraft(e.target.value)}
+              placeholder="Type live scrolling town news, offers, or alerts..."
+              className="flex-1 rounded-xl bg-slate-950/90 border border-violet-500/30 px-3 py-2 text-xs text-white outline-none focus:border-violet-400"
+            />
+            <button
+              type="button"
+              onClick={handlePublishLiveNews}
+              className="shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-black text-xs shadow hover:opacity-95"
+            >
+              Publish Live News
+            </button>
+          </div>
+        )}
+      </section>
 
       {adminDisplayMode === "web" ? (
         <div className="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-4 gap-5">

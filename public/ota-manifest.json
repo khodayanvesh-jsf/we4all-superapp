@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.32",
-    "latestAvailableVersion":  "3.3.32",
-    "versionCode":  362,
-    "bundleFile":  "we4all-ota-v3.3.32.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.32.zip",
+    "version":  "3.3.33",
+    "latestAvailableVersion":  "3.3.33",
+    "versionCode":  363,
+    "bundleFile":  "we4all-ota-v3.3.33.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.33.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "1f9b687df5e582c27ab76c2b7882acf3ef38d7a4d40f1932434877cead0616fc",
-    "sizeKb":  720,
-    "releasedAt":  "2026-11-21T21:26:04Z",
+    "sha256":  "8bca7c9218667fa5dd36485d02ed7c388b4b04afb5ae32af806ae32d70f71859",
+    "sizeKb":  721,
+    "releasedAt":  "2026-11-21T21:30:28Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.32: Fixed OTA concurrent download collision \u0026 bundle reuse + Live Scrolling Town News Ticker."
+    "releaseNotes":  "WE4ALL v3.3.33: Admin Console Stage 1 — Live Operations KPI Strip, Royal Violet header \u0026 Live Town News Ticker Publisher."
 }
