@@ -1,0 +1,94 @@
+name: WE4ALL OTA & Android APK Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: |
+          if npm run | grep -q "test:unit"; then
+            npm run test:unit
+          elif npm run | grep -q " test"; then
+            npm test -- --run || npm test
+          fi
+
+      - name: Clean nested public/ota zips & build Vite bundle
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          rm -f public/ota/*.zip || true
+          npm run build
+
+      - name: Package Capgo OTA bundle (index.html at zip root)
+        id: ota
+        run: |
+          VER=$(node -p "require('./package.json').version || '3.3.23'")
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" != v* ]]; then TAG="v${VER}"; fi
+          mkdir -p release-artifacts
+          (cd dist && zip -rq "../release-artifacts/we4all-ota-${TAG}.zip" .)
+          SHA=$(sha256sum "release-artifacts/we4all-ota-${TAG}.zip" | awk '{print $1}')
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "zip=release-artifacts/we4all-ota-${TAG}.zip" >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync Capacitor Android & Build Debug APK
+        run: |
+          npx cap sync android
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug --no-daemon
+          cd ..
+          cp android/app/build/outputs/apk/debug/app-debug.apk "release-artifacts/WE4ALL-SuperApp-${{ steps.ota.outputs.tag }}-debug.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "release-artifacts/WE4ALL-SuperApp-Debug.apk"
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: we4all-release-${{ steps.ota.outputs.tag }}
+          path: release-artifacts/*
+
+      - name: Publish GitHub Release (on v* tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ota.outputs.tag }}
+          name: WE4ALL-SuperApp ${{ steps.ota.outputs.tag }}
+          body: |
+            Automated WE4ALL-SuperApp release ${{ steps.ota.outputs.tag }}.
+            - Capgo OTA Zip SHA-256: `${{ steps.ota.outputs.sha256 }}`
+          files: |
+            release-artifacts/we4all-ota-*.zip
+            release-artifacts/WE4ALL-SuperApp-*-debug.apk
+            release-artifacts/WE4ALL-SuperApp-Debug.apk
