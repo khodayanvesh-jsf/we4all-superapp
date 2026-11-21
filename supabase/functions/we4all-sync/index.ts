@@ -87,7 +87,7 @@ const authenticatedHandler = withSupabase({ auth: "user" }, async (req, ctx) => 
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { status: 204, headers: CORS_HEADERS });
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
   const response = await authenticatedHandler(req);
   const headers = new Headers(response.headers);

@@ -2414,10 +2414,10 @@ function AppContent() {
                   type="button"
                   onClick={async () => {
                     const wiped = await wipeAllPreinstalledServerData();
-                    setProducts(wiped.products);
-                    setMerchants(wiped.merchants);
-                    setServiceProviders(wiped.serviceProviders);
-                    setOrders(wiped.orders);
+                    setProducts(Array.isArray(wiped?.products) ? wiped.products : []);
+                    setMerchants(Array.isArray(wiped?.merchants) ? wiped.merchants : []);
+                    setServiceProviders(Array.isArray(wiped?.serviceProviders) ? wiped.serviceProviders : []);
+                    setOrders(Array.isArray(wiped?.orders) ? wiped.orders : []);
                     triggerToast("All Server Transactional States Wiped 100% Clean!");
                   }}
                   className="bg-rose-600 text-white px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer"

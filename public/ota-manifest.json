@@ -1,10 +1,10 @@
-{
+﻿{
     "version":  "3.3.29",
     "latestAvailableVersion":  "3.3.29",
     "versionCode":  359,
     "bundleFile":  "we4all-ota-v3.3.29.zip",
     "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.29.zip",
-    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
+    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL-v3.3.29.apk",
     "sha256":  "52d791561997c570323de18e8cd9c05a3e25f36a28e809d004dae3c808006038",
     "sizeKb":  719,
     "releasedAt":  "2026-11-21T20:38:11Z",
