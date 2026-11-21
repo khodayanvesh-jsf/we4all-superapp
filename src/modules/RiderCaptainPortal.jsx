@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { invokeWe4AllOperations, verifyDeliveryTestOtp } from "../supabaseClient";
+import { invokeWe4AllOperations, verifyDeliveryTestOtp, submitRiderLocationPing } from "../supabaseClient";
 import LiveRouteMap from "./LiveRouteMap";
 import RiderRadarMap from "./RiderRadarMap";
 
@@ -54,6 +54,8 @@ export default function RiderCaptainPortal({
   const myVehicleRule = VEHICLE_CONSORT_RULES[myVehicleCode] || VEHICLE_CONSORT_RULES["2W"];
 
   const [isOnlineForDriving, setIsOnlineForDriving] = useState(false);
+  const [dutyBusy, setDutyBusy] = useState(false);
+  const [lastRadarSyncAt, setLastRadarSyncAt] = useState('');
   const [locationConsent, setLocationConsent] = useState(false);
   const autoOnline9AmEnabled = false;
   const [showLockedOtherVehicleJobs, setShowLockedOtherVehicleJobs] =
@@ -313,6 +315,51 @@ export default function RiderCaptainPortal({
     return renderAccountTab();
   }
 
+  useEffect(() => {
+    if (!isOnlineForDriving || !isPublishedLive) return undefined;
+    const id = window.setInterval(() => {
+      void refreshRiderDispatch().then(() => setLastRadarSyncAt(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })));
+    }, 12000);
+    return () => window.clearInterval(id);
+  }, [isOnlineForDriving, isPublishedLive]);
+
+  const handleToggleServerDuty = async () => {
+    if (!isPublishedLive) {
+      onTriggerToast?.("Founder approval and verified vehicle profile are required before going online.");
+      return;
+    }
+    if (isOnlineForDriving) {
+      setIsOnlineForDriving(false);
+      setLocationConsent(false);
+      onTriggerToast?.("Captain marked OFF-DUTY. Live radar polling paused.");
+      return;
+    }
+    setDutyBusy(true);
+    try {
+      let coords = null;
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        coords = await new Promise((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracyMeters: pos.coords.accuracy }),
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
+          );
+        });
+      }
+      if (coords) {
+        try { await submitRiderLocationPing(coords); setLocationConsent(true); } catch {}
+      }
+      setIsOnlineForDriving(true);
+      await refreshRiderDispatch();
+      setLastRadarSyncAt(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      onTriggerToast?.(`Captain ONLINE for ${myVehicleRule.shortLabel} jobs! Live 12s radar active.`);
+    } catch (err) {
+      onTriggerToast?.(err?.message || "Could not start live duty.");
+    } finally {
+      setDutyBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-3 text-xs text-white">
       {/* CAPTAIN VEHICLE IDENTITY & STRICT LOCK HEADER */}
@@ -377,30 +424,36 @@ export default function RiderCaptainPortal({
           </div>
         </div>
 
-        <div className="flex justify-between items-center bg-slate-950 p-2 rounded-xl border border-slate-800">
-          <span className="text-[10px] font-bold text-slate-200">
-            {isOnlineForDriving
-              ? `MANUALLY ONLINE FOR ${myVehicleRule.shortLabel.toUpperCase()} ORDERS`
-              : "OFF-DUTY (RADAR PAUSED)"}
-          </span>
+        <div className="grid grid-cols-3 gap-1.5 pt-1">
+          <div className="rounded-xl bg-slate-950/80 border border-indigo-500/30 p-2 text-center">
+            <p className="text-[9px] uppercase font-bold text-indigo-300">Radar Jobs</p>
+            <p className="text-sm font-black text-white">{myEligibleRadarJobs.length}</p>
+          </div>
+          <div className="rounded-xl bg-slate-950/80 border border-violet-500/30 p-2 text-center">
+            <p className="text-[9px] uppercase font-bold text-violet-300">Active Trips</p>
+            <p className="text-sm font-black text-white">{myActiveJobs.length}</p>
+          </div>
+          <div className="rounded-xl bg-slate-950/80 border border-fuchsia-500/30 p-2 text-center">
+            <p className="text-[9px] uppercase font-bold text-fuchsia-300">Max Load</p>
+            <p className="text-sm font-black text-white">{myVehicleRule.maxWeightKg} kg</p>
+          </div>
+        </div>
+
+        <div className="flex justify-between items-center bg-slate-950/90 p-2.5 rounded-2xl border border-violet-500/30 gap-2">
+          <div className="min-w-0">
+            <span className="text-[10px] font-black text-white flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${isOnlineForDriving ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
+              {isOnlineForDriving ? `ONLINE · ${myVehicleRule.shortLabel.toUpperCase()} LIVE RADAR` : "OFF-DUTY (TAP TO GO ONLINE)"}
+            </span>
+            {lastRadarSyncAt && <p className="text-[9px] text-indigo-300 mt-0.5">Last server sync: {lastRadarSyncAt}</p>}
+          </div>
           <button
             type="button"
-            onClick={() => {
-              if (isOnlineForDriving) {
-                setIsOnlineForDriving(false);
-                setLocationConsent(false);
-                onTriggerToast?.("Rider marked offline on this device. Server duty status is not yet available.");
-                return;
-              }
-              onTriggerToast?.("Live duty is temporarily unavailable: WE4ALL must first save your availability and location heartbeat on the server. Dispatch job refresh and acceptance remain available.");
-            }}
-            className={`px-2.5 py-1 rounded-lg font-black text-[9px] cursor-pointer ${
-              isOnlineForDriving
-                ? "bg-emerald-400 text-slate-950"
-                : "bg-rose-600 text-white"
-            }`}
+            disabled={dutyBusy}
+            onClick={handleToggleServerDuty}
+            className={`px-3 py-1.5 rounded-xl font-black text-[10px] cursor-pointer shrink-0 shadow ${isOnlineForDriving ? "bg-rose-600 text-white hover:bg-rose-500" : "bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950"} disabled:opacity-50`}
           >
-            {isOnlineForDriving ? "Go Offline" : "Server duty unavailable"}
+            {dutyBusy ? "Syncing GPS..." : isOnlineForDriving ? "Go Offline" : "Go Online"}
           </button>
         </div>
       </div>
@@ -431,7 +484,7 @@ export default function RiderCaptainPortal({
               ["ALL","All"],["TAXI","Bike / Auto / Cab"],["P2P","P2P Parcel"],["M2C","M2C Delivery"]
             ].map(([value,label]) => (
               <button key={value} type="button" onClick={() => setRadarServiceFilter(value)}
-                className={`rounded-lg py-2 px-1 text-[8px] font-black ${radarServiceFilter === value ? "bg-cyan-400 text-slate-950" : "text-slate-300 bg-slate-900"}`}>{label}</button>
+                className={`rounded-lg py-2 px-1 text-[8px] font-black ${radarServiceFilter === value ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow" : "text-slate-300 bg-slate-900"}`}>{label}</button>
             ))}
           </div>
           <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-violet-950 p-3.5 rounded-3xl border border-indigo-400/40 shadow-lg space-y-2 we4-fade-up">

@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.39",
-    "latestAvailableVersion":  "3.3.39",
-    "versionCode":  369,
-    "bundleFile":  "we4all-ota-v3.3.39.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.39.zip",
+    "version":  "3.3.40",
+    "latestAvailableVersion":  "3.3.40",
+    "versionCode":  370,
+    "bundleFile":  "we4all-ota-v3.3.40.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.40.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "15748966c11470922457c2c28151e3521ccf191ee8ed0360f6aca6e004697dda",
+    "sha256":  "9a73a4e900f152da9c5411f682fbe90dbb3aee2fd3b8d655010a94f1b7161aad",
     "sizeKb":  719,
-    "releasedAt":  "2026-11-21T22:22:13Z",
+    "releasedAt":  "2026-11-21T22:28:50Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.39: Admin Stage 3+4 complete + all 5 Partner Portals upgraded to Royal Violet/Coral 2026 theme."
+    "releaseNotes":  "WE4ALL v3.3.40: Rider Captain Pro Desk - Live GPS Go Online duty toggle, 12s auto-polling radar \u0026 3-card KPI bar."
 }
