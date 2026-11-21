@@ -1558,6 +1558,11 @@ export default function OwnerAccountProfile(rawProps = {}) {
             {appUpdateInfo.updateAvailable && <button type="button" onClick={onRunOtaUpdate} disabled={checkingUpdate || Boolean(otaProgress)} className="rounded-xl bg-emerald-400 px-3 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50">Download and install update</button>}
             <a href={`${appUpdateInfo.apkDownloadUrl || "https://we-4-all-super-app.vercel.app/WE4ALL.apk"}?v=${encodeURIComponent(appUpdateInfo.latestAvailableVersion || APP_VERSION)}`} download={`WE4ALL-v${appUpdateInfo.latestAvailableVersion || APP_VERSION}.apk`} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-amber-400/40 bg-slate-950 px-3 py-2.5 text-center text-xs font-black text-amber-300 hover:bg-slate-800">Download Latest APK</a>
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+            <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("we4all:open-pin-sheet"))} className="rounded-xl border border-indigo-500/40 bg-indigo-950/60 px-3 py-2.5 text-xs font-black text-indigo-200 hover:bg-indigo-900/60">🔐 4-Digit Quick PIN</button>
+            <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("we4all:open-otp-sheet"))} className="rounded-xl border border-emerald-500/40 bg-emerald-950/60 px-3 py-2.5 text-xs font-black text-emerald-200 hover:bg-emerald-900/60">📱 Mobile OTP Auth</button>
+            <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("we4all:open-permissions-sheet"))} className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs font-black text-slate-200 hover:bg-slate-800">⚙️ Device Permissions</button>
+          </div>
           <p className="text-[10px] text-slate-500">Verified native updates are queued safely and activate after the app backgrounds or relaunches.</p>
         </section>
       )}

@@ -520,6 +520,39 @@ function AppContent() {
     };
   }, []);
 
+  // Android Hardware Back Button & Browser Back Guard (never abruptly closes app)
+  const lastBackPressRef = useRef(0);
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    try { window.history.pushState({ we4allGuard: true }, ''); } catch {}
+    const onPopState = () => {
+      if (viewMode !== 'mobile_app') {
+        setViewMode('mobile_app');
+        try { window.history.pushState({ we4allGuard: true }, ''); } catch {}
+        return;
+      }
+      if (footerTab !== 'home') {
+        setFooterTab('home');
+        try { window.history.pushState({ we4allGuard: true }, ''); } catch {}
+        return;
+      }
+      if (activePortal !== 'customer') {
+        setActivePortal('customer');
+        setFooterTab('home');
+        try { window.history.pushState({ we4allGuard: true }, ''); } catch {}
+        return;
+      }
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        return;
+      }
+      lastBackPressRef.current = now;
+      triggerToast('Press Back again to exit WE4ALL');
+      try { window.history.pushState({ we4allGuard: true }, ''); } catch {}
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [viewMode, footerTab, activePortal]);
   const [accountSecurity, setAccountSecurity] = useState(
     savedCloud?.accountSecurity || {
       pinEnabled: true,

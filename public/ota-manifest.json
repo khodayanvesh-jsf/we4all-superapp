@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.28",
-    "latestAvailableVersion":  "3.3.28",
-    "versionCode":  358,
-    "bundleFile":  "we4all-ota-v3.3.28.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.28.zip",
+    "version":  "3.3.29",
+    "latestAvailableVersion":  "3.3.29",
+    "versionCode":  359,
+    "bundleFile":  "we4all-ota-v3.3.29.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.29.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "5b6402ca3c6505872f27a2f734e290f6bde5525edef7944bec17ef14d968a961",
-    "sizeKb":  717,
-    "releasedAt":  "2026-11-21T20:17:19Z",
+    "sha256":  "52d791561997c570323de18e8cd9c05a3e25f36a28e809d004dae3c808006038",
+    "sizeKb":  719,
+    "releasedAt":  "2026-11-21T20:38:11Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.28: Android POSIX OTA zip fix with live download progress + non-fatal cloud sync login fix."
+    "releaseNotes":  "WE4ALL v3.3.29: Modern UI motion, Android Back button navigation, floating menu moved into Accounts, and one-time device permissions."
 }

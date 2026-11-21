@@ -1,6 +1,6 @@
 :root,
 [data-theme="light"] {
-  --we4-bg: #f8fafc;
+  --we4-bg: #f4f7fb;
   --we4-surface: #ffffff;
   --we4-surface-muted: #f1f5f9;
   --we4-border: #e2e8f0;
@@ -11,14 +11,15 @@
   --we4-accent-soft: #ecfdf5;
   --we4-warn-soft: #fffbeb;
   --we4-warn-text: #b45309;
-  --we4-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --we4-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --we4-spring: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-theme="dark"] {
-  --we4-bg: #020617;
+  --we4-bg: #030712;
   --we4-surface: #0f172a;
   --we4-surface-muted: #1e293b;
-  --we4-border: #334155;
+  --we4-border: rgba(148, 163, 184, 0.18);
   --we4-text: #f8fafc;
   --we4-text-muted: #94a3b8;
   --we4-accent: #10b981;
@@ -26,18 +27,44 @@
   --we4-accent-soft: rgba(16, 185, 129, 0.14);
   --we4-warn-soft: rgba(245, 158, 11, 0.14);
   --we4-warn-text: #fcd34d;
-  --we4-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  --we4-shadow: 0 14px 36px rgba(0, 0, 0, 0.48);
+  --we4-spring: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html, body {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+button, a, [role="button"] {
+  transition: transform 160ms var(--we4-spring), background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 160ms ease;
+}
+
+button:active:not(:disabled), a:active, [role="button"]:active {
+  transform: scale(0.97);
 }
 
 .we4-surface {
   background-color: var(--we4-surface);
   color: var(--we4-text);
   border-color: var(--we4-border);
+  box-shadow: var(--we4-shadow);
+}
+
+.we4-glass {
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .we4-page {
   background-color: var(--we4-bg);
   color: var(--we4-text);
+}
+
+.we4-fade-up {
+  animation: we4FadeUp 320ms var(--we4-spring) both;
 }
 
 .we4-shimmer {
@@ -49,6 +76,11 @@
   );
   background-size: 200% 100%;
   animation: we4Shimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes we4FadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes we4Shimmer {
