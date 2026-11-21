@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.43",
-    "latestAvailableVersion":  "3.3.43",
-    "versionCode":  373,
-    "bundleFile":  "we4all-ota-v3.3.43.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.43.zip",
+    "version":  "3.3.44",
+    "latestAvailableVersion":  "3.3.44",
+    "versionCode":  374,
+    "bundleFile":  "we4all-ota-v3.3.44.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.44.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "0f2cc64e046a57f2d428ef726c341cedefdabd5dd6335452169c947d772972d7",
+    "sha256":  "d581594b4e33c2cee2fa35d13e27fb29757d562b7b8334f497ecdd7461191964",
     "sizeKb":  719.4,
-    "releasedAt":  "2026-11-21T22:46:15Z",
+    "releasedAt":  "2026-11-21T22:49:24Z",
     "minNativeVer":  "3.3.43",
-    "releaseNotes":  "WE4ALL v3.3.43: Replaced Capgo downloader with 100% free built-in native Android OTA engine (We4AllOtaPlugin)."
+    "releaseNotes":  "WE4ALL v3.3.44: Live OTA Verification Bundle via 100% Free Built-in We4AllOtaPlugin!"
 }
