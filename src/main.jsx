@@ -5,7 +5,9 @@ import { CapacitorUpdater } from "@capgo/capacitor-updater";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import ActionAndErrorFeedbackLayer from "./modules/ActionAndErrorFeedbackLayer.jsx";
-
+
+import { initSelfHostedOta } from './utils/we4allSelfHostedOta';
+initSelfHostedOta({ currentVersion: '3.3.23' });
 function NativeBundleReady() {
   React.useEffect(() => {
     if (Capacitor.isNativePlatform()) {

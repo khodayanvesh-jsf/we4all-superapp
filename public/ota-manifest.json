@@ -1,11 +1,10 @@
 {
-    "buildNumber":  352,
-    "androidApkUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "version":  "3.3.22",
-    "minNativeBuild":  330,
-    "notes":  "WE4ALL Multi-Platform OTA Release v3.3.22 (Android + Windows 11 Workstation)",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota-bundle.zip",
-    "publishedAt":  "2026-11-18T20:05:41Z",
-    "sha256":  "566953992b9293fc28f79c1906d13061e78398675409dfbd81c7ed1079cdb32e",
-    "windowsExeUrl":  "https://github.com/khodayanvesh-jsf/we4all-superapp/releases/latest/download/WE4ALL-SuperApp-Setup.exe"
+    "version":  "3.3.23",
+    "versionCode":  353,
+    "bundleFile":  "we4all-ota-v3.3.23.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.23.zip",
+    "sha256":  "e5ba1fe73c85642c8ca6fe1f46aacdba67ebca72ed008cf3f3cd13a80ae455fe",
+    "sizeKb":  692.2,
+    "releasedAt":  "2026-11-21T17:55:19.3479424Z",
+    "minNativeVer":  "3.3.0"
 }
