@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.44",
-    "latestAvailableVersion":  "3.3.44",
-    "versionCode":  374,
-    "bundleFile":  "we4all-ota-v3.3.44.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.44.zip",
+    "version":  "3.3.45",
+    "latestAvailableVersion":  "3.3.45",
+    "versionCode":  375,
+    "bundleFile":  "we4all-ota-v3.3.45.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.45.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "d581594b4e33c2cee2fa35d13e27fb29757d562b7b8334f497ecdd7461191964",
-    "sizeKb":  719.4,
-    "releasedAt":  "2026-11-21T22:49:24Z",
+    "sha256":  "5fa62f03d9307b029fe2bfe81affc4d58fa436938e93ec9e069d8918eb7ff618",
+    "sizeKb":  719.3,
+    "releasedAt":  "2026-11-21T22:56:16Z",
     "minNativeVer":  "3.3.43",
-    "releaseNotes":  "WE4ALL v3.3.44: Live OTA Verification Bundle via 100% Free Built-in We4AllOtaPlugin!"
+    "releaseNotes":  "WE4ALL v3.3.45: Free Interactive Map Pin Picker (drag/tap + search + GPS) across Delivery Addresses, Partner Shop GPS \u0026 Ride Pickup/Drop."
 }
