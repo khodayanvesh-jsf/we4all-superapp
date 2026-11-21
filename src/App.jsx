@@ -42,6 +42,7 @@ import AdminSecurityGate from "./modules/AdminSecurityGate";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
 import LiveRouteMap from "./modules/LiveRouteMap";
 import { We4AllAppShellOverlay } from './components/shared/We4AllAppShellOverlay';
+import { checkForSelfHostedOta } from './utils/we4allSelfHostedOta';
 import { PendingPartnerGate } from './components/partner/PendingPartnerGate';
 import { Customer2026Experience } from './components/customer/Customer2026Experience';
 import {
@@ -401,54 +402,121 @@ function AppContent() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const otaLaunchCheckStarted = useRef(false);
 
+  const buildOtaInfoFromResult = (res) => ({
+    installedAppVersion: APP_VERSION,
+    installedBuildNumber: APP_BUILD_NUMBER,
+    currentVersion: APP_VERSION,
+    currentBundleVersion: res?.installedVersion || APP_VERSION,
+    latestAvailableVersion: res?.remoteVersion || APP_VERSION,
+    updateAvailable: Boolean(res?.updateAvailable),
+    releaseNotes: res?.releaseNotes || (res?.status === 'queued-for-next-launch' ? `Update v${res.remoteVersion} downloaded safely and queued for next launch (zero data loss).` : ''),
+    apkDownloadUrl: res?.apkDownloadUrl || 'https://we-4-all-super-app.vercel.app/WE4ALL.apk',
+    lastCheckedAt: res?.checkedAt || new Date().toISOString(),
+    nativeUpdaterRequired: false,
+    nativeUpdater: Capacitor.isNativePlatform() ? 'WE4ALL' : 'Web'
+  });
+
   const handleManualCheckForUpdate = async () => {
     setCheckingUpdate(true);
     try {
-      const latest = await checkLiveCloudOtaManifest((payload) => {
-        if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
-      });
-      if (latest?.error) throw new Error(latest.error);
-      triggerToast(latest?.updateAvailable
-        ? "A WE4ALL update is available for this device."
-        : latest?.nativeUpdaterRequired
-          ? "OTA updates run inside the installed Android/iOS app."
-          : "WE4ALL is up to date on its update channel.");
-    } catch (error) {
-      triggerToast(error?.message || "Could not check the WE4ALL update channel.");
+      const res = await checkForSelfHostedOta({ currentVersion: APP_VERSION, autoInstall: false, applyImmediately: false });
+      const info = buildOtaInfoFromResult(res);
+      setAppUpdateInfo(info);
+      if (res.status === 'up-to-date') {
+        triggerToast(`Already on the latest version (v${res.installedVersion}). No action needed.`);
+      } else if (res.updateAvailable) {
+        triggerToast(`New WE4ALL update v${res.remoteVersion} is available!`);
+      } else {
+        triggerToast(`WE4ALL v${APP_VERSION} checked.`);
+      }
+    } catch (selfHostErr) {
+      try {
+        const latest = await checkLiveCloudOtaManifest((payload) => {
+          if (payload?.appUpdateInfo) setAppUpdateInfo(payload.appUpdateInfo);
+        });
+        if (latest?.error) throw new Error(latest.error);
+        triggerToast(latest?.updateAvailable ? 'A WE4ALL update is available for this device.' : `Already on the latest version (v${APP_VERSION}). No action needed.`);
+      } catch (error) {
+        triggerToast(selfHostErr?.message || error?.message || 'Could not check the WE4ALL update channel.');
+      }
     } finally {
       setCheckingUpdate(false);
     }
   };
 
   const handleRunOtaUpdate = async () => {
-    setOtaProgress({ pct: 5, msg: "Preparing verified WE4ALL update..." });
+    if (!appUpdateInfo?.updateAvailable) {
+      triggerToast(`Already on the latest version (v${APP_VERSION}). No action needed.`);
+      return;
+    }
+    setOtaProgress({ pct: 10, msg: 'Checking & preparing zero-data-loss WE4ALL update...' });
     try {
-      const updatedInfo = await performZeroLossOtaUpdate(
-        appUpdateInfo.latestAvailableVersion,
-        appUpdateInfo.releaseNotes,
-        (stage) => setOtaProgress(stage),
-        (info) => setAppUpdateInfo(info)
-      );
+      const res = await checkForSelfHostedOta({
+        currentVersion: APP_VERSION,
+        autoInstall: true,
+        applyImmediately: true,
+        onProgress: (stage) => setOtaProgress(stage)
+      });
+      setAppUpdateInfo(buildOtaInfoFromResult(res));
       setOtaProgress(null);
-      triggerToast("Update downloaded and queued. It will activate at the next safe app background/relaunch.");
-    } catch (error) {
-      setOtaProgress(null);
-      triggerToast(error?.message || "OTA update failed. The current app bundle remains active.");
+      if (res.status === 'up-to-date') {
+        triggerToast(`Already on the latest version (v${res.installedVersion}). No action needed.`);
+      } else if (res.status === 'applied') {
+        triggerToast(`WE4ALL v${res.remoteVersion} installed cleanly with zero user data loss.`);
+      } else if (res.status === 'queued-for-next-launch') {
+        triggerToast(`WE4ALL v${res.remoteVersion} downloaded and queued. It will activate at the next safe app background/relaunch.`);
+      }
+    } catch (selfHostErr) {
+      try {
+        await performZeroLossOtaUpdate(
+          appUpdateInfo.latestAvailableVersion,
+          appUpdateInfo.releaseNotes,
+          (stage) => setOtaProgress(stage),
+          (info) => setAppUpdateInfo(info)
+        );
+        setOtaProgress(null);
+        triggerToast('Update downloaded and queued. It will activate at the next safe app background/relaunch.');
+      } catch (error) {
+        setOtaProgress(null);
+        triggerToast(selfHostErr?.message || error?.message || 'OTA update failed. The current app bundle remains active.');
+      }
     }
   };
 
-  // The native updater owns automatic download, activation, and rollback.
-  // This launch check only refreshes the About App display.
+  // Auto-check on every app open & foreground resume; compare version and install newer release with zero user data loss.
   useEffect(() => {
-    if (!Capacitor.isNativePlatform() || otaLaunchCheckStarted.current) return undefined;
+    if (otaLaunchCheckStarted.current) return undefined;
     otaLaunchCheckStarted.current = true;
     let active = true;
-    void checkLiveCloudOtaManifest(({ appUpdateInfo }) => {
-      if (active) setAppUpdateInfo(appUpdateInfo);
-    });
+    const runAppOpenOtaCheck = async () => {
+      try {
+        const res = await checkForSelfHostedOta({
+          currentVersion: APP_VERSION,
+          autoInstall: Capacitor.isNativePlatform(),
+          applyImmediately: false
+        });
+        if (!active) return;
+        setAppUpdateInfo(buildOtaInfoFromResult(res));
+        if (res.status === 'queued-for-next-launch') {
+          triggerToast(`WE4ALL v${res.remoteVersion} downloaded safely (zero data loss) and will activate on next relaunch.`);
+        }
+      } catch {
+        if (Capacitor.isNativePlatform()) {
+          void checkLiveCloudOtaManifest(({ appUpdateInfo: cloudInfo }) => {
+            if (active && cloudInfo) setAppUpdateInfo(cloudInfo);
+          });
+        }
+      }
+    };
+    void runAppOpenOtaCheck();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void runAppOpenOtaCheck();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       active = false;
       otaLaunchCheckStarted.current = false;
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 

@@ -1,22 +1,60 @@
 {
   "rewrites": [
-    { "source": "/admin", "destination": "/index.html?admin=true" },
-    { "source": "/admin/(.*)", "destination": "/index.html?admin=true" },
-    { "source": "/((?!ota-manifest\\.json|WE4ALL\\.apk|sw\\.js).*)", "destination": "/index.html" }
+    {
+      "source": "/admin",
+      "destination": "/index.html?admin=true"
+    },
+    {
+      "source": "/admin/(.*)",
+      "destination": "/index.html?admin=true"
+    },
+    {
+      "source": "/((?!ota-manifest\\.json|ota/|assets/|WE4ALL\\.apk|sw\\.js|manifest\\.webmanifest|favicon\\.ico).*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {
       "source": "/ota-manifest.json",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
-        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, OPTIONS"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/WE4ALL.apk",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.android.package-archive"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"WE4ALL-Latest.apk\""
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
       ]
     },
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" }
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
       ]
     }
   ]

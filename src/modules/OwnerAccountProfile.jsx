@@ -1519,7 +1519,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
             </div>
           </dl>
           <div role="status" className={`rounded-2xl border p-3 text-xs ${appUpdateInfo.updateAvailable ? "border-amber-400/40 bg-amber-950/40 text-amber-100" : "border-emerald-500/30 bg-emerald-950/30 text-emerald-100"}`}>
-            {checkingUpdate ? "Checking the secure update channel…" : otaProgress?.msg || (appUpdateInfo.updateAvailable ? "A verified update is ready to install." : appUpdateInfo.nativeUpdaterRequired ? "Automatic OTA updates are available in the installed Android/iOS app." : "This app is up to date on its current channel.")}
+            {checkingUpdate ? "Checking for the latest WE4ALL release…" : otaProgress?.msg || (appUpdateInfo.updateAvailable ? `New update v${appUpdateInfo.latestAvailableVersion} is ready to install (zero user data loss).` : `Already on the latest version (v${appUpdateInfo.currentBundleVersion || appUpdateInfo.installedAppVersion || APP_VERSION}). No action needed.`)}
             {appUpdateInfo.releaseNotes && <p className="mt-2 text-[10px] text-slate-300">{appUpdateInfo.releaseNotes}</p>}
             {otaProgress && <progress className="mt-2 h-2 w-full accent-emerald-400" max="100" value={otaProgress.pct || 0} />}
           </div>
@@ -1528,6 +1528,7 @@ export default function OwnerAccountProfile(rawProps = {}) {
               {checkingUpdate ? "Checking…" : "Check for updates"}
             </button>
             {appUpdateInfo.updateAvailable && <button type="button" onClick={onRunOtaUpdate} disabled={checkingUpdate || Boolean(otaProgress)} className="rounded-xl bg-emerald-400 px-3 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50">Download and install update</button>}
+            <a href={`${appUpdateInfo.apkDownloadUrl || "https://we-4-all-super-app.vercel.app/WE4ALL.apk"}?v=${encodeURIComponent(appUpdateInfo.latestAvailableVersion || APP_VERSION)}`} download={`WE4ALL-v${appUpdateInfo.latestAvailableVersion || APP_VERSION}.apk`} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-amber-400/40 bg-slate-950 px-3 py-2.5 text-center text-xs font-black text-amber-300 hover:bg-slate-800">Download Latest APK</a>
           </div>
           <p className="text-[10px] text-slate-500">Verified native updates are queued safely and activate after the app backgrounds or relaunches.</p>
         </section>

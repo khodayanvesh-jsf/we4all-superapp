@@ -1,10 +1,13 @@
 {
-    "version":  "3.3.23",
-    "versionCode":  353,
-    "bundleFile":  "we4all-ota-v3.3.23.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.23.zip",
-    "sha256":  "d5636d8bca7bf1da9239acb584ab31e6ab4d3e9ea29a56c2e022aba7976e316e",
-    "sizeKb":  697,
-    "releasedAt":  "2026-11-21T18:16:12.2962301Z",
-    "minNativeVer":  "3.3.0"
+    "version":  "3.3.26",
+    "latestAvailableVersion":  "3.3.26",
+    "versionCode":  356,
+    "bundleFile":  "we4all-ota-v3.3.26.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.26.zip",
+    "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
+    "sha256":  "fdd3318c1ebd69090f0440e8d058bb4f676710b4a45d4a6e4df0bfe07664aa5a",
+    "sizeKb":  1413,
+    "releasedAt":  "2026-11-21T19:22:37Z",
+    "minNativeVer":  "3.3.0",
+    "releaseNotes":  "WE4ALL v3.3.26: Zero-data-loss auto OTA updates, fixed Accounts update check, and direct Download Latest APK."
 }
