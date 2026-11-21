@@ -16,3 +16,4 @@ export { OtaUpdateBanner } from './shared/OtaUpdateBanner';
 export { initSelfHostedOta, checkForSelfHostedOta, getInstalledOtaVersion } from '../utils/we4allSelfHostedOta';
 export { PinBiometricLockScreen } from './shared/PinBiometricLockScreen';
 export { hasLocalPin, clearLocalPin, checkBiometricAvailable, promptBiometricUnlock } from '../utils/we4allQuickAuth';
+export { PhoneOtpVerificationPanel } from './shared/PhoneOtpVerificationPanel';

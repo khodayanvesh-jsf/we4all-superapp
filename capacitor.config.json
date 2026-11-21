@@ -1,15 +1,23 @@
 {
-    "appId":  "com.we4all.superapp",
-    "appName":  "WE4ALL",
-    "webDir":  "dist",
-    "android":  {
-                    "allowMixedContent":  false
-                },
-    "plugins":  {
-                    "CapacitorUpdater":  {
-                                             "autoUpdate":  false,
-                                             "appReadyTimeout":  10000,
-                                             "resetWhenUpdate":  true
-                                         }
-                }
+  "appId": "com.we4all.superapp",
+  "appName": "WE4ALL",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "CapacitorUpdater": {
+      "appId": "com.we4all.superapp",
+      "autoUpdate": false,
+      "appReadyTimeout": 10000,
+      "httpsOnly": true,
+      "keepUrlPathAfterReload": true,
+      "autoDeleteFailed": true,
+      "updateUrl": "",
+      "channelUrl": "",
+      "statsUrl": "",
+      "allowModifyUrl": false,
+      "persistModifyUrl": false
+    }
+  }
 }

@@ -3,8 +3,8 @@
     "versionCode":  353,
     "bundleFile":  "we4all-ota-v3.3.23.zip",
     "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.23.zip",
-    "sha256":  "cbb66f40efc098daf41a3c3819f5abb675c17ecdf2bd4ec4e860687f572b02da",
-    "sizeKb":  692.4,
-    "releasedAt":  "2026-11-21T17:56:59.2158021Z",
+    "sha256":  "d5636d8bca7bf1da9239acb584ab31e6ab4d3e9ea29a56c2e022aba7976e316e",
+    "sizeKb":  697,
+    "releasedAt":  "2026-11-21T18:16:12.2962301Z",
     "minNativeVer":  "3.3.0"
 }

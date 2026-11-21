@@ -40,7 +40,8 @@ import LabourWorksitePortal from "./modules/LabourWorksitePortal";
 import FounderAdminSuite from "./modules/FounderAdminSuite";
 import AdminSecurityGate from "./modules/AdminSecurityGate";
 import AdminKycAndLabManager from "./modules/AdminKycAndLabManager";
-import LiveRouteMap from "./modules/LiveRouteMap";
+import LiveRouteMap from "./modules/LiveRouteMap";
+import { We4AllAppShellOverlay } from './components/shared/We4AllAppShellOverlay';
 import {
   saveCloudAndLocalState,
   loadCloudAndLocalState,
@@ -2450,7 +2451,9 @@ function AppContent() {
           onClose={() => setPendingUpiPayment(null)}
         />
       )}
-    </div>
+    
+      <We4AllAppShellOverlay />
+      </div>
   );
 }
 
