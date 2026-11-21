@@ -5,9 +5,9 @@
     "bundleFile":  "we4all-ota-v3.3.35.zip",
     "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.35.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "dfc497c2e38df5150f65a7e1ea808e31eba644f06f45efef61179461f265c7e7",
+    "sha256":  "d7d354e5872b3d5f257e4054fa06f0537deeabe1d5be66453a817557daeaf50c",
     "sizeKb":  718,
-    "releasedAt":  "2026-11-21T22:00:55Z",
+    "releasedAt":  "2026-11-21T22:03:53Z",
     "minNativeVer":  "3.3.0",
     "releaseNotes":  "WE4ALL v3.3.35: Admin Console Stage 2 - Live Orders \u0026 COD/UPI GST tab, settlement strip \u0026 scoped Change Requests."
 }
