@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.31",
-    "latestAvailableVersion":  "3.3.31",
-    "versionCode":  361,
-    "bundleFile":  "we4all-ota-v3.3.31.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.31.zip",
+    "version":  "3.3.32",
+    "latestAvailableVersion":  "3.3.32",
+    "versionCode":  362,
+    "bundleFile":  "we4all-ota-v3.3.32.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.32.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "5a34d078b067149bd8482d14fced24b9e1902b1eae63f1ce7315871331347543",
+    "sha256":  "1f9b687df5e582c27ab76c2b7882acf3ef38d7a4d40f1932434877cead0616fc",
     "sizeKb":  720,
-    "releasedAt":  "2026-11-21T21:18:07Z",
+    "releasedAt":  "2026-11-21T21:26:04Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.31: Royal Violet \u0026 Coral 2026 UI rebrand, animated 3-slide promo carousel \u0026 styled shop hero."
+    "releaseNotes":  "WE4ALL v3.3.32: Fixed OTA concurrent download collision \u0026 bundle reuse + Live Scrolling Town News Ticker."
 }

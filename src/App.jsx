@@ -189,19 +189,19 @@ function MobilePhoneShell({
         </div>
       </div>
       <div
-        className={
-          "px-3 py-1 flex items-center justify-between text-[9px] font-bold tracking-wide border-b shrink-0 " +
-          (brightTheme
-            ? "bg-emerald-50 text-emerald-950 border-emerald-100"
-            : "bg-[#0a171d] text-emerald-200 border-slate-800")
-        }
-        aria-label="Installed application version"
-        data-testid="installed-app-version"
+        className="px-2.5 py-1.5 flex items-center gap-2 text-[10px] font-bold tracking-wide border-b shrink-0 bg-gradient-to-r from-indigo-950 via-violet-950 to-fuchsia-950 text-white border-violet-500/30 overflow-hidden"
+        aria-label="Live town news ticker"
       >
-        <span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span>
-        <span className="truncate ml-2 opacity-80">
-          OTA BUNDLE {appUpdateInfo?.currentBundleVersion || "BUILT-IN"}
+        <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500 text-white text-[8px] font-black uppercase tracking-wider">
+          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE
         </span>
+        <div className="flex-1 overflow-hidden whitespace-nowrap">
+          <div className="we4-marquee-track text-[10px] font-bold text-violet-100">
+            <span>🔥 0% Platform Markup on Adilabad Kirana &amp; Fresh Mandi Veg &nbsp;•&nbsp; ⚡ 1-Hr Verified Electricians, Plumbers &amp; AC Pros Live &nbsp;•&nbsp; 🛵 Instant Bike, Auto &amp; Same-Hour Parcel Drops &nbsp;•&nbsp; 🎉 Book Function Halls &amp; Event Decorators Direct &nbsp;•&nbsp;</span>
+            <span>🔥 0% Platform Markup on Adilabad Kirana &amp; Fresh Mandi Veg &nbsp;•&nbsp; ⚡ 1-Hr Verified Electricians, Plumbers &amp; AC Pros Live &nbsp;•&nbsp; 🛵 Instant Bike, Auto &amp; Same-Hour Parcel Drops &nbsp;•&nbsp; 🎉 Book Function Halls &amp; Event Decorators Direct &nbsp;•&nbsp;</span>
+          </div>
+        </div>
+        <span className="sr-only" data-testid="installed-app-version">INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER} | OTA BUNDLE {appUpdateInfo?.currentBundleVersion || "BUILT-IN"}</span>
       </div>
 
       {personalShoppingFromPartner && (

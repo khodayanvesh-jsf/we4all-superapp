@@ -1,2 +1,2 @@
-export const APP_VERSION = "3.3.31";
-export const APP_BUILD_NUMBER = 361;
+export const APP_VERSION = "3.3.32";
+export const APP_BUILD_NUMBER = 362;
