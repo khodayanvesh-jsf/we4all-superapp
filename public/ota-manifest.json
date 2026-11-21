@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.34",
-    "latestAvailableVersion":  "3.3.34",
-    "versionCode":  364,
-    "bundleFile":  "we4all-ota-v3.3.34.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.34.zip",
+    "version":  "3.3.35",
+    "latestAvailableVersion":  "3.3.35",
+    "versionCode":  365,
+    "bundleFile":  "we4all-ota-v3.3.35.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.35.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "cc0688909f6f980675c05204783fe885d541016fe9888bd392e8cf405349bff3",
-    "sizeKb":  721,
-    "releasedAt":  "2026-11-21T21:47:41Z",
+    "sha256":  "dfc497c2e38df5150f65a7e1ea808e31eba644f06f45efef61179461f265c7e7",
+    "sizeKb":  718,
+    "releasedAt":  "2026-11-21T22:00:55Z",
     "minNativeVer":  "3.3.0",
-    "releaseNotes":  "WE4ALL v3.3.34: Admin Console Stage 1 complete — 5-group workflow navigation \u0026 Royal Violet tabs."
+    "releaseNotes":  "WE4ALL v3.3.35: Admin Console Stage 2 - Live Orders \u0026 COD/UPI GST tab, settlement strip \u0026 scoped Change Requests."
 }

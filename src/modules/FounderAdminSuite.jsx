@@ -796,6 +796,7 @@ export default function FounderAdminSuite({
 
   const ADMIN_TABS = [
     { id: "approvals", label: "1. All-Sector Approvals & KYC", badge: `${totalPendingCount} Pending` },
+    { id: "live_orders", label: "Live Orders & COD/UPI GST", badge: `${safeOrders.length} Orders` },
     { id: "database", label: "2. 8-Table Master Database CRUD", badge: "Edit All Data" },
     { id: "categories", label: "3. Categories, Sub-Pills & Stock", badge: `${safeCategories.length} Cats` },
     { id: "founder_profile", label: "4. Founder Profile", badge: "My Details" },
@@ -2981,7 +2982,7 @@ export default function FounderAdminSuite({
   const ADMIN_WORKFLOW_GROUPS = [
     { id: "all", label: "All Modules", tabs: null },
     { id: "approvals_kyc", label: "Approvals & KYC", tabs: ["approvals", "portal_users", "geo_managers"] },
-    { id: "orders_data", label: "Orders & Data", tabs: ["database", "categories", "live_locator"] },
+    { id: "orders_data", label: "Orders & Data", tabs: ["live_orders", "database", "categories", "live_locator"] },
     { id: "growth_ads", label: "Growth & Ads", tabs: ["geo_ads", "modules", "monetization"] },
     { id: "security_qa", label: "Security & QA", tabs: ["security_server", "founder_profile", "telemetry", "testing"] }
   ];
@@ -3073,7 +3074,7 @@ export default function FounderAdminSuite({
             <p className="text-xl font-black text-white mt-0.5">{managedUsers.filter((u) => u.portal_status === "active").length}</p>
             <p className="text-[9px] text-slate-400">Verified Portal Users</p>
           </button>
-          <button type="button" onClick={() => setFounderTab("database")} className="rounded-2xl border border-fuchsia-500/30 bg-slate-900/90 p-3 text-left hover:border-fuchsia-400 transition">
+          <button type="button" onClick={() => setFounderTab("live_orders")} className="rounded-2xl border border-fuchsia-500/30 bg-slate-900/90 p-3 text-left hover:border-fuchsia-400 transition">
             <p className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">Live Orders</p>
             <p className="text-xl font-black text-white mt-0.5">{safeOrders.length}</p>
             <p className="text-[9px] text-slate-400">COD &amp; UPI Transactions</p>
@@ -3507,7 +3508,7 @@ export default function FounderAdminSuite({
         </div>
       )}
     
-      <><FounderOrderGstMonitor /><FounderChangeRequestsQueue /></>
+      {founderTab === "approvals" && <div className="max-w-6xl w-full mx-auto px-4 pb-6"><FounderChangeRequestsQueue /></div>}
       </div>
   );
 }

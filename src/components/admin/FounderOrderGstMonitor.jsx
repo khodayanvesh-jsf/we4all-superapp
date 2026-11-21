@@ -119,6 +119,7 @@ function exportGstCsv(rows) {
 export function FounderOrderGstMonitor() {
   const [filter, setFilter] = useState('all');
   const [zoneFilter, setZoneFilter] = useState('ALL');
+  const [paymentFilter, setPaymentFilter] = useState('all');
   const [search, setSearch] = useState('');
 
   const {
@@ -149,6 +150,9 @@ export function FounderOrderGstMonitor() {
       const orderZone = order.zone_id || 'Adilabad Town';
 
       if (zoneFilter !== 'ALL' && orderZone !== zoneFilter) return false;
+      const payMethod = String(order.payment_method || 'upi').toLowerCase();
+      if (paymentFilter === 'cod' && payMethod !== 'cod') return false;
+      if (paymentFilter === 'upi' && payMethod === 'cod') return false;
       if (filter === 'active' && TERMINAL_ORDER_STATUSES.includes(statusKey)) {
         return false;
       }
@@ -168,7 +172,29 @@ export function FounderOrderGstMonitor() {
 
       return true;
     });
-  }, [orders, filter, zoneFilter, search]);
+  }, [orders, filter, zoneFilter, paymentFilter, search]);
+
+  const settlement = useMemo(() => {
+    let upiCollected = 0;
+    let codCollected = 0;
+    let codPending = 0;
+    let totalGst = 0;
+    for (const o of filteredOrders) {
+      const st = String(o.status || '').toLowerCase();
+      if (CANCELLED_ORDER_STATUSES.includes(st)) continue;
+      const amt = Number(o.total_inr || 0);
+      totalGst += Number(o.tax_inr || 0);
+      const method = String(o.payment_method || 'upi').toLowerCase();
+      const paySt = String(o.payment_status || '').toLowerCase();
+      if (method === 'cod') {
+        if (o.cod_collected_at || paySt === 'paid' || paySt === 'captured') codCollected += amt;
+        else codPending += amt;
+      } else {
+        if (paySt === 'paid' || paySt === 'captured' || st === 'delivered') upiCollected += amt;
+      }
+    }
+    return { upiCollected, codCollected, codPending, totalGst };
+  }, [filteredOrders]);
 
   const badge = getBadgeStyle(connectionState);
 
@@ -181,6 +207,7 @@ export function FounderOrderGstMonitor() {
 
   return (
     <section className="w-full max-w-6xl mx-auto p-4 space-y-5">
+      <div className="rounded-3xl bg-white text-slate-900 p-4 shadow-lg border border-violet-200/60 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-900">
@@ -199,6 +226,11 @@ export function FounderOrderGstMonitor() {
             {badge.text}
           </span>
 
+          <div className="inline-flex rounded-xl bg-slate-100 p-0.5 text-[11px] font-bold">
+            {[{ id: "all", label: "All Pay" }, { id: "cod", label: "COD" }, { id: "upi", label: "UPI/Online" }].map((pm) => (
+              <button key={pm.id} type="button" onClick={() => setPaymentFilter(pm.id)} className={`px-2.5 py-1 rounded-lg ${paymentFilter === pm.id ? "bg-violet-600 text-white shadow-sm" : "text-slate-600"}`}>{pm.label}</button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => exportGstCsv(filteredOrders)}
@@ -288,6 +320,7 @@ export function FounderOrderGstMonitor() {
         </div>
       </div>
 
+      
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
           {FILTER_TABS.map((tab) => (
@@ -475,6 +508,7 @@ export function FounderOrderGstMonitor() {
             </table>
           </div>
         )}
+      </div>
       </div>
     </section>
   );
