@@ -3089,7 +3089,7 @@ export default function FounderAdminSuite({
 
   return (
     <div className="min-h-screen bg-[#070615] text-slate-100 flex flex-col font-sans text-xs">
-      <header className="bg-gradient-to-r from-indigo-950 via-violet-950 to-slate-950 border-b border-violet-500/35 px-5 py-3 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-50 shadow-lg">
+      <header className="bg-gradient-to-r from-indigo-950 via-violet-950 to-slate-950 border-b border-violet-500/35 px-5 py-3 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-50 shadow-lg we4all-portal-banner">
         <div className="flex items-center gap-3">
           <label className="w-10 h-10 rounded-full border-2 border-amber-400 bg-emerald-950 flex items-center justify-center text-[8px] font-black text-amber-300 overflow-hidden cursor-pointer">
             {founderLogoUrl ? (

@@ -24,6 +24,15 @@ export function Customer2026Experience({
   onQuickAdd,
   headerRight = null,
 }) {
+  const openStoreSection = (section, fallbackCat) => {
+    try {
+      window.dispatchEvent(new CustomEvent("we4all:open-store-section", { detail: { section, category: fallbackCat } }));
+    } catch {}
+    setTimeout(() => {
+      const el = document.getElementById("we4all-store-section-bar");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  };
   const [activeOrderId, setActiveOrderId] = useState(null);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [bannerMsg, setBannerMsg] = useState('');

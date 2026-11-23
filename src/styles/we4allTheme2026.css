@@ -1,0 +1,26 @@
+/* WE4ALL 2026 Uniform Royal Violet / Indigo / Coral Design System (All Portals) */
+:root {
+  --we4all-violet: #6d28d9;
+  --we4all-indigo: #4f46e5;
+  --we4all-coral: #f43f5e;
+  --we4all-emerald: #10b981;
+  --we4all-surface-dark: #0b1120;
+  --we4all-card-radius: 1.15rem;
+}
+
+.we4all-portal-shell {
+  border-radius: var(--we4all-card-radius);
+}
+
+.we4all-portal-banner {
+  background: linear-gradient(135deg, #312e81 0%, #5b21b6 55%, #e11d48 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  box-shadow: 0 10px 26px rgba(79, 70, 229, 0.22);
+}
+
+.we4all-pill-active {
+  background: linear-gradient(135deg, #6d28d9, #4f46e5) !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 16px rgba(109, 40, 217, 0.3);
+}

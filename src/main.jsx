@@ -1,3 +1,4 @@
+import './styles/we4allTheme2026.css';
 import './styles/we4all-theme.css';
 import React from "react";
 import { Capacitor } from "@capacitor/core";

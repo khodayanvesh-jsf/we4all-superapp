@@ -1561,7 +1561,12 @@ function AppContent() {
                     <p>Discover local favourites, compare shops and keep your essentials in one cart.</p></div>
                     <button type="button" onClick={() => { setActiveCartViewTab("merchant_cart"); setFooterTab("cart"); }}>View cart</button>
                   </section>
-                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  <div id="we4all-store-section-bar" className="grid grid-cols-3 gap-1.5 rounded-2xl bg-slate-900/90 p-1.5 border border-indigo-500/30 mb-2">
+              <button type="button" onClick={() => { setStoreSectionFilter("groceries"); if (typeof setSelectedCategory === "function") setSelectedCategory("Groceries & Kirana"); }} className={"rounded-xl py-2 px-2 text-xs font-extrabold transition cursor-pointer " + (storeSectionFilter === "groceries" ? "we4all-pill-active" : "bg-slate-800/80 text-slate-200 hover:bg-slate-700")}>🛒 Groceries</button>
+              <button type="button" onClick={() => { setStoreSectionFilter("foods"); if (typeof setSelectedCategory === "function") setSelectedCategory("Fresh Meat & Fish"); }} className={"rounded-xl py-2 px-2 text-xs font-extrabold transition cursor-pointer " + (storeSectionFilter === "foods" ? "we4all-pill-active" : "bg-slate-800/80 text-slate-200 hover:bg-slate-700")}>🍛 Foods Veg &amp; Non-Veg</button>
+              <button type="button" onClick={() => { setStoreSectionFilter("all"); if (typeof setSelectedCategory === "function") setSelectedCategory("All"); }} className={"rounded-xl py-2 px-2 text-xs font-extrabold transition cursor-pointer " + (storeSectionFilter === "all" ? "we4all-pill-active" : "bg-slate-800/80 text-slate-200 hover:bg-slate-700")}>✨ All Stores</button>
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
                     <button
                       type="button"
                       onClick={() => setSelectedCategory("all")}

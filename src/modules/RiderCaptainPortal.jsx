@@ -363,7 +363,7 @@ export default function RiderCaptainPortal({
   return (
     <div className="space-y-3 text-xs text-white">
       {/* CAPTAIN VEHICLE IDENTITY & STRICT LOCK HEADER */}
-      <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-violet-950 p-3.5 rounded-3xl border border-indigo-400/40 shadow-lg space-y-2 we4-fade-up">
+      <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-violet-950 p-3.5 rounded-3xl border border-indigo-400/40 shadow-lg space-y-2 we4-fade-up we4all-portal-banner">
         <div className="flex justify-between items-start gap-2">
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">

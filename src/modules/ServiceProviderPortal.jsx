@@ -335,7 +335,7 @@ export default function ServiceProviderPortal({
   return (
     <div className="space-y-3 text-xs text-white">
       {/* TOP PROVIDER STATUS BAR */}
-      <div className="bg-gradient-to-r from-violet-950 via-indigo-950 to-fuchsia-950 p-3.5 rounded-3xl border border-violet-400/40 shadow-lg flex justify-between items-center gap-2 we4-fade-up">
+      <div className="bg-gradient-to-r from-violet-950 via-indigo-950 to-fuchsia-950 p-3.5 rounded-3xl border border-violet-400/40 shadow-lg flex justify-between items-center gap-2 we4-fade-up we4all-portal-banner">
         <div>
           <div className="flex items-center gap-1.5">
             <h3 className="font-black text-indigo-300 text-xs">

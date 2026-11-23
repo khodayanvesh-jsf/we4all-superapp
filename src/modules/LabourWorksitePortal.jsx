@@ -168,7 +168,7 @@ export default function LabourWorksitePortal({
   return (
     <div className="space-y-3 text-xs text-white">
       {mode !== "customer" && (
-        <section className="bg-gradient-to-r from-slate-900 via-indigo-950 to-violet-950 border border-violet-400/40 rounded-3xl p-3.5 shadow-lg space-y-2 we4-fade-up">
+        <section className="bg-gradient-to-r from-slate-900 via-indigo-950 to-violet-950 border border-violet-400/40 rounded-3xl p-3.5 shadow-lg space-y-2 we4-fade-up we4all-portal-banner">
           <h3 className="font-black text-amber-400 text-sm">Labour & Mistri Work-Site Adda</h3>
           <p className="text-[10px] text-slate-300">
             Six-trade directory for individual workers and Mistri Toli groups. Only a Founder-approved Labour partner can publish a server directory profile.
