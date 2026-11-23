@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.47",
-    "latestAvailableVersion":  "3.3.47",
-    "versionCode":  377,
-    "bundleFile":  "we4all-ota-v3.3.47.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.47.zip",
+    "version":  "3.3.48",
+    "latestAvailableVersion":  "3.3.48",
+    "versionCode":  378,
+    "bundleFile":  "we4all-ota-v3.3.48.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.48.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "014a84203cb7a3db6ac647a48de25fa0c4978b55e7098243fd67435920a7dd92",
+    "sha256":  "6b042b4bab6fbdaf28b526723371420d1877a9df0e9a6e55256a8a7a55a34fda",
     "sizeKb":  719.4,
-    "releasedAt":  "2026-11-23T04:31:04Z",
+    "releasedAt":  "2026-11-23T04:51:16Z",
     "minNativeVer":  "3.3.43",
-    "releaseNotes":  "WE4ALL v3.3.47: Dedicated Widescreen Partner Desktop Web Console (/partner) for Merchants, Service Providers, Decorators, Labour \u0026 Captains."
+    "releaseNotes":  "WE4ALL v3.3.48: Native Windows 11 Fluent Desktop App UI with Command Bar, Ctrl+K Search, Dense Data Grids, Inspector Pane \u0026 Printable GST Invoices."
 }
