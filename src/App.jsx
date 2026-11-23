@@ -201,21 +201,8 @@ function MobilePhoneShell({
           )}
         </div>
       </div>
-      <div
-        className="px-2.5 py-1.5 flex items-center gap-2 text-[10px] font-bold tracking-wide border-b shrink-0 bg-gradient-to-r from-indigo-950 via-violet-950 to-fuchsia-950 text-white border-violet-500/30 overflow-hidden"
-        aria-label="Live town news ticker"
-      >
-        <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500 text-white text-[8px] font-black uppercase tracking-wider">
-          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE
-        </span>
-        <div className="flex-1 overflow-hidden whitespace-nowrap">
-          <div className="we4-marquee-track text-[10px] font-bold text-violet-100">
-            <span className="pr-8">{liveNewsTicker}</span>
-            <span className="pr-8">{liveNewsTicker}</span>
-          </div>
-        </div>
-        <span className="sr-only" data-testid="installed-app-version">INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER} | OTA BUNDLE {appUpdateInfo?.currentBundleVersion || "BUILT-IN"}</span>
-      </div>
+      <div className="bg-slate-950/90 text-[9px] font-bold tracking-wider text-slate-400 px-3 py-0.5 flex items-center justify-between border-b border-slate-800/80 shrink-0"><span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span><span className="text-emerald-400">OTA BUNDLE v{appUpdateInfo?.currentVersion || APP_VERSION}</span></div>
+      <GeoNewsHeadlinesTicker city={typeof selectedZoneFilter === "string" ? selectedZoneFilter : "Adilabad"} state="Telangana" lang={typeof lang === "string" ? lang : "en"} pinnedNotice={typeof liveNewsTicker === "string" ? liveNewsTicker : ""} />
 
       {personalShoppingFromPartner && (
         <div className="bg-indigo-600 text-white px-3 py-1.5 flex justify-between items-center text-[10px] font-black shrink-0">
@@ -1442,7 +1429,7 @@ function AppContent() {
           </div>
 
           {footerTab === "home" && customerHomeSubTab === "stores" && (<>
-            <GeoNewsHeadlinesTicker city={typeof selectedZoneFilter === "string" ? selectedZoneFilter : "Adilabad"} state="Telangana" lang={typeof lang === "string" ? lang : "en"} pinnedNotice={typeof liveNewsTicker === "string" ? liveNewsTicker : ""} />
+            
             
             <GeoTargetedAdBanner
               ads={geoAds}

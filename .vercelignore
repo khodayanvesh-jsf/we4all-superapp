@@ -1,4 +1,8 @@
-
-# Exclude large desktop/mobile installers from Git and Vercel source uploads
-*.exe
-/WE4ALL*.apk
+# Keep Vercel deploy fast while ALLOWING public/WE4ALL.apk and public/ota/*.zip
+node_modules
+.git
+android
+desktop-app
+tests
+supabase
+*.log

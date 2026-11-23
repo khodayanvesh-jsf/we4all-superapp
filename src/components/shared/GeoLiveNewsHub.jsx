@@ -110,9 +110,9 @@ export function GeoNewsHeadlinesTicker({ city = "Adilabad", state = "Telangana",
   return (
     <div className="w-full" data-we4all-news-ticker="live">
       <style>{CSS}</style>
-      <div className="flex items-center gap-2 rounded-xl border border-indigo-200/80 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-2.5 py-2 text-white shadow-sm">
+      <div className="flex items-center gap-2 rounded-xl border border-indigo-200/80 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-2 py-1.5 text-white shadow-sm">
         <button type="button" onClick={() => setOpen(true)} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2 py-1 text-[11px] font-bold uppercase text-white hover:bg-rose-500">
-          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />{showCity} News
+          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />LIVE
         </button>
         <div className="relative flex-1 overflow-hidden">
           {loading && !entries.length ? (

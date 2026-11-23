@@ -1,50 +1,109 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Download WE4ALL Super-App (Always Latest Version)</title>
-  <meta name="description" content="Download the latest WE4ALL Hyper-Local Super-App APK for Adilabad & Telangana. Groceries, Rides, Parcels, Services, Labour & Local News." />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Download WE4ALL Android App</title>
+  <meta name="description" content="Download the official WE4ALL Android App (APK)." />
   <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 45%, #4c1d95 100%); color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .card { max-width: 440px; width: 100%; background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 28px; padding: 28px 24px; text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
-    .badge { display: inline-block; background: rgba(16, 185, 129, 0.18); border: 1px solid rgba(52, 211, 153, 0.5); color: #6ee7b7; font-size: 12px; font-weight: 800; padding: 5px 12px; border-radius: 999px; margin-bottom: 14px; }
-    h1 { margin: 0 0 8px; font-size: 26px; font-weight: 900; letter-spacing: -0.5px; }
-    p { margin: 0 0 20px; font-size: 14px; color: #cbd5e1; line-height: 1.5; }
-    .btn { display: block; width: 100%; text-decoration: none; font-weight: 900; font-size: 16px; padding: 15px 18px; border-radius: 16px; margin-bottom: 12px; transition: transform .12s ease; }
-    .btn:active { transform: scale(0.98); }
-    .btn-primary { background: linear-gradient(90deg, #6366f1, #ec4899); color: #fff; box-shadow: 0 10px 24px rgba(99,102,241,0.4); }
-    .btn-wa { background: #16a34a; color: #fff; }
-    .btn-web { background: rgba(255,255,255,0.1); color: #e2e8f0; font-size: 14px; padding: 12px; }
-    .meta { font-size: 12px; color: #94a3b8; margin-top: 12px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 55%, #312e81 100%);
+      color: #f8fafc;
+    }
+    .card {
+      width: 100%;
+      max-width: 400px;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 24px;
+      padding: 32px 24px;
+      text-align: center;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    }
+    .logo {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 16px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #6366f1, #ec4899);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 800;
+      color: #fff;
+      box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+    }
+    h1 { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
+    .sub { font-size: 13px; color: #cbd5e1; margin-bottom: 18px; }
+    .badge {
+      display: inline-block;
+      background: rgba(99, 102, 241, 0.22);
+      border: 1px solid rgba(129, 140, 248, 0.4);
+      color: #c7d2fe;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 5px 12px;
+      border-radius: 999px;
+      margin-bottom: 24px;
+    }
+    .dl-btn {
+      display: block;
+      width: 100%;
+      padding: 16px 20px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 800;
+      text-decoration: none;
+      box-shadow: 0 12px 28px rgba(16, 185, 129, 0.35);
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+    .dl-btn:active { transform: scale(0.98); }
+    .dl-btn:hover { filter: brightness(1.06); }
+    .note {
+      margin-top: 18px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #94a3b8;
+    }
   </style>
 </head>
 <body>
   <main class="card">
-    <div class="badge" id="verBadge">✅ Always Latest Version · Auto-OTA Enabled</div>
+    <div class="logo">W4</div>
     <h1>WE4ALL Super-App</h1>
-    <p>Local Groceries, Rides & Parcels, Home Services, Function Halls, Labour & Live Local News — all in one town app.</p>
-    <a id="apkBtn" class="btn btn-primary" href="/WE4ALL.apk" download="WE4ALL-Latest.apk">⬇️ Download Latest Android APK</a>
-    <a id="waBtn" class="btn btn-wa" href="https://wa.me/?text=Download%20WE4ALL%20Super-App%20(Always%20Latest%20Version)%3A%20https%3A%2F%2Fwe-4-all-super-app.vercel.app%2Fdownload" target="_blank" rel="noopener noreferrer">📲 Share Forever Link on WhatsApp</a>
-    <a class="btn btn-web" href="/">🌐 Open Web App Directly</a>
-    <div class="meta" id="metaText">Checking latest release...</div>
+    <p class="sub">Official Android Installer (APK)</p>
+    <div class="badge" id="verBadge">Latest Version</div>
+    <a class="dl-btn" id="dlBtn" href="/WE4ALL.apk" download="WE4ALL.apk">
+      ⬇️ Download WE4ALL App
+    </a>
+    <p class="note">
+      After downloading, tap the <strong>WE4ALL.apk</strong> file to install.
+      Updates install automatically inside the app.
+    </p>
   </main>
   <script>
-    fetch("/ota-manifest.json?t=" + Date.now(), { cache: "no-store" })
-      .then(function(r) { return r.json(); })
-      .then(function(m) {
-        var v = m.version || "Latest";
-        var b = m.build || m.buildNumber || "";
-        document.getElementById("verBadge").textContent = "✅ Live Release v" + v + (b ? " (Build " + b + ")" : "") + " · Auto-OTA";
-        var apk = document.getElementById("apkBtn");
-        apk.href = "/WE4ALL.apk?v=" + encodeURIComponent(v);
-        apk.setAttribute("download", "WE4ALL-v" + v + ".apk");
-        document.getElementById("metaText").textContent = "This link always downloads the newest WE4ALL version automatically. Updated: " + (m.updatedAt || "Today");
-      })
-      .catch(function() {
-        document.getElementById("metaText").textContent = "Tap Download above to install WE4ALL Android APK.";
-      });
+    (async function () {
+      try {
+        var r = await fetch("/ota-manifest.json?t=" + Date.now(), { cache: "no-store" });
+        if (!r.ok) return;
+        var m = await r.json();
+        if (m && m.version) {
+          document.getElementById("verBadge").textContent = "v" + m.version + " (Build " + (m.build || m.buildNumber || "") + ")";
+          var apk = (m.apkUrl || "/WE4ALL.apk") + "?v=" + encodeURIComponent(m.version);
+          document.getElementById("dlBtn").setAttribute("href", apk);
+        }
+      } catch (e) {}
+    })();
   </script>
 </body>
 </html>
