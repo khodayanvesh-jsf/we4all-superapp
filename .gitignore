@@ -47,4 +47,3 @@ desktop-app/node_modules/
 desktop-app/dist/
 *.exe
 public/ota/*.zip
-public/WE4ALL.apk
