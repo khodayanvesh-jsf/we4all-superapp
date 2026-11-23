@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.52",
-    "latestAvailableVersion":  "3.3.52",
-    "versionCode":  382,
-    "bundleFile":  "we4all-ota-v3.3.52.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.52.zip",
+    "version":  "3.3.53",
+    "latestAvailableVersion":  "3.3.53",
+    "versionCode":  383,
+    "bundleFile":  "we4all-ota-v3.3.53.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.53.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "051c88ffd6a62b4a9189547cf5fbbfa55c59890b7025c5fb9d07536afc6660ea",
-    "sizeKb":  726.4,
-    "releasedAt":  "2026-11-23T05:44:05Z",
+    "sha256":  "b6bebf75fb5a2351948c11ad7fc8c9bd301f4be3a167dce35f2b0d99b602cae5",
+    "sizeKb":  726.7,
+    "releasedAt":  "2026-11-23T06:00:51Z",
     "minNativeVer":  "3.3.52",
-    "releaseNotes":  "WE4ALL v3.3.52: Silent Auto-Update on Launch, removed top OTA banner \u0026 WebView cache-clear fix so UI updates reflect immediately."
+    "releaseNotes":  "WE4ALL v3.3.53: Crisp top header, Promo Video URL studio in Admin \u0026 live Auto-OTA verification."
 }

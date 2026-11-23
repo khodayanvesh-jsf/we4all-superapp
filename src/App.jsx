@@ -1581,7 +1581,7 @@ function AppContent() {
 
                   {(filteredProducts || []).length === 0 ? (
                     <div className="p-4 rounded-2xl border border-dashed border-emerald-600/50 text-center space-y-2">
-                      <p className="font-black text-xs">{selectedZoneFilter ? "No products are published in this local market yet" : "Choose your local market to start browsing"}</p>
+                      <p className="font-black text-xs">{selectedZoneFilter ? "Fresh Adilabad shops are onboarding — browse all categories or sign in as a Merchant" : "Choose your local market to start browsing"}</p>
                       <p className="text-[10px] opacity-80">{selectedZoneFilter ? "Approved local businesses appear here after publishing their products." : "Allow location access and WE4ALL will find the market around you."}</p>
                       {!selectedZoneFilter ? <button type="button" onClick={locateLocalMarket} disabled={geoLocationBusy} className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[10px] font-black text-white disabled:opacity-50">{geoLocationBusy ? "Finding market…" : "Find my local market"}</button> : <button
                         type="button"
