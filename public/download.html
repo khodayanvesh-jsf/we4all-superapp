@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Download WE4ALL Super-App — Always Latest Version</title>
+  <meta name="description" content="Download the latest official WE4ALL Hyper-Local Super-App for Adilabad — Groceries, 1-Hr Services, Rides, Parcels, Halls & Labour." />
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: linear-gradient(135deg, #1e1b4b 0%, #312e81 55%, #4f46e5 100%); color: #fff; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { width: 100%; max-width: 420px; background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 28px; padding: 28px 22px; text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
+    .badge { display: inline-block; background: rgba(99, 102, 241, 0.25); border: 1px solid rgba(165, 180, 252, 0.4); color: #e0e7ff; padding: 5px 12px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+    h1 { margin: 14px 0 6px; font-size: 26px; font-weight: 900; letter-spacing: -0.03em; }
+    .sub { color: #cbd5e1; font-size: 13px; margin: 0 0 18px; line-height: 1.45; }
+    .ver { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(52, 211, 153, 0.35); color: #6ee7b7; border-radius: 14px; padding: 10px 12px; font-size: 12px; font-weight: 700; margin-bottom: 18px; }
+    .btn { display: block; width: 100%; padding: 14px 16px; border-radius: 16px; font-size: 14px; font-weight: 900; text-decoration: none; margin-bottom: 10px; transition: transform 0.12s ease; }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; box-shadow: 0 10px 24px -6px rgba(249, 115, 22, 0.55); }
+    .btn-wa { background: #16a34a; color: #fff; }
+    .btn-web { background: rgba(255,255,255,0.1); color: #e0e7ff; border: 1px solid rgba(255,255,255,0.2); font-size: 13px; }
+    .note { color: #94a3b8; font-size: 11px; margin-top: 12px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <span class="badge">Adilabad Hyper-Local Super-App</span>
+    <h1>WE4ALL</h1>
+    <p class="sub">Groceries · 1-Hr Home Pros · Rides &amp; Parcels · Function Halls · Labour Adda — all in one zero-markup local app.</p>
+    <div id="verBox" class="ver">Checking latest official release…</div>
+    <a id="apkBtn" href="/WE4ALL.apk" download="WE4ALL-Latest.apk" class="btn btn-primary">⬇️ Download Latest Android App (.APK)</a>
+    <a id="waBtn" href="https://wa.me/?text=Download%20the%20latest%20WE4ALL%20Super-App%20(Always%20Updated)%3A%20https%3A%2F%2Fwe-4-all-super-app.vercel.app%2Fdownload" target="_blank" rel="noopener noreferrer" class="btn btn-wa">📲 Share Download Link on WhatsApp</a>
+    <a href="/" class="btn btn-web">🌐 Open Instant Web App (No Install)</a>
+    <p class="note">This link always delivers the newest WE4ALL version automatically — even from older WhatsApp messages. On Android, tap Allow from this source if prompted.</p>
+  </main>
+  <script>
+    fetch('/ota-manifest.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(m){
+        var v = m.version || m.latestAvailableVersion || 'Latest';
+        document.getElementById('verBox').textContent = '✅ Latest Official Version: v' + v + ' (Auto-Updates Built In)';
+        document.getElementById('apkBtn').href = (m.apkDownloadUrl || '/WE4ALL.apk') + '?v=' + encodeURIComponent(v);
+        document.getElementById('apkBtn').setAttribute('download', 'WE4ALL-v' + v + '.apk');
+      })
+      .catch(function(){
+        document.getElementById('verBox').textContent = '✅ Latest Official WE4ALL Android Release Ready';
+      });
+  </script>
+</body>
+</html>
