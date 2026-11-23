@@ -9,7 +9,7 @@ const GRADIENT_PRESETS = [
   { id: 'teal', label: 'Fresh Teal', cls: 'from-teal-500 via-emerald-600 to-cyan-700' },
 ];
 const QUICK_NEWS_PRESETS = [
-  '🔥 0% Platform Markup on Adilabad Kirana & Fresh Mandi Veg  •  ⚡ 1-Hr Verified Electricians & Plumbers Live  •  🛵 Instant Bike & Auto Drops',
+  "",
   '🎉 Festival Mega Offers Live across Local Town Shops  •  🚚 Free Doorstep Delivery on First 3 Orders  •  💳 Pay via UPI or Cash on Delivery',
   '📢 Local Shop Owners, Captains & Mistri Toli: Join WE4ALL with 0% Launch Commission — Register in Accounts Tab!',
 ];

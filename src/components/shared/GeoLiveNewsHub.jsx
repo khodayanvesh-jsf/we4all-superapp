@@ -101,7 +101,7 @@ export function GeoNewsHeadlinesTicker({ city = "Adilabad", state = "Telangana",
 
   const entries = useMemo(() => {
     const arr = [];
-    if (pinnedNotice && String(pinnedNotice).trim()) arr.push({ title: String(pinnedNotice).trim(), source: "NOTICE", bucket: "pinned", link: "" });
+    if (pinnedNotice && String(pinnedNotice).trim() && !/0% Platform Markup|1-Hr Verified Electricians/i.test(String(pinnedNotice))) arr.push({ title: String(pinnedNotice).trim(), source: "NOTICE", bucket: "pinned", link: "" });
     return arr.concat(items);
   }, [pinnedNotice, items]);
 
