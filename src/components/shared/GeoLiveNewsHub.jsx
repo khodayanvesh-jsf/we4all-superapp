@@ -26,6 +26,7 @@ async function fetchStatelessGeoNews({ city, state, lang, customUrl = "", force 
 export function GeoNewsHeadlinesTicker({ city = "Adilabad", stateName = "Telangana", accountLang = "EN", onOpenReader }) {
   const [headlines, setHeadlines] = useState([]);
   const [idx, setIdx] = useState(0);
+  const [readerOpen, setReaderOpen] = useState(false);
   const resolvedLang = normalizeNewsLang(accountLang);
   const resolvedCity = String(city || "Adilabad").replace(/^./, (c) => c.toUpperCase());
 
@@ -50,11 +51,12 @@ export function GeoNewsHeadlinesTicker({ city = "Adilabad", stateName = "Telanga
   const current = headlines[idx];
 
   return (
+    <>
     <div
-      onClick={onOpenReader}
+      onClick={() => (onOpenReader ? onOpenReader() : setReaderOpen(true))}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpenReader?.(); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") (onOpenReader ? onOpenReader() : setReaderOpen(true)); }}
       className="mb-2 cursor-pointer flex items-center justify-between gap-2 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950 via-violet-950 to-slate-900 px-3 py-2 text-white shadow-sm hover:border-indigo-400 transition"
     >
       <div className="min-w-0 flex-1">
@@ -68,6 +70,14 @@ export function GeoNewsHeadlinesTicker({ city = "Adilabad", stateName = "Telanga
       </div>
       <span className="shrink-0 rounded-xl bg-indigo-500 px-2.5 py-1.5 text-[10px] font-black text-white">E-Paper ↗</span>
     </div>
+    {readerOpen && (
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/95 p-3 sm:p-6">
+        <div className="mx-auto max-w-4xl">
+          <GeoLiveNewsHub mode="customer" defaultCity={resolvedCity} defaultState={stateName} accountLang={accountLang} onClose={() => setReaderOpen(false)} />
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

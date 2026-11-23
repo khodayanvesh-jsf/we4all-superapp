@@ -1442,14 +1442,8 @@ function AppContent() {
           </div>
 
           {footerTab === "home" && customerHomeSubTab === "stores" && (<>
-            <GeoNewsHeadlinesTicker city={selectedZoneFilter || "Adilabad"} stateName="Telangana" accountLang={lang} onOpenReader={() => setShowGeoNewsModal(true)} />
-            {showGeoNewsModal && (
-              <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/95 p-3 sm:p-6">
-                <div className="mx-auto max-w-4xl">
-                  <GeoLiveNewsHub mode="customer" defaultCity={selectedZoneFilter || "Adilabad"} defaultState="Telangana" accountLang={lang} onClose={() => setShowGeoNewsModal(false)} />
-                </div>
-              </div>
-            )}
+            <GeoNewsHeadlinesTicker city={selectedZoneFilter || "Adilabad"} stateName="Telangana" accountLang={lang} />
+            
             <GeoTargetedAdBanner
               ads={geoAds}
               selectedZone={selectedZoneFilter}
