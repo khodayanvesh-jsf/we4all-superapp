@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.48",
-    "latestAvailableVersion":  "3.3.48",
-    "versionCode":  378,
-    "bundleFile":  "we4all-ota-v3.3.48.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.48.zip",
+    "version":  "3.3.49",
+    "latestAvailableVersion":  "3.3.49",
+    "versionCode":  379,
+    "bundleFile":  "we4all-ota-v3.3.49.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.49.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "6b042b4bab6fbdaf28b526723371420d1877a9df0e9a6e55256a8a7a55a34fda",
+    "sha256":  "676ad2572488dcbcc5661ff1595dbc01cf495ccbf73b2b8656dfb2fdc119e50f",
     "sizeKb":  719.4,
-    "releasedAt":  "2026-11-23T04:51:16Z",
+    "releasedAt":  "2026-11-23T05:07:02Z",
     "minNativeVer":  "3.3.43",
-    "releaseNotes":  "WE4ALL v3.3.48: Native Windows 11 Fluent Desktop App UI with Command Bar, Ctrl+K Search, Dense Data Grids, Inspector Pane \u0026 Printable GST Invoices."
+    "releaseNotes":  "WE4ALL v3.3.49: 100% Pure Windows 11 Desktop UI (Zero Android components) with split-screen sign-in, native Add Product modal \u0026 GST billing."
 }
