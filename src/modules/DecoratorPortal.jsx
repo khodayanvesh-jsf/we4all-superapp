@@ -1,3 +1,4 @@
+import { DecoratorQuotePdfWidget } from "../components/shared/PartnerPrintTools";
 import React, { useMemo, useState } from "react";
 import { uploadFileToSupabaseStorage } from "../supabaseClient";
 
@@ -254,6 +255,8 @@ export default function DecoratorPortal({
           ))}
         </section>
       )}
+    
+      <DecoratorQuotePdfWidget />
     </div>
   );
 }

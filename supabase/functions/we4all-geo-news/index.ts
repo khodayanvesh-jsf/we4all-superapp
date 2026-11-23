@@ -111,6 +111,63 @@ async function fetchRss(url: string, bucket: string, scopeLabel: string, max = 8
   }
 }
 
+// Remote 1-row Admin Pause Controls (cached 60s in memory — zero news articles stored)
+let cachedRemoteCtrl: { ts: number; data: Record<string, unknown> } | null = null;
+
+async function readRemoteControls(): Promise<Record<string, unknown> | null> {
+  if (cachedRemoteCtrl && Date.now() - cachedRemoteCtrl.ts < 60000) return cachedRemoteCtrl.data;
+  const sbUrl = Deno.env.get("SUPABASE_URL");
+  const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY");
+  if (!sbUrl || !sbKey) return null;
+  try {
+    const r = await fetch(`${sbUrl}/rest/v1/we4all_geo_news_controls?id=eq.global&select=*`, {
+      headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` },
+    });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    if (row) cachedRemoteCtrl = { ts: Date.now(), data: row };
+    return row;
+  } catch { return null; }
+}
+
+async function saveRemoteControls(req: Request, body: Record<string, unknown>): Promise<Response> {
+  const sbUrl = Deno.env.get("SUPABASE_URL");
+  const svcKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const auth = req.headers.get("Authorization") || "";
+  if (!sbUrl || !svcKey || !auth.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ ok: false, error: "Admin authorization required" }), { status: 401, headers: CORS });
+  }
+  // Verify caller is an authenticated user via Supabase Auth
+  const uRes = await fetch(`${sbUrl}/auth/v1/user`, {
+    headers: { apikey: svcKey, Authorization: auth },
+  });
+  if (!uRes.ok) {
+    return new Response(JSON.stringify({ ok: false, error: "Invalid admin session" }), { status: 401, headers: CORS });
+  }
+  const payload = {
+    id: "global",
+    pause_local: Boolean(body.pauseLocal),
+    pause_state: Boolean(body.pauseState),
+    pause_india: Boolean(body.pauseIndia),
+    pause_custom: Boolean(body.pauseCustom),
+    pause_all: Boolean(body.pauseAll),
+    custom_rss_url: String(body.customRssUrl || "").trim().slice(0, 400),
+    updated_at: new Date().toISOString(),
+  };
+  const up = await fetch(`${sbUrl}/rest/v1/we4all_geo_news_controls?on_conflict=id`, {
+    method: "POST",
+    headers: {
+      apikey: svcKey,
+      Authorization: `Bearer ${svcKey}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=representation",
+    },
+    body: JSON.stringify(payload),
+  });
+  cachedRemoteCtrl = { ts: Date.now(), data: payload };
+  return new Response(JSON.stringify({ ok: up.ok, controls: payload }), { status: up.ok ? 200 : 500, headers: CORS });
+}
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
@@ -120,6 +177,7 @@ Deno.serve(async (req: Request) => {
       try {
         const b = await req.json();
         if (b && typeof b === "object") {
+          if (b.action === "save_controls") return await saveRemoteControls(req, b);
           Object.entries(b).forEach(([k, v]) => {
             if (v != null) p[k] = String(v);
           });
@@ -138,7 +196,10 @@ Deno.serve(async (req: Request) => {
 
     const lang = (p.lang || "en").trim().toLowerCase().slice(0, 2);
     const lc = LANGS[lang] || LANGS.en;
-    const isOn = (k: string) => p[k] === "1" || p[k] === "true";
+    const remote = await readRemoteControls();
+    const rMap: Record<string, string> = { pauseAll: "pause_all", pauseLocal: "pause_local", pauseState: "pause_state", pauseIndia: "pause_india", pauseCustom: "pause_custom" };
+    if (remote && remote.custom_rss_url && !p.customRss) p.customRss = String(remote.custom_rss_url);
+    const isOn = (k: string) => Boolean(remote && remote[rMap[k]]) || p[k] === "1" || p[k] === "true";
 
     if (isOn("pauseAll")) {
       return new Response(

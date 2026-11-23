@@ -17,6 +17,20 @@ export function readNewsControls() {
   try { return { ...DEF_CTRL, ...JSON.parse(localStorage.getItem(CTRL_KEY) || "{}") }; } catch { return { ...DEF_CTRL }; }
 }
 export function saveNewsControls(next) {
+  (async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      const { url, key } = edgeCfg();
+      if (token) {
+        await fetch(`${url}/functions/v1/we4all-geo-news`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: key, Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: "save_controls", ...DEF_CTRL, ...next }),
+        });
+      }
+    } catch {}
+  })();
   const m = { ...DEF_CTRL, ...next };
   try { localStorage.setItem(CTRL_KEY, JSON.stringify(m)); window.dispatchEvent(new Event(CTRL_EVT)); } catch {}
   return m;

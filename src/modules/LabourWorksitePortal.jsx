@@ -1,3 +1,4 @@
+import { LabourMusterSheetWidget } from "../components/shared/PartnerPrintTools";
 import React, { useMemo, useState } from "react";
 import { LABOUR_TRADE_CATEGORIES } from "../data";
 import {
@@ -281,6 +282,8 @@ export default function LabourWorksitePortal({
           </div>
         ))}
       </section>
+    
+      <LabourMusterSheetWidget />
     </div>
   );
 }
