@@ -37,7 +37,7 @@ const handler = withSupabase({ auth: "user" }, async (req: Request, ctx) => {
       .order("sort_order", { ascending: true }).order("module_key", { ascending: true });
     if (error) {
       console.error("Dynamic module list failed:", error.message);
-      return json({ ok: false, error: "DYNAMIC_MODULE_LIST_FAILED" }, 500);
+      return json({ ok: false, error: error.message || "DYNAMIC_MODULE_LIST_FAILED" }, 500);
     }
     return json({ ok: true, modules: data || [] });
   }

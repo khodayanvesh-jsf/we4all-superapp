@@ -1179,7 +1179,8 @@ export default function FounderAdminSuite({
                   These applications were created after the applicant verified their phone through Supabase Auth.
                 </p>
               </div>
-              <button
+              <div className="flex flex-wrap items-center gap-2">
+                <button
                 type="button"
                 disabled={serverPartnerApplicationsLoading}
                 onClick={refreshServerPartnerApplications}
@@ -1187,6 +1188,15 @@ export default function FounderAdminSuite({
               >
                 {serverPartnerApplicationsLoading ? "Refreshing…" : "Refresh server queue"}
               </button>
+                <button
+                  type="button"
+                  disabled={serverPartnerApplicationsLoading}
+                  onClick={clearWaitingPartnerApplications}
+                  className="bg-rose-900 hover:bg-rose-800 disabled:bg-slate-700 text-white font-black px-3 py-2 rounded-lg text-[10px]"
+                >
+                  🧹 Clear Waiting Test Apps
+                </button>
+              </div>
             </div>
             {serverPartnerApplicationsError && (
               <p className="bg-rose-950/50 border border-rose-500/40 text-rose-200 rounded-xl p-2 text-[10px]">
@@ -2904,7 +2914,7 @@ export default function FounderAdminSuite({
               <button type="button" disabled={usersBusy} onClick={(event) => { const inputs = event.currentTarget.parentElement.querySelectorAll("input[data-field]"); const edited = Object.fromEntries([...inputs].map((input) => [input.dataset.field, input.value])); supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile: { ...profile, ...edited }, roles: account.roles || [] } }).then(({ data, error }) => { if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Save failed"); setUsersMessage("Portal account details saved & synced live."); refreshManagedUsers(); }).catch((error) => setUsersMessage(error.message)); }} className="rounded-lg bg-slate-700 px-3 py-1.5 text-[9px] font-bold text-white">Save profile details</button>
               <div className="flex flex-wrap gap-1.5 pt-1">
                 <button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => startTerminationGrace(account)} className="rounded-lg bg-amber-600 hover:bg-amber-700 px-2.5 py-1.5 text-[9px] font-black text-white">⏳ Terminate (10-Day Grace)</button>
-                <button type="button" disabled={usersBusy} onClick={() => restoreGraceAccount(account)} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[9px] font-black text-white">✅ Restore Account</button>
+                <button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => restoreGraceAccount(account)} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[9px] font-black text-white">✅ Restore Account</button>
                 <button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => purgeAccountPermanently(account)} className="rounded-lg bg-rose-700 hover:bg-rose-800 px-2.5 py-1.5 text-[9px] font-black text-white">🗑️ Delete Permanently + .TXT Log</button>
               </div>
               <div className="space-y-1">{(account.roles || []).map((role) => <div key={role.role} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950 p-2"><span className="text-[10px] font-bold text-slate-200">{role.role.replaceAll("_", " ")} · {role.status}</span><select aria-label={`${role.role} access state`} value={role.status} disabled={usersBusy} onChange={(event) => changeManagedRole(account, role.role, event.target.value)} className="rounded border border-slate-700 bg-slate-900 p-1.5 text-[9px] text-white"><option value="approved">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option></select></div>)}</div>
@@ -3050,6 +3060,16 @@ export default function FounderAdminSuite({
     onTriggerToast("Live Town News Ticker updated across the app!");
   };
 
+  const handleClearLiveNews = () => {
+    try {
+      localStorage.removeItem("we4all_live_news_ticker_v1");
+      localStorage.removeItem("we4all_live_news_ticker");
+    } catch {}
+    setNewsDraft("");
+    window.dispatchEvent(new CustomEvent("we4all:news-ticker-updated", { detail: { text: "" } }));
+    onTriggerToast("Live Town News Ticker cleared across the app!");
+  };
+
   return (
     <div className="min-h-screen bg-[#070615] text-slate-100 flex flex-col font-sans text-xs">
       <header className="bg-gradient-to-r from-indigo-950 via-violet-950 to-slate-950 border-b border-violet-500/35 px-5 py-3 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-50 shadow-lg">
@@ -3142,7 +3162,15 @@ export default function FounderAdminSuite({
               onClick={handlePublishLiveNews}
               className="shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-black text-xs shadow hover:opacity-95"
             >
-              Publish Live News</button><button type="button" onClick={() => { try { localStorage.removeItem("we4all_live_news_ticker"); if (typeof setLiveNewsTicker === "function") setLiveNewsTicker(""); if (typeof setNewsDraft === "function") setNewsDraft(""); if (typeof onPublishNews === "function") onPublishNews(""); if (typeof setSyncStatusMsg === "function") setSyncStatusMsg("Live News Ticker cleared across the app."); } catch {} }} className="ml-2 rounded-xl bg-rose-700 hover:bg-rose-800 px-3 py-2 text-[10px] font-black text-white">🗑️ Clear Live News</button>
+              Publish Live News
+            </button>
+            <button
+              type="button"
+              onClick={handleClearLiveNews}
+              className="shrink-0 px-3 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-black text-xs shadow"
+            >
+              🗑️ Clear Live News
+            </button>
           </div>
         )}
 
