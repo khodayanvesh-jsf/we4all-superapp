@@ -64,6 +64,64 @@ export default function MerchantPortal({
     return () => { active = false; };
   }, [footerTab, partnerId]);
 
+    const [csvBusy, setCsvBusy] = useState(false);
+
+  const downloadSampleProductCsv = () => {
+    const csv = "title,category_key,price_inr,mrp_inr,unit_label\nSona Masoori Rice 25kg,daily_needs,1350,1490,25 kg bag\nFresh Tomatoes,veg_fruits,38,45,1 kg\nFreedom Sunflower Oil 1L,daily_needs,142,160,1 L pouch\n";
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "WE4ALL-Merchant-Sample-Products.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkCsvUpload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !supabase || !currentUser?.partnerId) {
+      onTriggerToast?.("Verified merchant profile required for bulk CSV import.");
+      return;
+    }
+    setCsvBusy(true);
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length < 2) throw new Error("CSV must contain a header row and at least 1 product row.");
+      const rows = lines.slice(1, 201).map((line, i) => {
+        const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+        const title = cols[0] || "";
+        const category_key = cols[1] || "daily_needs";
+        const price_inr = Number(cols[2]);
+        const mrp_inr = Number(cols[3] || cols[2]);
+        const unit_label = cols[4] || "unit";
+        if (!title || !Number.isFinite(price_inr) || price_inr <= 0) return null;
+        return {
+          partner_id: currentUser.partnerId,
+          sku: "WE4-CSV-" + Date.now().toString(36).toUpperCase() + "-" + (i + 1),
+          title: title.slice(0, 120),
+          description: "",
+          category_key,
+          item_type: "physical",
+          price_inr,
+          mrp_inr: Number.isFinite(mrp_inr) && mrp_inr >= price_inr ? mrp_inr : price_inr,
+          stock_quantity: 0,
+          unit_label: unit_label.slice(0, 40),
+          metadata: { imported_via: "bulk_csv" }
+        };
+      }).filter(Boolean);
+      if (!rows.length) throw new Error("No valid product rows found in CSV.");
+      const { error } = await supabase.from("we4all_catalog_items").insert(rows);
+      if (error) throw error;
+      onTriggerToast?.("Imported " + rows.length + " product(s) from CSV! Submitted for Admin approval.");
+    } catch (e) {
+      onTriggerToast?.(e.message || "Bulk CSV import failed.");
+    } finally {
+      setCsvBusy(false);
+    }
+  };
+
   const adjustLiveStock = async (product) => {
     const delta = Number(stockDeltas[product.id]);
     if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 100000) {

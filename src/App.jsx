@@ -25,6 +25,7 @@ import {
   translateCategoryName
 } from "./modules/i18n/indianLanguages";
 import GeoTargetedAdBanner from "./modules/ads/GeoTargetedAdBanner";
+import { GeoLiveNewsHub, GeoNewsHeadlinesTicker } from "./components/shared/GeoLiveNewsHub";
 import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
 import OrdersHistoryAndInvoice from "./modules/OrdersHistoryAndInvoice";
@@ -1440,7 +1441,15 @@ function AppContent() {
             </div>
           </div>
 
-          {footerTab === "home" && customerHomeSubTab === "stores" && (
+          {footerTab === "home" && customerHomeSubTab === "stores" && (<>
+            <GeoNewsHeadlinesTicker city={selectedZoneFilter || "Adilabad"} stateName="Telangana" accountLang={lang} onOpenReader={() => setShowGeoNewsModal(true)} />
+            {showGeoNewsModal && (
+              <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/95 p-3 sm:p-6">
+                <div className="mx-auto max-w-4xl">
+                  <GeoLiveNewsHub mode="customer" defaultCity={selectedZoneFilter || "Adilabad"} defaultState="Telangana" accountLang={lang} onClose={() => setShowGeoNewsModal(false)} />
+                </div>
+              </div>
+            )}
             <GeoTargetedAdBanner
               ads={geoAds}
               selectedZone={selectedZoneFilter}
@@ -1454,7 +1463,7 @@ function AppContent() {
                 else if (/labour|mistri/.test(txt)) setCustomerHomeSubTab("labour");
                 else { setCustomerHomeSubTab("stores"); setFooterTab("home"); }
               }}
-            />
+            /></>
           )}
 
           {footerTab === "home" && (

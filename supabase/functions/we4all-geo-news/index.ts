@@ -1,6 +1,6 @@
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Max-Age": "86400"
 };
@@ -8,7 +8,11 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }
+    headers: {
+      ...CORS,
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": status === 200 ? "public, max-age=600, s-maxage=900, stale-while-revalidate=1800" : "no-store"
+    }
   });
 
 function decodeXml(str: string): string {
@@ -27,7 +31,7 @@ function decodeXml(str: string): string {
 function parseRssItems(xml: string, fallbackSource: string, geoTag: string) {
   const items: Array<{ title: string; link: string; publishedAt: string; source: string; summary: string; geo: string }> = [];
   const itemMatches = xml.match(/<(item|entry)[\s>][\s\S]*?<\/(item|entry)>/gi) || [];
-  for (const block of itemMatches.slice(0, 15)) {
+  for (const block of itemMatches.slice(0, 12)) {
     const titleMatch = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const linkMatch = block.match(/<link[^>]*>([\s\S]*?)<\/link>/i) || block.match(/<link[^>]*href=["']([^"']+)["']/i);
     const dateMatch = block.match(/<(pubDate|updated|published)[^>]*>([\s\S]*?)<\/(pubDate|updated|published)>/i);
@@ -41,67 +45,101 @@ function parseRssItems(xml: string, fallbackSource: string, geoTag: string) {
       link: link.startsWith("http") ? link : "",
       publishedAt: decodeXml(dateMatch?.[2] || ""),
       source: decodeXml(srcMatch?.[1] || "") || fallbackSource,
-      summary: decodeXml(descMatch?.[2] || "").slice(0, 240),
+      summary: decodeXml(descMatch?.[2] || "").slice(0, 200),
       geo: geoTag
     });
   }
   return items;
 }
 
+function getTodayDdMmYyyy(): string {
+  const now = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const dd = String(now.getUTCDate()).padStart(2, "0");
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = now.getUTCFullYear();
+  return dd + "/" + mm + "/" + yyyy;
+}
+
+function getGeoEpapers(city: string, state: string, lang: string) {
+  const today = getTodayDdMmYyyy();
+  const s = (state + " " + city).toLowerCase();
+  const papers = [];
+  if (s.includes("telangana") || s.includes("adilabad") || s.includes("hyderabad") || s.includes("andhra") || lang === "te") {
+    papers.push(
+      { name: "Eenadu E-Paper (ఈనాడు)", lang: "TE", geo: city || "Telangana", url: "https://epaper.eenadu.net/Home/Index?date=" + encodeURIComponent(today) + "&eid=2" },
+      { name: "Sakshi E-Paper (సాక్షి)", lang: "TE", geo: "Telangana", url: "https://epaper.sakshi.com/" },
+      { name: "Namasthe Telangana", lang: "TE", geo: "Telangana", url: "https://epaper.ntnews.com/" },
+      { name: "Andhra Jyothy", lang: "TE", geo: "Telangana & AP", url: "https://epaper.andhrajyothy.com/" }
+    );
+  }
+  if (s.includes("maharashtra") || lang === "mr") {
+    papers.push({ name: "Lokmat E-Paper", lang: "MR", geo: "Maharashtra", url: "https://epaper.lokmat.com/" });
+  }
+  if (lang === "hi" || s.includes("delhi") || s.includes("madhya") || s.includes("uttar")) {
+    papers.push({ name: "Dainik Bhaskar E-Paper", lang: "HI", geo: "India", url: "https://epaper.bhaskar.com/" });
+  }
+  papers.push(
+    { name: "The Hindu (Telangana)", lang: "EN", geo: "Telangana", url: "https://www.thehindu.com/news/national/telangana/" },
+    { name: "Indian Express E-Paper", lang: "EN", geo: "India", url: "https://epaper.indianexpress.com/" }
+  );
+  return papers;
+}
+
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Request? {} : new Response("ok", { headers: CORS });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
+    const reqUrl = new URL(req.url);
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-    const city = String(body.city || "Adilabad").trim().slice(0, 60) || "Adilabad";
-    const state = String(body.state || "Telangana").trim().slice(0, 60) || "Telangana";
-    const lang = String(body.lang || "en").trim().toLowerCase();
-    const hl = lang === "te" ? "te" : lang === "hi" ? "hi" : "en-IN";
-    const ceid = lang === "te" ? "IN:te" : lang === "hi" ? "IN:hi" : "IN:en";
+    const city = String(reqUrl.searchParams.get("city") || body.city || "Adilabad").trim().slice(0, 60) || "Adilabad";
+    const state = String(reqUrl.searchParams.get("state") || body.state || "Telangana").trim().slice(0, 60) || "Telangana";
+    const rawLang = String(reqUrl.searchParams.get("lang") || body.lang || "en").trim().toLowerCase().slice(0, 2);
 
-    const defaultSources = [
+    const langMap: Record<string, { hl: string; ceid: string }> = {
+      te: { hl: "te", ceid: "IN:te" },
+      hi: { hl: "hi", ceid: "IN:hi" },
+      mr: { hl: "mr", ceid: "IN:mr" },
+      kn: { hl: "kn", ceid: "IN:kn" },
+      ta: { hl: "ta", ceid: "IN:ta" },
+      en: { hl: "en-IN", ceid: "IN:en" }
+    };
+    const { hl, ceid } = langMap[rawLang] || langMap.en;
+
+    const sources = [
       {
-        name: city + " Local News",
+        name: city + " Main Headings",
         geo: city,
-        url: "https://news.google.com/rss/search?q=" + encodeURIComponent(city + " " + state) + "&hl=" + hl + "&gl=IN&ceid=" + ceid
+        url: "https://news.google.com/rss/search?q=" + encodeURIComponent(city + " " + state + (rawLang === "te" ? " eenadu OR sakshi OR telangana" : "")) + "&hl=" + hl + "&gl=IN&ceid=" + ceid
       },
       {
-        name: state + " State News",
+        name: state + " E-News",
         geo: state,
         url: "https://news.google.com/rss/search?q=" + encodeURIComponent(state + " news") + "&hl=" + hl + "&gl=IN&ceid=" + ceid
       },
       {
-        name: "India Daily E-News",
+        name: "India Daily Headings",
         geo: "India",
         url: "https://news.google.com/rss?hl=" + hl + "&gl=IN&ceid=" + ceid
       }
     ];
 
-    const customSources = Array.isArray(body.customSources)
-      ? body.customSources
-          .filter((s: Record<string, unknown>) => s && typeof s.url === "string" && /^https?:\/\//i.test(String(s.url)))
-          .slice(0, 8)
-          .map((s: Record<string, unknown>) => ({
-            name: String(s.name || "Custom News").slice(0, 60),
-            geo: String(s.geo || city).slice(0, 40),
-            url: String(s.url).trim()
-          }))
-      : [];
+    const customUrl = String(reqUrl.searchParams.get("customUrl") || body.customUrl || "").trim();
+    if (/^https?:\/\//i.test(customUrl)) {
+      sources.unshift({ name: "Custom E-News Feed", geo: city, url: customUrl });
+    }
 
-    const allSources = [...customSources, ...defaultSources];
     const settled = await Promise.all(
-      allSources.map(async (src) => {
+      sources.map(async (src) => {
         try {
           const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 6500);
+          const timer = setTimeout(() => ctrl.abort(), 5000);
           const resp = await fetch(src.url, {
             signal: ctrl.signal,
-            headers: { "User-Agent": "WE4ALL-GeoNews-Reader/1.0 (+https://we-4-all-super-app.vercel.app)" }
+            headers: { "User-Agent": "WE4ALL-Stateless-News/1.0" }
           });
           clearTimeout(timer);
           if (!resp.ok) return [];
-          const xml = await resp.text();
-          return parseRssItems(xml, src.name, src.geo);
+          return parseRssItems(await resp.text(), src.name, src.geo);
         } catch {
           return [];
         }
@@ -121,12 +159,14 @@ Deno.serve(async (req: Request) => {
 
     return json({
       ok: true,
+      stateless: true,
+      storageUsed: 0,
       city,
       state,
-      lang,
-      fetchedAt: new Date().toISOString(),
+      lang: rawLang,
+      epapers: getGeoEpapers(city, state, rawLang),
       count: articles.length,
-      articles: articles.slice(0, 45)
+      articles: articles.slice(0, 30)
     });
   } catch (err) {
     return json({ ok: false, error: err instanceof Error ? err.message : "Geo news fetch failed" }, 500);

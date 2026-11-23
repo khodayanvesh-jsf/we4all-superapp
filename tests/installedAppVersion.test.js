@@ -14,15 +14,15 @@ test("installed APK version and build number are visible in the mobile shell", (
 });
 
 test("one version source agrees with package metadata and Android native metadata", () => {
-  assert.match(version, /APP_VERSION = "3.3.63"/);
-  assert.match(version, /APP_BUILD_NUMBER = 393/);
-  assert.equal(pkg.version, "3.3.63");
-  assert.match(gradle, /versionCode 393/);
-  assert.match(gradle, /versionName "3.3.63"/);
+  assert.match(version, /APP_VERSION = "3.3.66"/);
+  assert.match(version, /APP_BUILD_NUMBER = 396/);
+  assert.equal(pkg.version, "3.3.66");
+  assert.match(gradle, /versionCode 396/);
+  assert.match(gradle, /versionName "3.3.66"/);
 });
 
 test("Supabase sync schema version matches the app release version", () => {
-  assert.match(client, /CURRENT_SCHEMA_VERSION = "3.3.63"/);
+  assert.match(client, /CURRENT_SCHEMA_VERSION = "3.3.66"/);
   assert.match(client, /installedAppVersion: APP_VERSION/);
   assert.match(client, /currentBundleVersion/);
 });
