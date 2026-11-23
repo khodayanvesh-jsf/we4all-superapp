@@ -121,12 +121,9 @@ export default function RideWorkspace({ currentUser, mode = 'customer', onSignIn
       <p>{isRider ? 'See nearby live requests, navigate to pickup, and complete verified handoffs.' : 'Pick your vehicle, pin your GPS pickup, and track your approved local Captain live.'}</p>
       <span className="ride-badge">⚡ Zero-Fee Pilot Dispatch · Verified Local Captains</span>
     </div>
-    <div className="ride-row">
-      <button type="button" onClick={refresh} disabled={!signedIn || busy}>{busy ? 'Syncing…' : '🔄 Refresh trips'}</button>
-      {onShop && <button type="button" onClick={onShop}>🛍️ Back to shopping</button>}
-    </div>
+    
     {error && <p role="alert" className="ride-error">{error}</p>}
-    {!signedIn && <p><button type="button" className="primary" onClick={onSignIn}>Sign in to request a trip</button></p>}
+    
     {signedIn && !snapshot && !error && <p role="status">Loading your live dispatch workspace…</p>}
     {snapshot?.enabled === false && <p role="status" className="ride-panel">Ride dispatch is currently paused for this zone. You can still preview the booking form below.</p>}
     {isRider ? <div className="ride-panel">
@@ -150,7 +147,7 @@ export default function RideWorkspace({ currentUser, mode = 'customer', onSignIn
         {QUICK_LANDMARKS.map(lm => <button key={`p-${lm}`} type="button" className="ride-chip" onClick={() => setForm(f => ({ ...f, pickup: lm }))}>{lm.split(',')[0]}</button>)}
       </div>
       <div className="ride-row" style={{ marginTop: 10 }}>
-        <button type="button" className={location ? '' : 'coral'} disabled={busy} onClick={() => run(async () => setLocation(await locate()))}>{location ? '📍 Refresh pickup GPS pin' : '📍 Use my GPS for pickup'}</button>
+        <button type="button" className={location ? '' : 'coral'} disabled={busy} onClick={() => setMapPinMode('pickup')}>{location ? '📍 Refresh pickup GPS pin' : '📍 Use my GPS for pickup'}</button>
       </div>
       <p className="ride-muted">{location ? `✅ Pickup pin captured · accuracy ${Math.round(location.accuracy)} m. Refresh if you move.` : 'Tap above at your pickup point to share your GPS pin so nearby Captains can match.'}</p>
       <label>Destination

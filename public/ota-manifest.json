@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.53",
-    "latestAvailableVersion":  "3.3.53",
-    "versionCode":  383,
-    "bundleFile":  "we4all-ota-v3.3.53.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.53.zip",
+    "version":  "3.3.54",
+    "latestAvailableVersion":  "3.3.54",
+    "versionCode":  384,
+    "bundleFile":  "we4all-ota-v3.3.54.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.54.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "b6bebf75fb5a2351948c11ad7fc8c9bd301f4be3a167dce35f2b0d99b602cae5",
-    "sizeKb":  726.7,
-    "releasedAt":  "2026-11-23T06:00:51Z",
+    "sha256":  "27f8a42993c93280bd4435c13f3ba725aa9e41557a4cd6a39d9ca606fbcb5335",
+    "sizeKb":  727,
+    "releasedAt":  "2026-11-23T06:12:16Z",
     "minNativeVer":  "3.3.52",
-    "releaseNotes":  "WE4ALL v3.3.53: Crisp top header, Promo Video URL studio in Admin \u0026 live Auto-OTA verification."
+    "releaseNotes":  "WE4ALL v3.3.54: Clean Home (no top location/KYC bar, clickable home-only Promo Banner), auto-lang Voice + clean Image Search, Ride Map Picker \u0026 Cart Grab-Before-Billing Offers."
 }

@@ -1439,11 +1439,22 @@ function AppContent() {
             </div>
           </div>
 
-          <GeoTargetedAdBanner
-            ads={geoAds}
-            selectedZone={selectedZoneFilter}
-            brightTheme={brightTheme}
-          />
+          {footerTab === "home" && customerHomeSubTab === "stores" && (
+            <GeoTargetedAdBanner
+              ads={geoAds}
+              selectedZone={selectedZoneFilter}
+              brightTheme={brightTheme}
+              onSelectAdAction={(ad) => {
+                const txt = String((ad?.title || "") + " " + (ad?.cta || "")).toLowerCase();
+                if (/service|expert|ac|plumb|electr/.test(txt)) setCustomerHomeSubTab("services");
+                else if (/ride|bike|auto|taxi/.test(txt)) setCustomerHomeSubTab("taxi");
+                else if (/parcel/.test(txt)) setCustomerHomeSubTab("parcel");
+                else if (/hall|decor|event/.test(txt)) setCustomerHomeSubTab("events");
+                else if (/labour|mistri/.test(txt)) setCustomerHomeSubTab("labour");
+                else { setCustomerHomeSubTab("stores"); setFooterTab("home"); }
+              }}
+            />
+          )}
 
           {footerTab === "home" && (
             <>
@@ -1952,6 +1963,44 @@ function AppContent() {
 
           {footerTab === "cart" && (
             <div className="bg-white p-3 rounded-2xl border border-slate-200 text-slate-900 space-y-3">
+              {/* Grab Before Billing — Special Offer Products */}
+              {Array.isArray(products) && products.filter((p) => isCustomerVisibleListing(p, merchants)).length > 0 && (
+                <div className="rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 p-2.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-orange-900">🔥 Grab Before Billing · Special Offers</span>
+                    <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[9px] font-black text-white">LOWEST PRICE</span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {products
+                      .filter((p) => isCustomerVisibleListing(p, merchants) && Number(p.stock ?? 1) > 0)
+                      .sort((a, b) => Number(a.price || 0) - Number(b.price || 0))
+                      .slice(0, 5)
+                      .map((deal) => (
+                        <div key={deal.id} className="min-w-[140px] max-w-[150px] shrink-0 rounded-xl border border-orange-200 bg-white p-2 flex flex-col justify-between gap-1.5 shadow-sm">
+                          <div>
+                            <p className="text-[10px] font-black text-slate-900 truncate">{deal.name || deal.title}</p>
+                            <p className="text-[11px] font-black text-indigo-700">₹{Number(deal.price || 0)} {Number(deal.mrp || 0) > Number(deal.price || 0) && <span className="text-[9px] line-through text-slate-400">₹{deal.mrp}</span>}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMerchantCart((prev) => {
+                                const list = Array.isArray(prev) ? prev : [];
+                                const idx = list.findIndex((i) => i.id === deal.id);
+                                if (idx >= 0) return list.map((i, k) => (k === idx ? { ...i, qty: (i.qty || 1) + 1 } : i));
+                                return [...list, { ...deal, qty: 1 }];
+                              });
+                              triggerToast(`Added ${deal.name || deal.title} to cart!`);
+                            }}
+                            className="w-full rounded-lg bg-indigo-600 text-white py-1 text-[10px] font-black"
+                          >
+                            + Add Offer
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-[9px] font-black">
                 {[
                   { id: "merchant_cart", label: "Stores (" + (merchantCart || []).length + ")" },
