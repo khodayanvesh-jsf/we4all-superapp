@@ -26,6 +26,7 @@ import {
 } from "./modules/i18n/indianLanguages";
 import GeoTargetedAdBanner from "./modules/ads/GeoTargetedAdBanner";
 import { GeoLiveNewsHub, GeoNewsHeadlinesTicker } from "./components/shared/GeoLiveNewsHub";
+import { GeoLocationStrip, AccountLanguageCard, FirstLaunchLanguageModal } from "./components/shared/GeoLanguageOnboarding";
 import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
 import OrdersHistoryAndInvoice from "./modules/OrdersHistoryAndInvoice";
@@ -179,17 +180,6 @@ function MobilePhoneShell({
           {t.appTitle} | {title}
         </span>
         <div className="flex items-center gap-1">
-          <select
-            value={lang}
-            onChange={(e) => setLang(e.target.value)}
-            className="bg-slate-900 text-amber-300 border border-slate-700 rounded-lg px-1.5 py-0.5 text-[10px] font-black outline-none cursor-pointer"
-          >
-            {INDIAN_LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.code} - {l.native}
-              </option>
-            ))}
-          </select>
           {onOpenAdminConsole && (
             <button
               type="button"
@@ -201,8 +191,15 @@ function MobilePhoneShell({
           )}
         </div>
       </div>
-      <div className="bg-slate-950/90 text-[9px] font-bold tracking-wider text-slate-400 px-3 py-0.5 flex items-center justify-between border-b border-slate-800/80 shrink-0"><span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span><span className="text-emerald-400">OTA BUNDLE v{appUpdateInfo?.currentVersion || APP_VERSION}</span></div>
+      <GeoLocationStrip />
       <GeoNewsHeadlinesTicker city={typeof selectedZoneFilter === "string" ? selectedZoneFilter : "Adilabad"} state="auto" lang={typeof lang === "string" ? lang : "en"} pinnedNotice={typeof liveNewsTicker === "string" ? liveNewsTicker : ""} />
+      {footerTab === "account" && (
+        <>
+          <AccountLanguageCard lang={lang} setLang={setLang} />
+          <div className="bg-slate-950/90 text-[9px] font-bold tracking-wider text-slate-400 px-3 py-0.5 flex items-center justify-between border-b border-slate-800/80 shrink-0"><span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span><span className="text-emerald-400">OTA BUNDLE v{appUpdateInfo?.currentVersion || APP_VERSION}</span></div>
+        </>
+      )}
+      <FirstLaunchLanguageModal lang={lang} setLang={setLang} />
 
       {personalShoppingFromPartner && (
         <div className="bg-indigo-600 text-white px-3 py-1.5 flex justify-between items-center text-[10px] font-black shrink-0">
@@ -236,7 +233,7 @@ function MobilePhoneShell({
 
       <div
         className={
-          "flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3 pb-24 " +
+          "flex-1 min-h-0 overflow-y-auto overscroll-contain p-2.5 space-y-2.5 pb-20 " +
           (brightTheme
             ? "bg-slate-50 text-slate-900"
             : "bg-gradient-to-b from-[#071118] to-[#04090e] text-white")
