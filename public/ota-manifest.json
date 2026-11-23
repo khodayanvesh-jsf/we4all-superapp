@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.49",
-    "latestAvailableVersion":  "3.3.49",
-    "versionCode":  379,
-    "bundleFile":  "we4all-ota-v3.3.49.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.49.zip",
+    "version":  "3.3.50",
+    "latestAvailableVersion":  "3.3.50",
+    "versionCode":  380,
+    "bundleFile":  "we4all-ota-v3.3.50.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.50.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "676ad2572488dcbcc5661ff1595dbc01cf495ccbf73b2b8656dfb2fdc119e50f",
+    "sha256":  "7d9996c35ab07f09842fbfe64cbea8b07fff18ef05e130fcd9a3052521422707",
     "sizeKb":  719.4,
-    "releasedAt":  "2026-11-23T05:07:02Z",
+    "releasedAt":  "2026-11-23T05:15:38Z",
     "minNativeVer":  "3.3.43",
-    "releaseNotes":  "WE4ALL v3.3.49: 100% Pure Windows 11 Desktop UI (Zero Android components) with split-screen sign-in, native Add Product modal \u0026 GST billing."
+    "releaseNotes":  "WE4ALL v3.3.50: Standalone Windows Desktop entry point in main.jsx (zero Android phone frame in Windows app)."
 }
