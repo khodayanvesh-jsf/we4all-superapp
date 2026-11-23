@@ -127,6 +127,7 @@ function calculateOrderLogistics(items = [], consumerDistanceKm = 1.8, heavyFee 
 
 function MobilePhoneShell({
   title,
+  userDisplayName,
   activePortal,
   footerTab,
   setFooterTab,
@@ -177,7 +178,7 @@ function MobilePhoneShell({
       >
         <span className="font-extrabold text-amber-400 tracking-wide flex items-center gap-1.5 truncate">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-          {t.appTitle} | {title}
+          {t.appTitle} | {userDisplayName || title}
         </span>
         <div className="flex items-center gap-1">
           <HeaderGeoBadge />
@@ -2596,7 +2597,7 @@ function AppContent() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {splitScreens.map((scr) => (
-              <MobilePhoneShell
+              <MobilePhoneShell userDisplayName={String(currentUser?.name || currentUser?.fullName || authUser?.user_metadata?.full_name || "").trim()}
                 key={scr.id}
                 title={scr.role.toUpperCase()}
                 activePortal={scr.role}
@@ -2616,7 +2617,7 @@ function AppContent() {
           </div>
         </div>
       ) : (
-        <MobilePhoneShell
+        <MobilePhoneShell userDisplayName={String(currentUser?.name || currentUser?.fullName || authUser?.user_metadata?.full_name || "").trim()}
           title={activePortal.toUpperCase()}
           activePortal={activePortal}
           footerTab={footerTab}
