@@ -1390,16 +1390,11 @@ function AppContent() {
         <div className="space-y-3 text-xs">
           <div className="bg-gradient-to-br from-indigo-700 via-violet-700 to-fuchsia-700 text-white p-3.5 rounded-3xl border border-white/15 space-y-2.5 shadow-lg">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <FounderLogoBadge logoUrl={founderLogoUrl} />
-                <div>
-                  <h1 className="font-black text-amber-400 text-xs leading-tight">
-                    WE4ALL HYPERLOCAL SUPER-APP
-                  </h1>
-                  <p className="text-[10px] text-emerald-200 font-bold">
-                    Delivering to: {activeAddressObj.label} ({activeAddressObj.fullAddress})
-                  </p>
-                </div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-sm">📍</span>
+                <p className="text-[11px] text-white font-bold truncate">
+                  {activeAddressObj.fullAddress || activeAddressObj.label || "Adilabad"}
+                </p>
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -1438,14 +1433,7 @@ function AppContent() {
                 <option value="">Choose a local market</option>
                 {geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name}</option>)}
               </select>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label="Search local products and shops"
-                placeholder={t.searchPlaceholder || "Search stores, items, services..."}
-                className="flex-1 bg-slate-900 text-white border border-slate-700 rounded-xl px-2.5 py-1 text-[11px]"
-              />
+              
               {geoLocationMessage && <p role="status" className="w-full text-[9px] text-amber-200">{geoLocationMessage}</p>}
             </div>
           </div>
@@ -1497,7 +1485,7 @@ function AppContent() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-5 gap-1.5" aria-label="WE4ALL ten-category quick access">
+              <div className="hidden" aria-label="WE4ALL ten-category quick access">
                 {CUSTOMER_QUICK_LINKS
                   .filter((link) =>
                     !link.categoryId ||

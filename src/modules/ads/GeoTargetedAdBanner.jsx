@@ -82,7 +82,18 @@ export default function GeoTargetedAdBanner({
             </span>
             <span className="text-[9px] font-bold text-white/80">{userState}</span>
           </div>
-          <h3 className="text-sm font-black leading-snug tracking-tight truncate">{current.title}</h3>
+          {current?.videoUrl && (
+        <video
+          key={current.videoUrl}
+          src={current.videoUrl}
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="w-full h-36 object-cover rounded-2xl mb-2 border border-white/20"
+        />
+      )}
+      <h3 className="text-sm font-black leading-snug tracking-tight truncate">{current.title}</h3>
           <p className="text-[11px] text-white/90 leading-snug line-clamp-2">{current.subtitle}</p>
         </div>
 

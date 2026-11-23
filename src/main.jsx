@@ -4,6 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { CapacitorUpdater } from "@capgo/capacitor-updater";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
+import StandaloneWindowsApp from "./components/desktop/StandaloneWindowsApp.jsx";
 import ActionAndErrorFeedbackLayer from "./modules/ActionAndErrorFeedbackLayer.jsx";
 
 import { APP_VERSION } from './appVersion.js';
@@ -72,12 +73,26 @@ class RootErrorBoundary extends React.Component {
   }
 }
 
+const isWindowsDesktopMode =
+  typeof window !== "undefined" &&
+  !Capacitor.isNativePlatform() &&
+  !window.location.search.includes("mobile=1") &&
+  !window.location.pathname.toLowerCase().includes("/admin") &&
+  !window.location.search.includes("admin=true") &&
+  (navigator.userAgent.includes("Electron") ||
+    window.location.search.includes("desktop=windows") ||
+    window.location.search.includes("partner=true") ||
+    /^\/(partner|console|desktop)(\/|$)/i.test(window.location.pathname));
+
+if (isWindowsDesktopMode && "serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister())).catch(() => {});
+}
+
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <RootErrorBoundary>
       <ActionAndErrorFeedbackLayer>
-        <App />
-        <NativeBundleReady />
+        {isWindowsDesktopMode ? (<StandaloneWindowsApp />) : (<><App /><NativeBundleReady /></>)}
       </ActionAndErrorFeedbackLayer>
     </RootErrorBoundary>
   </React.StrictMode>
