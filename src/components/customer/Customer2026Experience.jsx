@@ -24,6 +24,11 @@ export function Customer2026Experience({
   onQuickAdd,
   headerRight = null,
 }) {
+  const navHomeQuick = (tab, category = "") => {
+    try {
+      window.dispatchEvent(new CustomEvent("we4all:home-quick-nav", { detail: { tab, category } }));
+    } catch {}
+  };
   const openStoreSection = (section, fallbackCat) => {
     try {
       window.dispatchEvent(new CustomEvent("we4all:open-store-section", { detail: { section, category: fallbackCat } }));

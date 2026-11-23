@@ -26,7 +26,6 @@ import {
 } from "./modules/i18n/indianLanguages";
 import GeoTargetedAdBanner from "./modules/ads/GeoTargetedAdBanner";
 import { GeoLiveNewsHub, GeoNewsHeadlinesTicker } from "./components/shared/GeoLiveNewsHub";
-import { StoreSectionBar } from "./components/shared/StoreSectionBar";
 import { HeaderGeoBadge, AccountLanguageCard, AccountThemeCard, FirstLaunchLanguageModal, readThemeMode, resolveBrightTheme } from "./components/shared/GeoLanguageOnboarding";
 import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
@@ -1480,7 +1479,7 @@ function AppContent() {
                   { id: "stores", label: "Stores" },
                   { id: "services", label: "1-Hr Srv" },
                   { id: "events", label: "Events" },
-                  { id: "taxi", label: "Rides & Parcel" },
+                  { id: "taxi", label: "Rides" },
                   { id: "labour", label: "Mistri" }
                 ].map((tab) => (
                   <button
@@ -1562,8 +1561,7 @@ function AppContent() {
                     <p>Discover local favourites, compare shops and keep your essentials in one cart.</p></div>
                     <button type="button" onClick={() => { setActiveCartViewTab("merchant_cart"); setFooterTab("cart"); }}>View cart</button>
                   </section>
-                  <StoreSectionBar onSelectCategory={typeof setSelectedCategory === "function" ? setSelectedCategory : undefined} />
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
+                              <div className="flex gap-1.5 overflow-x-auto pb-1">
                     <button
                       type="button"
                       onClick={() => setSelectedCategory("all")}
