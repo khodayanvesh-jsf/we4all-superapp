@@ -518,8 +518,9 @@ function AppContent() {
       try {
         const res = await checkForSelfHostedOta({
           currentVersion: APP_VERSION,
-          autoInstall: false,
-          applyImmediately: false
+          autoInstall: Capacitor.isNativePlatform(),
+          applyImmediately: Capacitor.isNativePlatform(),
+          onProgress: (stage) => { if (active) setOtaProgress(stage); }
         });
         if (!active) return;
         setAppUpdateInfo(buildOtaInfoFromResult(res));
@@ -2395,6 +2396,20 @@ function AppContent() {
         </div>
       )}
 
+      {otaProgress && Capacitor.isNativePlatform() && (
+        <div className="fixed inset-0 z-[250] bg-gradient-to-br from-indigo-950 via-violet-950 to-slate-950 flex flex-col items-center justify-center p-6 text-center text-white">
+          {/* WE4ALL Auto-Updating Overlay */}
+          <div className="w-full max-w-xs rounded-3xl border border-indigo-400/30 bg-white/10 backdrop-blur-md p-6 space-y-4 shadow-2xl">
+            <div className="text-3xl">🚀</div>
+            <h2 className="text-base font-black">Updating WE4ALL</h2>
+            <p className="text-xs text-indigo-100 font-semibold">{otaProgress.msg || "Installing latest update..."}</p>
+            <div className="w-full h-2.5 rounded-full bg-slate-900/80 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-indigo-400 to-orange-400 transition-all" style={{ width: `${Math.max(8, Math.min(100, Number(otaProgress.pct || 15)))}%` }} />
+            </div>
+            <p className="text-[10px] text-indigo-200">{otaProgress.pct || 15}% · Zero data loss · Launching automatically…</p>
+          </div>
+        </div>
+      )}
       {mobileToast && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-50 bg-slate-950 text-amber-300 border-2 border-amber-400 px-4 py-2 rounded-2xl text-xs font-black shadow-2xl">
           {mobileToast}
