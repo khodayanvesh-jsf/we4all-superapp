@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.46",
-    "latestAvailableVersion":  "3.3.46",
-    "versionCode":  376,
-    "bundleFile":  "we4all-ota-v3.3.46.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.46.zip",
+    "version":  "3.3.47",
+    "latestAvailableVersion":  "3.3.47",
+    "versionCode":  377,
+    "bundleFile":  "we4all-ota-v3.3.47.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.47.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "3fc761a74e02bfa1f31dd4d0596a8e1b1e59d55bfe455b3849d1c70e41fe48ba",
+    "sha256":  "014a84203cb7a3db6ac647a48de25fa0c4978b55e7098243fd67435920a7dd92",
     "sizeKb":  719.4,
-    "releasedAt":  "2026-11-23T04:20:11Z",
+    "releasedAt":  "2026-11-23T04:31:04Z",
     "minNativeVer":  "3.3.43",
-    "releaseNotes":  "WE4ALL v3.3.46: Interactive Map Pin Picker wired into all 6 address sections (Delivery, Registration, Rides, P2P Parcel, Labour Worksite \u0026 Function Halls)."
+    "releaseNotes":  "WE4ALL v3.3.47: Dedicated Widescreen Partner Desktop Web Console (/partner) for Merchants, Service Providers, Decorators, Labour \u0026 Captains."
 }
