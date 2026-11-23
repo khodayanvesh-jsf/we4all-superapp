@@ -40,6 +40,7 @@ export default function OrdersHistoryAndInvoice({
   onCancelOrder,
   onReturnOrder,
   onOpenLiveMap,
+  onReorderOrder,
   onTriggerToast
 }) {
   const [timelineFilter, setTimelineFilter] = useState("ALL");
@@ -371,7 +372,27 @@ export default function OrdersHistoryAndInvoice({
                     <span>Rs.{ord.grandTotal}</span>
                   </div>
                 </div>
-              </div>
+              
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-800/70">
+                        {typeof onReorderOrder === "function" && Array.isArray(ord.items) && ord.items.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => onReorderOrder(ord)}
+                            className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-3 text-[10px] font-black"
+                          >
+                            🔁 Re-Order Items
+                          </button>
+                        )}
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(`WE4ALL Order #${String(ord.id || "").slice(0, 10)} | Total: ₹${Number(ord.total || ord.amount || 0)} | Status: ${ord.status || "PLACED"} | Track: https://we-4-all-super-app.vercel.app`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-3 text-[10px] font-black text-center"
+                        >
+                          📲 Share Bill on WhatsApp
+                        </a>
+                      </div>
+                    </div>
             )}
 
             <div className="grid grid-cols-2 gap-1.5 pt-1">

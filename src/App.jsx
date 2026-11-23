@@ -2219,6 +2219,13 @@ function AppContent() {
 
           {footerTab === "orders" && (
             <OrdersHistoryAndInvoice
+              onReorderOrder={(pastOrder) => {
+                const items = Array.isArray(pastOrder?.items) ? pastOrder.items : [];
+                if (items.length === 0) return;
+                setMerchantCart(items.map((it) => ({ ...it, qty: Number(it.qty || it.quantity || 1) })));
+                setFooterTab("cart");
+                triggerToast(`Added ${items.length} item(s) back to Cart for 1-tap reorder!`);
+              }}
               orders={orders || []}
               setOrders={setOrders}
               serviceBookings={serviceBookings || []}

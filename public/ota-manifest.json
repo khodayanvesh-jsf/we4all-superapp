@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.57",
-    "latestAvailableVersion":  "3.3.57",
-    "versionCode":  387,
-    "bundleFile":  "we4all-ota-v3.3.57.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.57.zip",
+    "version":  "3.3.58",
+    "latestAvailableVersion":  "3.3.58",
+    "versionCode":  388,
+    "bundleFile":  "we4all-ota-v3.3.58.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.58.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "3ed7db2d652c8687e0751912b1a362ff7e1477b41cf7ff302fc1b0ec0fff0b78",
-    "sizeKb":  729.3,
-    "releasedAt":  "2026-11-23T07:12:15Z",
+    "sha256":  "dbda437ae187c431a1b7c420380a62a49a8e8a1ed48b305f2c6da81a87d0442c",
+    "sizeKb":  729.7,
+    "releasedAt":  "2026-11-23T07:16:44Z",
     "minNativeVer":  "3.3.56",
-    "releaseNotes":  "WE4ALL v3.3.57: Windows Desktop inline Stock/Order actions + Lowest-Price-First storefront sorting."
+    "releaseNotes":  "WE4ALL v3.3.58: 1-Hr Service Live Duty Toggle + Consumer 1-Tap Re-Order \u0026 WhatsApp Bill Share."
 }
