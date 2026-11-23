@@ -26,6 +26,28 @@ public class We4AllOtaPlugin extends Plugin {
     private static final String PREFS_CAP = "CapWebViewSettings";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
+    @Override
+    public void load() {
+        try {
+            SharedPreferences otaPrefs = getContext().getSharedPreferences(PREFS_OTA, Context.MODE_PRIVATE);
+            String activePath = otaPrefs.getString("active_path", "");
+            String savedApkVer = otaPrefs.getString("apk_version", "");
+            String currentApkVer = getApkVersionName();
+            if (!activePath.isEmpty() && savedApkVer.equals(currentApkVer)) {
+                File idx = new File(activePath, "index.html");
+                if (idx.exists() && getBridge() != null) {
+                    String currentBase = getBridge().getServerBasePath();
+                    if (!activePath.equals(currentBase) && getActivity() != null) {
+                        getActivity().runOnUiThread(() -> {
+                            getBridge().getWebView().clearCache(true);
+                            getBridge().setServerBasePath(activePath);
+                        });
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
     private void emitProgress(int pct, String msg) {
         JSObject data = new JSObject();
         data.put("pct", pct);
@@ -114,16 +136,12 @@ public class We4AllOtaPlugin extends Plugin {
                     while ((n = in.read(buf)) != -1) {
                         out.write(buf, 0, n);
                         downloadedBytes += n;
-                        int pct;
-                        if (totalBytes > 0) {
-                            pct = 15 + (int) Math.min(60, (downloadedBytes * 60L) / totalBytes);
-                        } else {
-                            pct = Math.min(72, 18 + (int) (downloadedBytes / 65536L));
-                        }
+                        int pct = totalBytes > 0
+                            ? 15 + (int) Math.min(60, (downloadedBytes * 60L) / totalBytes)
+                            : Math.min(72, 18 + (int) (downloadedBytes / 65536L));
                         if (pct >= lastReportedPct + 4) {
                             lastReportedPct = pct;
-                            int kb = (int) (downloadedBytes / 1024L);
-                            emitProgress(pct, "Downloading WE4ALL v" + version + " (" + kb + " KB)...");
+                            emitProgress(pct, "Downloading WE4ALL v" + version + " (" + (downloadedBytes / 1024L) + " KB)...");
                         }
                     }
                     out.flush();
@@ -168,7 +186,7 @@ public class We4AllOtaPlugin extends Plugin {
                     return;
                 }
 
-                emitProgress(95, "Activating WE4ALL v" + version + " (zero data loss)...");
+                emitProgress(95, "Activating WE4ALL v" + version + "...");
                 String absPath = extractDir.getAbsolutePath();
 
                 SharedPreferences capPrefs = getContext().getSharedPreferences(PREFS_CAP, Context.MODE_PRIVATE);
@@ -189,8 +207,9 @@ public class We4AllOtaPlugin extends Plugin {
 
                 if (applyNow && getActivity() != null && getBridge() != null) {
                     getActivity().runOnUiThread(() -> getBridge().getWebView().postDelayed(() -> {
+                        getBridge().getWebView().clearCache(true);
                         getBridge().setServerBasePath(absPath);
-                    }, 250));
+                    }, 200));
                 }
             } catch (Exception e) {
                 call.reject("Native OTA error: " + (e.getMessage() != null ? e.getMessage() : e.toString()));

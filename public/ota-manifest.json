@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.51",
-    "latestAvailableVersion":  "3.3.51",
-    "versionCode":  381,
-    "bundleFile":  "we4all-ota-v3.3.51.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.51.zip",
+    "version":  "3.3.52",
+    "latestAvailableVersion":  "3.3.52",
+    "versionCode":  382,
+    "bundleFile":  "we4all-ota-v3.3.52.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.52.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "49d7c4471e295ad8031bb211043e661d00a33c3dd6101e236d276007db6395be",
-    "sizeKb":  726.8,
-    "releasedAt":  "2026-11-23T05:30:11Z",
-    "minNativeVer":  "3.3.43",
-    "releaseNotes":  "WE4ALL v3.3.51: Clean Consumer Home (slim location bar, removed duplicate grid), Camera Image Search, Video Promo Reels \u0026 Pure Windows Desktop mode."
+    "sha256":  "051c88ffd6a62b4a9189547cf5fbbfa55c59890b7025c5fb9d07536afc6660ea",
+    "sizeKb":  726.4,
+    "releasedAt":  "2026-11-23T05:44:05Z",
+    "minNativeVer":  "3.3.52",
+    "releaseNotes":  "WE4ALL v3.3.52: Silent Auto-Update on Launch, removed top OTA banner \u0026 WebView cache-clear fix so UI updates reflect immediately."
 }
