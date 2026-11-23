@@ -180,6 +180,35 @@ export default function WindowsDesktopApp({
     return { pending, completed, gross, codSum, upiSum, lowStock };
   }, [activeDataset, safeProducts]);
 
+  const handleQuickStockUpdate = async (prod, delta) => {
+    const nextStock = Math.max(0, Number(prod?.stock ?? 0) + delta);
+    try {
+      if (supabase && prod?.id) {
+        const { error } = await supabase.from("we4all_catalog_items").update({ stock: nextStock }).eq("id", prod.id);
+        if (error) throw error;
+      }
+      onTriggerToast(`Updated ${prod.name || prod.title} stock to ${nextStock}.`);
+    } catch (err) {
+      onTriggerToast(err?.message || "Could not update stock.");
+    }
+  };
+
+  const handleDesktopOrderStatus = async (row, nextStatus) => {
+    if (!row?.id) return;
+    try {
+      if (supabase) {
+        const { error } = await supabase.functions.invoke("we4all-merchant-confirm-order", {
+          body: { orderId: row.id, status: nextStatus }
+        });
+        if (error) throw error;
+      }
+      setSelectedRow((prev) => (prev && prev.id === row.id ? { ...prev, status: nextStatus } : prev));
+      onTriggerToast(`Order #${String(row.id).slice(0, 8)} marked ${nextStatus}.`);
+    } catch (err) {
+      onTriggerToast(err?.message || "Order update failed.");
+    }
+  };
+
   const exportCsv = () => {
     const headers = ["RecordID", "Customer", "Status", "Payment", "AmountINR", "CreatedAt"];
     const lines = [
@@ -362,7 +391,13 @@ export default function WindowsDesktopApp({
                       <td className="py-2 px-3 font-bold">{p.name || p.title}</td>
                       <td className="py-2 px-3 text-slate-600">{p.category || "General"}</td>
                       <td className="py-2 px-3 font-black">₹{Number(p.price || 0)}</td>
-                      <td className="py-2 px-3 font-bold">{p.stock ?? 0}</td>
+                      <td className="py-2 px-3 font-bold">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button type="button" onClick={() => handleQuickStockUpdate(p, -1)} className="h-6 w-6 rounded bg-slate-100 hover:bg-rose-100 text-xs font-black">-</button>
+                          <span className="min-w-[24px] text-center">{p.stock ?? 0}</span>
+                          <button type="button" onClick={() => handleQuickStockUpdate(p, 1)} className="h-6 w-6 rounded bg-slate-100 hover:bg-emerald-100 text-xs font-black">+</button>
+                        </div>
+                      </td>
                       <td className="py-2 px-3"><span className="rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-bold">{p.status || "Approved"}</span></td>
                     </tr>
                   ))}
@@ -409,6 +444,10 @@ export default function WindowsDesktopApp({
                 <div><strong>Payment:</strong> {selectedRow.paymentMethod || selectedRow.payment_method || "COD"}</div>
                 <div><strong>Status:</strong> {selectedRow.status || "PENDING"}</div>
                 <div><strong>Total:</strong> ₹{Number(selectedRow.total || selectedRow.amount || 0).toLocaleString("en-IN")}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => handleDesktopOrderStatus(selectedRow, "CONFIRMED")} className="rounded-md bg-emerald-600 hover:bg-emerald-700 text-white py-2 text-xs font-bold">✅ Confirm</button>
+                <button type="button" onClick={() => handleDesktopOrderStatus(selectedRow, "PACKED")} className="rounded-md bg-amber-500 hover:bg-amber-600 text-white py-2 text-xs font-bold">📦 Mark Packed</button>
               </div>
               <button type="button" onClick={() => printInvoice(selectedRow)} className="w-full rounded-md bg-indigo-600 text-white py-2 text-xs font-bold">🖨️ Print GST Bill</button>
             </div>

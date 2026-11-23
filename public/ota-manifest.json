@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.55",
-    "latestAvailableVersion":  "3.3.55",
-    "versionCode":  385,
-    "bundleFile":  "we4all-ota-v3.3.55.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.55.zip",
+    "version":  "3.3.57",
+    "latestAvailableVersion":  "3.3.57",
+    "versionCode":  387,
+    "bundleFile":  "we4all-ota-v3.3.57.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.57.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "1f6f149d2d221dd2755bd7c918cc41158853ea3e78e77a418551a4454c8f8e81",
-    "sizeKb":  729,
-    "releasedAt":  "2026-11-23T06:14:59Z",
-    "minNativeVer":  "3.3.52",
-    "releaseNotes":  "WE4ALL v3.3.55: Permanent WhatsApp /download link (always latest APK) + 1-tap Share on WhatsApp in About App."
+    "sha256":  "3ed7db2d652c8687e0751912b1a362ff7e1477b41cf7ff302fc1b0ec0fff0b78",
+    "sizeKb":  729.3,
+    "releasedAt":  "2026-11-23T07:12:15Z",
+    "minNativeVer":  "3.3.56",
+    "releaseNotes":  "WE4ALL v3.3.57: Windows Desktop inline Stock/Order actions + Lowest-Price-First storefront sorting."
 }
