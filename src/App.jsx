@@ -26,7 +26,7 @@ import {
 } from "./modules/i18n/indianLanguages";
 import GeoTargetedAdBanner from "./modules/ads/GeoTargetedAdBanner";
 import { GeoLiveNewsHub, GeoNewsHeadlinesTicker } from "./components/shared/GeoLiveNewsHub";
-import { GeoLocationStrip, AccountLanguageCard, FirstLaunchLanguageModal } from "./components/shared/GeoLanguageOnboarding";
+import { HeaderGeoBadge, AccountLanguageCard, FirstLaunchLanguageModal } from "./components/shared/GeoLanguageOnboarding";
 import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
 import OrdersHistoryAndInvoice from "./modules/OrdersHistoryAndInvoice";
@@ -180,22 +180,19 @@ function MobilePhoneShell({
           {t.appTitle} | {title}
         </span>
         <div className="flex items-center gap-1">
-          {onOpenAdminConsole && (
-            <button
-              type="button"
-              onClick={onOpenAdminConsole}
-              className="bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded text-[9px] font-black cursor-pointer"
-            >
-              {t.adminBtn}
-            </button>
-          )}
+          <HeaderGeoBadge />
         </div>
       </div>
-      <GeoLocationStrip />
       <GeoNewsHeadlinesTicker city={typeof selectedZoneFilter === "string" ? selectedZoneFilter : "Adilabad"} state="auto" lang={typeof lang === "string" ? lang : "en"} pinnedNotice={typeof liveNewsTicker === "string" ? liveNewsTicker : ""} />
       {footerTab === "account" && (
         <>
           <AccountLanguageCard lang={lang} setLang={setLang} />
+          {onOpenAdminConsole && (
+            <div className="bg-slate-900 px-3 py-1.5 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <span className="text-[11px] font-bold text-slate-300">Founder / Admin Access</span>
+              <button type="button" onClick={onOpenAdminConsole} className="bg-amber-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-black cursor-pointer">{t.adminBtn}</button>
+            </div>
+          )}
           <div className="bg-slate-950/90 text-[9px] font-bold tracking-wider text-slate-400 px-3 py-0.5 flex items-center justify-between border-b border-slate-800/80 shrink-0"><span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span><span className="text-emerald-400">OTA BUNDLE v{appUpdateInfo?.currentVersion || APP_VERSION}</span></div>
         </>
       )}
@@ -1465,8 +1462,7 @@ function AppContent() {
                   { id: "stores", label: "Stores" },
                   { id: "services", label: "1-Hr Srv" },
                   { id: "events", label: "Events" },
-                  { id: "taxi", label: "Taxi" },
-                  { id: "parcel", label: "P2P Parcel" },
+                  { id: "taxi", label: "Rides & Parcel" },
                   { id: "labour", label: "Mistri" }
                 ].map((tab) => (
                   <button

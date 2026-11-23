@@ -4,27 +4,14 @@ import { INDIAN_LANGUAGES } from "../../modules/i18n/indianLanguages";
 const LANG_CHOSEN_KEY = "we4all_lang_chosen_v1";
 const GEO_KEY = "we4all_geo_news_loc_v1";
 const GEO_EVT = "we4all-geo-loc-updated";
+const THIRTY_MINS_MS = 30 * 60 * 1000;
 
 const STATE_TO_LANG = {
-  telangana: "TE",
-  "andhra pradesh": "TE",
-  maharashtra: "MR",
-  karnataka: "KN",
-  "tamil nadu": "TA",
-  kerala: "ML",
-  gujarat: "GU",
-  "west bengal": "BN",
-  punjab: "PA",
-  "uttar pradesh": "HI",
-  "madhya pradesh": "HI",
-  rajasthan: "HI",
-  bihar: "HI",
-  delhi: "HI",
-  haryana: "HI",
-  jharkhand: "HI",
-  chhattisgarh: "HI",
-  uttarakhand: "HI",
-  "himachal pradesh": "HI",
+  telangana: "TE", "andhra pradesh": "TE", maharashtra: "MR", karnataka: "KN",
+  "tamil nadu": "TA", kerala: "ML", gujarat: "GU", "west bengal": "BN", punjab: "PA",
+  "uttar pradesh": "HI", "madhya pradesh": "HI", rajasthan: "HI", bihar: "HI",
+  delhi: "HI", haryana: "HI", jharkhand: "HI", chhattisgarh: "HI",
+  uttarakhand: "HI", "himachal pradesh": "HI",
 };
 
 export function readSavedGeo() {
@@ -36,7 +23,7 @@ export function readSavedGeo() {
 }
 
 export function saveGeoLocation(geo) {
-  const next = { city: geo?.city || "Adilabad", state: geo?.state || "Telangana", gpsTagged: Boolean(geo?.gpsTagged) };
+  const next = { city: geo?.city || "Adilabad", state: geo?.state || "Telangana", gpsTagged: Boolean(geo?.gpsTagged), updatedAt: Date.now() };
   try {
     localStorage.setItem(GEO_KEY, JSON.stringify(next));
     sessionStorage.setItem(GEO_KEY, JSON.stringify(next));
@@ -48,7 +35,6 @@ export function saveGeoLocation(geo) {
 export function getGeoRecommendedLangCode(stateName = "Telangana") {
   const key = String(stateName || "Telangana").trim().toLowerCase();
   const code = STATE_TO_LANG[key] || "TE";
-  // Ensure the code exists in INDIAN_LANGUAGES
   const match = INDIAN_LANGUAGES.find((l) => String(l.code).toUpperCase() === code);
   return match ? match.code : (INDIAN_LANGUAGES[1]?.code || "TE");
 }
@@ -66,74 +52,70 @@ export function getOrderedLanguages(stateName = "Telangana") {
 }
 
 /**
- * Section 2: Compact Live Geo-Tag Location Strip right below top header
+ * Compact Header Geo-Tag Location Badge (replaces Admin Console button in top header)
+ * Silently auto-updates GPS every 30 minutes when permission is granted — no manual GPS button.
  */
-export function GeoLocationStrip() {
+export function HeaderGeoBadge() {
   const [geo, setGeo] = useState(readSavedGeo);
-  const [detecting, setDetecting] = useState(false);
 
   useEffect(() => {
     const sync = () => setGeo(readSavedGeo());
     window.addEventListener(GEO_EVT, sync);
     window.addEventListener("storage", sync);
+
+    const autoRefreshGps = () => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) return;
+      const runGeo = () => {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            try {
+              const { latitude, longitude } = pos.coords;
+              const r = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=10`,
+                { headers: { Accept: "application/json" } }
+              );
+              if (r.ok) {
+                const d = await r.json();
+                const a = d?.address || {};
+                const city = a.city || a.town || a.state_district || a.county || geo.city || "Adilabad";
+                const state = a.state || geo.state || "Telangana";
+                setGeo(saveGeoLocation({ city, state, gpsTagged: true }));
+              }
+            } catch {}
+          },
+          () => {},
+          { enableHighAccuracy: false, timeout: 6000, maximumAge: THIRTY_MINS_MS }
+        );
+      };
+      if (navigator.permissions) {
+        navigator.permissions.query({ name: "geolocation" }).then((p) => {
+          if (p.state === "granted") runGeo();
+        }).catch(() => {});
+      }
+    };
+
+    autoRefreshGps();
+    const timer = setInterval(autoRefreshGps, THIRTY_MINS_MS);
     return () => {
+      clearInterval(timer);
       window.removeEventListener(GEO_EVT, sync);
       window.removeEventListener("storage", sync);
     };
   }, []);
 
-  const handleDetectGps = () => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
-    setDetecting(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const { latitude, longitude } = pos.coords;
-          const r = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=10`,
-            { headers: { Accept: "application/json" } }
-          );
-          if (r.ok) {
-            const d = await r.json();
-            const a = d?.address || {};
-            const city = a.city || a.town || a.state_district || a.county || geo.city || "Adilabad";
-            const state = a.state || geo.state || "Telangana";
-            setGeo(saveGeoLocation({ city, state, gpsTagged: true }));
-          }
-        } catch {}
-        finally { setDetecting(false); }
-      },
-      () => setDetecting(false),
-      { enableHighAccuracy: true, timeout: 7000, maximumAge: 300000 }
-    );
-  };
-
   return (
-    <div className="bg-slate-900/95 text-white px-2.5 py-1 flex items-center justify-between gap-2 border-b border-indigo-900/60 shrink-0 text-[11px]">
-      <div className="flex items-center gap-1.5 min-w-0">
-        <span className="text-emerald-400 shrink-0">📍</span>
-        <span className="font-bold text-slate-100 truncate">
-          {geo.city}, {geo.state}
-        </span>
-        <span className="shrink-0 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300">
-          {geo.gpsTagged ? "GPS GEO-TAG" : "GEO-ZONE"}
-        </span>
-      </div>
-      <button
-        type="button"
-        onClick={handleDetectGps}
-        disabled={detecting}
-        className="shrink-0 rounded-md bg-indigo-600/90 hover:bg-indigo-500 px-2 py-0.5 text-[10px] font-bold text-white disabled:opacity-60 cursor-pointer"
-      >
-        {detecting ? "Locating…" : "📡 Update GPS"}
-      </button>
-    </div>
+    <span className="inline-flex items-center gap-1 rounded-full bg-white/10 border border-white/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300 max-w-[165px] truncate">
+      <span className="shrink-0">📍</span>
+      <span className="truncate">{geo.city}, {geo.state}</span>
+    </span>
   );
 }
 
-/**
- * Account Section Language Selector (1. English, 2. Geo-Tagged Local Language, etc.)
- */
+// Keep backward-compatible export name if referenced elsewhere
+export function GeoLocationStrip() {
+  return null;
+}
+
 export function AccountLanguageCard({ lang, setLang }) {
   const [geo, setGeo] = useState(readSavedGeo);
   useEffect(() => {
@@ -141,7 +123,6 @@ export function AccountLanguageCard({ lang, setLang }) {
     window.addEventListener(GEO_EVT, sync);
     return () => window.removeEventListener(GEO_EVT, sync);
   }, []);
-
   const ordered = useMemo(() => getOrderedLanguages(geo.state), [geo.state]);
 
   return (
@@ -169,10 +150,6 @@ export function AccountLanguageCard({ lang, setLang }) {
   );
 }
 
-/**
- * First-Launch Language Picker right after install/permissions
- * Top options: 1. English, 2. Geo-Tagged Local Language, then others
- */
 export function FirstLaunchLanguageModal({ lang, setLang }) {
   const [open, setOpen] = useState(() => {
     try { return !localStorage.getItem(LANG_CHOSEN_KEY); } catch { return false; }
@@ -186,7 +163,6 @@ export function FirstLaunchLanguageModal({ lang, setLang }) {
   }, []);
 
   const ordered = useMemo(() => getOrderedLanguages(geo.state), [geo.state]);
-
   if (!open) return null;
 
   const choose = (code) => {
@@ -205,34 +181,27 @@ export function FirstLaunchLanguageModal({ lang, setLang }) {
           <h3 className="mt-1 text-base font-extrabold text-white">Choose Your App Language</h3>
           <p className="text-[11px] text-slate-400">You can change this anytime in your Account section</p>
         </div>
-
         <div className="space-y-2 max-h-[55vh] overflow-y-auto">
-          {ordered.map((l, idx) => {
-            const isSelected = l.code === lang;
-            const isTopTwo = idx < 2;
-            return (
-              <button
-                key={l.code}
-                type="button"
-                onClick={() => choose(l.code)}
-                className={
-                  "w-full flex items-center justify-between rounded-xl border px-3 py-2.5 text-left transition cursor-pointer " +
-                  (isTopTwo
-                    ? "border-indigo-400/70 bg-indigo-950/80 hover:bg-indigo-900/80"
-                    : "border-slate-700 bg-slate-800/70 hover:border-slate-500") +
-                  (isSelected ? " ring-2 ring-amber-400" : "")
-                }
-              >
-                <div>
-                  <div className="text-sm font-bold text-white">
-                    {idx + 1}. {l.native} <span className="text-xs text-slate-300">({l.code})</span>
-                  </div>
-                  {l.badge && <div className="text-[10px] font-semibold text-emerald-300">{l.badge}</div>}
+          {ordered.map((l, idx) => (
+            <button
+              key={l.code}
+              type="button"
+              onClick={() => choose(l.code)}
+              className={
+                "w-full flex items-center justify-between rounded-xl border px-3 py-2.5 text-left transition cursor-pointer " +
+                (idx < 2 ? "border-indigo-400/70 bg-indigo-950/80 hover:bg-indigo-900/80" : "border-slate-700 bg-slate-800/70 hover:border-slate-500") +
+                (l.code === lang ? " ring-2 ring-amber-400" : "")
+              }
+            >
+              <div>
+                <div className="text-sm font-bold text-white">
+                  {idx + 1}. {l.native} <span className="text-xs text-slate-300">({l.code})</span>
                 </div>
-                <span className="text-xs font-bold text-amber-300">Select →</span>
-              </button>
-            );
-          })}
+                {l.badge && <div className="text-[10px] font-semibold text-emerald-300">{l.badge}</div>}
+              </div>
+              <span className="text-xs font-bold text-amber-300">Select →</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>
