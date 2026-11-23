@@ -8,21 +8,31 @@ function loadLeaflet() {
   if (typeof window === "undefined") return Promise.reject(new Error("No window"));
   if (window.L) return Promise.resolve(window.L);
   if (leafletPromise) return leafletPromise;
-  leafletPromise = new Promise((resolve, reject) => {
-    if (!document.getElementById("we4all-leaflet-css")) {
-      const link = document.createElement("link");
-      link.id = "we4all-leaflet-css";
-      link.rel = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
-    }
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    script.async = true;
-    script.onload = () => (window.L ? resolve(window.L) : reject(new Error("Leaflet failed to initialize")));
-    script.onerror = () => reject(new Error("Map tiles library could not load"));
-    document.head.appendChild(script);
-  });
+  const loadFrom = (cssUrl, jsUrl) =>
+    new Promise((resolve, reject) => {
+      if (!document.getElementById("we4all-leaflet-css")) {
+        const link = document.createElement("link");
+        link.id = "we4all-leaflet-css";
+        link.rel = "stylesheet";
+        link.href = cssUrl;
+        document.head.appendChild(link);
+      }
+      const script = document.createElement("script");
+      script.src = jsUrl;
+      script.async = true;
+      script.onload = () => (window.L ? resolve(window.L) : reject(new Error("Leaflet init failed")));
+      script.onerror = () => reject(new Error("CDN load failed"));
+      document.head.appendChild(script);
+    });
+  leafletPromise = loadFrom(
+    "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css",
+    "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+  ).catch(() =>
+    loadFrom(
+      "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+      "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    )
+  );
   return leafletPromise;
 }
 
@@ -105,7 +115,7 @@ export default function MapPinPickerModal({
         void reverseGeocode(startLat, startLng);
       })
       .catch((err) => {
-        if (active) setMapError(err?.message || "Map failed to load. You can still use GPS.");
+        if (active) setMapError(err?.message || "Map failed to load. You can still tap GPS.");
       });
 
     return () => {

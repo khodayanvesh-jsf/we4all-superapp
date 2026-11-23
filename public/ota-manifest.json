@@ -1,13 +1,13 @@
 {
-    "version":  "3.3.45",
-    "latestAvailableVersion":  "3.3.45",
-    "versionCode":  375,
-    "bundleFile":  "we4all-ota-v3.3.45.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.45.zip",
+    "version":  "3.3.46",
+    "latestAvailableVersion":  "3.3.46",
+    "versionCode":  376,
+    "bundleFile":  "we4all-ota-v3.3.46.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.46.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "5fa62f03d9307b029fe2bfe81affc4d58fa436938e93ec9e069d8918eb7ff618",
-    "sizeKb":  719.3,
-    "releasedAt":  "2026-11-21T22:56:16Z",
+    "sha256":  "3fc761a74e02bfa1f31dd4d0596a8e1b1e59d55bfe455b3849d1c70e41fe48ba",
+    "sizeKb":  719.4,
+    "releasedAt":  "2026-11-23T04:20:11Z",
     "minNativeVer":  "3.3.43",
-    "releaseNotes":  "WE4ALL v3.3.45: Free Interactive Map Pin Picker (drag/tap + search + GPS) across Delivery Addresses, Partner Shop GPS \u0026 Ride Pickup/Drop."
+    "releaseNotes":  "WE4ALL v3.3.46: Interactive Map Pin Picker wired into all 6 address sections (Delivery, Registration, Rides, P2P Parcel, Labour Worksite \u0026 Function Halls)."
 }
