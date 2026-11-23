@@ -1,3 +1,4 @@
+import { GeoLiveNewsHub } from "../components/shared/GeoLiveNewsHub";
 import React, { useEffect, useState } from "react";
 import { REJECTION_REASONS, GEO_ZONES } from "../data";
 import { validateFeePolicy } from "./workflows/feePolicies";
@@ -840,6 +841,7 @@ export default function FounderAdminSuite({
     { id: "security_server", label: "7. Admin Credentials & Data Server", badge: "PIN + Cloud" },
     { id: "live_locator", label: "8. Live GPS Locator & Inspector", badge: `${unifiedDirectory.length}` },
     { id: "telemetry", label: "9. Telemetry, Kill-Switches & Push", badge: "God-Mode" },
+    { id: "geo_news", label: "📰 Live Geo-News & E-Paper Hub", badge: "RSS + GPS" },
     { id: "geo_ads", label: "10. 3-Tier Geo / State / Brand Ads", badge: `${safeGeoAds.length} Ads` },
     { id: "monetization", label: "11. Commissions & Monetization", badge: `${merchantCommissionPct}%` },
     { id: "testing", label: "12. Multi-Phone Sandbox & Flow QA", badge: `${safeSplitScreens.length} Phones` }
@@ -2948,6 +2950,21 @@ export default function FounderAdminSuite({
           </form>
           {geoManagers.map((manager) => <div key={manager.user_id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900 p-3"><div><p className="text-xs font-black text-white">{manager.display_name}</p><p className="text-[10px] text-slate-400">{manager.email} · {manager.zone_id}</p></div><div className="flex gap-2"><select aria-label="Reassign manager market" defaultValue={manager.zone_id} onChange={async (event) => { const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_assign", user_id: manager.user_id, market_id: event.target.value } }); if (error || data?.ok !== true) setManagerMessage(data?.error || error?.message || "Could not assign market."); else { setManagerMessage("Manager market updated. Ask them to sign in again to refresh server permissions."); refreshGeoManagers(); } }} className="rounded border border-slate-700 bg-slate-950 p-1 text-[9px] text-white">{geoMarkets.map((market) => <option key={market.id} value={market.id}>{market.display_name}</option>)}</select><button type="button" onClick={async () => { const { data, error } = await supabase.functions.invoke("we4all-admin-review", { body: { action: "manager_remove", user_id: manager.user_id } }); if (error || data?.ok !== true) setManagerMessage(data?.error || error?.message || "Could not remove manager."); else refreshGeoManagers(); }} className="rounded-lg bg-rose-900 px-2.5 py-1 text-[9px] font-black text-white">Remove access</button></div></div>)}
         </div>
+      )}
+
+      {founderTab === "geo_news" && (
+        <GeoLiveNewsHub
+          mode="admin"
+          defaultCity="Adilabad"
+          defaultState="Telangana"
+          onPinToTicker={(headline) => {
+            try {
+              localStorage.setItem("we4all_live_news_ticker", headline);
+              if (typeof setLiveNewsTicker === "function") setLiveNewsTicker(headline);
+              if (typeof setSyncStatusMsg === "function") setSyncStatusMsg("Pinned to Top News Ticker: " + headline);
+            } catch {}
+          }}
+        />
       )}
 
       {founderTab === "testing" && (
