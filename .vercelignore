@@ -6,3 +6,5 @@ desktop-app
 tests
 supabase
 *.log
+
+!public/WE4ALL.apk
