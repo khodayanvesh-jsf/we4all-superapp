@@ -503,6 +503,38 @@ export default function FounderAdminSuite({
     }
   };
 
+    const deleteServerPartnerApplication = async (application) => {
+    if (!supabase || !application?.id) return;
+    if (!window.confirm("PERMANENTLY DELETE this partner application from the Supabase server?")) return;
+    setServerReviewBusyId(application.id);
+    setServerPartnerApplicationsError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "delete_application", application_id: application.id }
+      });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not delete application.");
+      setSyncStatusMsg("Application permanently deleted from Supabase server.");
+      await refreshServerPartnerApplications();
+    } catch (e) { setServerPartnerApplicationsError(e.message); }
+    finally { setServerReviewBusyId(""); }
+  };
+
+  const clearWaitingPartnerApplications = async () => {
+    if (!supabase) return;
+    if (!window.confirm("Delete ALL incomplete / waiting-for-documents partner applications from the Supabase server?")) return;
+    setServerPartnerApplicationsLoading(true);
+    setServerPartnerApplicationsError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("we4all-admin-review", {
+        body: { action: "delete_all_waiting_applications" }
+      });
+      if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Could not clear waiting applications.");
+      setSyncStatusMsg((data.deleted_count || 0) + " waiting test application(s) deleted from server.");
+      await refreshServerPartnerApplications();
+    } catch (e) { setServerPartnerApplicationsError(e.message); }
+    finally { setServerPartnerApplicationsLoading(false); }
+  };
+
   const reviewServerPartnerApplication = async (application, decision) => {
     const applicationId = application?.id;
     if (!supabase || !applicationId) return;
@@ -1260,8 +1292,8 @@ export default function FounderAdminSuite({
                         onClick={() => reviewServerPartnerApplication(application, "rejected")}
                         className="bg-rose-700 disabled:bg-slate-700 text-white disabled:text-slate-300 px-3 py-1.5 rounded-lg font-black text-[10px]"
                       >
-                        Reject with reason
-                      </button>
+                        Reject with reason</button>
+                      <button type="button" disabled={serverReviewBusyId === application.id} onClick={() => deleteServerPartnerApplication(application)} className="bg-slate-800 hover:bg-rose-900 border border-rose-700/60 text-rose-200 px-3 py-1.5 rounded-lg font-black text-[10px]">🗑️ Delete from Server</button>
                       </div>
                     </div>
                   </div>
@@ -2871,9 +2903,9 @@ export default function FounderAdminSuite({
               <div className="grid gap-2 md:grid-cols-3"><input aria-label="User full name" defaultValue={profile.full_name || ""} data-field="full_name" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Full name"/><input aria-label="Business name" defaultValue={profile.business_name || ""} data-field="business_name" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Business name"/><input aria-label="Area" defaultValue={profile.area || ""} data-field="area" className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[10px] text-white" placeholder="Area / address"/></div>
               <button type="button" disabled={usersBusy} onClick={(event) => { const inputs = event.currentTarget.parentElement.querySelectorAll("input[data-field]"); const edited = Object.fromEntries([...inputs].map((input) => [input.dataset.field, input.value])); supabase.functions.invoke("we4all-admin-review", { body: { action: "user_update", user_id: account.user_id, profile: { ...profile, ...edited }, roles: account.roles || [] } }).then(({ data, error }) => { if (error || data?.ok !== true) throw new Error(data?.error || error?.message || "Save failed"); setUsersMessage("Portal account details saved & synced live."); refreshManagedUsers(); }).catch((error) => setUsersMessage(error.message)); }} className="rounded-lg bg-slate-700 px-3 py-1.5 text-[9px] font-bold text-white">Save profile details</button>
               <div className="flex flex-wrap gap-1.5 pt-1">
-                <button type="button" disabled={usersBusy} onClick={() => startTerminationGrace(account)} className="rounded-lg bg-amber-600 hover:bg-amber-700 px-2.5 py-1.5 text-[9px] font-black text-white">⏳ Terminate (10-Day Grace)</button>
+                <button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => startTerminationGrace(account)} className="rounded-lg bg-amber-600 hover:bg-amber-700 px-2.5 py-1.5 text-[9px] font-black text-white">⏳ Terminate (10-Day Grace)</button>
                 <button type="button" disabled={usersBusy} onClick={() => restoreGraceAccount(account)} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[9px] font-black text-white">✅ Restore Account</button>
-                <button type="button" disabled={usersBusy} onClick={() => purgeAccountPermanently(account)} className="rounded-lg bg-rose-700 hover:bg-rose-800 px-2.5 py-1.5 text-[9px] font-black text-white">🗑️ Delete Permanently + .TXT Log</button>
+                <button type="button" disabled={usersBusy || account.user_id === adminAccess?.userId} onClick={() => purgeAccountPermanently(account)} className="rounded-lg bg-rose-700 hover:bg-rose-800 px-2.5 py-1.5 text-[9px] font-black text-white">🗑️ Delete Permanently + .TXT Log</button>
               </div>
               <div className="space-y-1">{(account.roles || []).map((role) => <div key={role.role} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950 p-2"><span className="text-[10px] font-bold text-slate-200">{role.role.replaceAll("_", " ")} · {role.status}</span><select aria-label={`${role.role} access state`} value={role.status} disabled={usersBusy} onChange={(event) => changeManagedRole(account, role.role, event.target.value)} className="rounded border border-slate-700 bg-slate-900 p-1.5 text-[9px] text-white"><option value="approved">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option></select></div>)}</div>
               <div className="flex flex-wrap gap-2"><select aria-label="Add portal role" id={`new-role-${account.user_id}`} className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-[9px] text-white"><option value="merchant">Product Merchant</option><option value="service_provider">Service Provider</option><option value="decorator">Decorator / Hall</option><option value="rider">Delivery Captain</option><option value="labour">Labour / Mistri</option></select><button type="button" disabled={usersBusy} onClick={(event) => { const select = event.currentTarget.parentElement.querySelector("select"); changeManagedRole(account, select.value, "pending"); }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[9px] font-black text-white">Add pending portal</button></div>
@@ -3110,8 +3142,7 @@ export default function FounderAdminSuite({
               onClick={handlePublishLiveNews}
               className="shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-black text-xs shadow hover:opacity-95"
             >
-              Publish Live News
-            </button>
+              Publish Live News</button><button type="button" onClick={() => { try { localStorage.removeItem("we4all_live_news_ticker"); if (typeof setLiveNewsTicker === "function") setLiveNewsTicker(""); if (typeof setNewsDraft === "function") setNewsDraft(""); if (typeof onPublishNews === "function") onPublishNews(""); if (typeof setSyncStatusMsg === "function") setSyncStatusMsg("Live News Ticker cleared across the app."); } catch {} }} className="ml-2 rounded-xl bg-rose-700 hover:bg-rose-800 px-3 py-2 text-[10px] font-black text-white">🗑️ Clear Live News</button>
           </div>
         )}
 

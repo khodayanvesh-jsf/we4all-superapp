@@ -272,6 +272,29 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
     });
   }
 
+
+  if (body.action === "delete_application") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required" }, 403);
+    const applicationId = String(body.application_id || "");
+    if (!/^[0-9a-f-]{36}$/i.test(applicationId)) return json({ ok: false, error: "Valid application_id is required" }, 400);
+    const { error: delErr } = await admin.from("we4all_partner_applications").delete().eq("id", applicationId);
+    if (delErr) return json({ ok: false, error: delErr.message || "Could not delete application from server" }, 500);
+    return json({ ok: true, deleted: true, application_id: applicationId });
+  }
+
+  if (body.action === "delete_all_waiting_applications") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required" }, 403);
+    const { data: apps, error: fetchErr } = await admin.from("we4all_partner_applications").select("id, kyc_data, status");
+    if (fetchErr) return json({ ok: false, error: fetchErr.message || "Could not load applications" }, 500);
+    const waitingIds = (apps || [])
+      .filter((a) => a.status !== "approved" && (!a.kyc_data || !a.kyc_data.submitted_at))
+      .map((a) => a.id);
+    if (!waitingIds.length) return json({ ok: true, deleted_count: 0 });
+    const { error: delErr } = await admin.from("we4all_partner_applications").delete().in("id", waitingIds);
+    if (delErr) return json({ ok: false, error: delErr.message || "Could not clear waiting applications" }, 500);
+    return json({ ok: true, deleted_count: waitingIds.length });
+  }
+
   if (body.action === "account_remove") {
     if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to remove portal accounts" }, 403);
     const userId = String(body.user_id || "");
