@@ -5,9 +5,9 @@
     "bundleFile":  "we4all-ota-v3.3.50.zip",
     "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.50.zip",
     "apkDownloadUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
-    "sha256":  "7d9996c35ab07f09842fbfe64cbea8b07fff18ef05e130fcd9a3052521422707",
+    "sha256":  "4da8ae7857e7de484ae1b8f17eca4f7da0187807bf0ae7efd567aef907a13a43",
     "sizeKb":  719.4,
-    "releasedAt":  "2026-11-23T05:15:38Z",
+    "releasedAt":  "2026-11-23T05:18:05Z",
     "minNativeVer":  "3.3.43",
     "releaseNotes":  "WE4ALL v3.3.50: Standalone Windows Desktop entry point in main.jsx (zero Android phone frame in Windows app)."
 }
