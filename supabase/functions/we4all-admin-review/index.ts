@@ -161,6 +161,117 @@ const handler = withSupabase({ auth: "user" }, async (req, ctx) => {
     return json({ ok: true, access_removed: false });
   }
 
+
+  if (body.action === "terminate_with_grace") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required" }, 403);
+    const userId = String(body.user_id || "");
+    const reason = String(body.reason || "Policy / KYC compliance correction required").trim().slice(0, 300);
+    if (!/^[0-9a-f-]{36}$/i.test(userId) || userId === reviewerId) return json({ ok: false, error: "Choose a valid portal user" }, 400);
+    const { data: target, error: targetError } = await admin.auth.admin.getUserById(userId);
+    if (targetError || !target?.user) return json({ ok: false, error: "User not found" }, 404);
+    if (target.user.app_metadata?.we4all_role === "founder") return json({ ok: false, error: "Founder account cannot be terminated" }, 403);
+    const now = new Date();
+    const graceExpiresAt = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000).toISOString();
+    await Promise.all([
+      admin.from("we4all_user_roles").update({ status: "suspended", updated_at: now.toISOString() }).eq("user_id", userId),
+      admin.from("we4all_partners").update({ approval_status: "suspended", updated_at: now.toISOString() }).eq("owner_user_id", userId)
+    ]);
+    const { error: metaErr } = await admin.auth.admin.updateUserById(userId, {
+      app_metadata: {
+        ...(target.user.app_metadata || {}),
+        we4all_termination_grace: true,
+        we4all_termination_started_at: now.toISOString(),
+        we4all_termination_expires_at: graceExpiresAt,
+        we4all_termination_reason: reason,
+        we4all_terminated_by: reviewerId
+      }
+    });
+    if (metaErr) return json({ ok: false, error: metaErr.message || "Could not start 10-day grace period" }, 500);
+    return json({ ok: true, grace_started_at: now.toISOString(), grace_expires_at: graceExpiresAt, reason });
+  }
+
+  if (body.action === "cancel_termination_grace") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required" }, 403);
+    const userId = String(body.user_id || "");
+    if (!/^[0-9a-f-]{36}$/i.test(userId)) return json({ ok: false, error: "Choose a valid portal user" }, 400);
+    const { data: target } = await admin.auth.admin.getUserById(userId);
+    if (!target?.user) return json({ ok: false, error: "User not found" }, 404);
+    const now = new Date().toISOString();
+    await Promise.all([
+      admin.from("we4all_user_roles").update({ status: "approved", updated_at: now }).eq("user_id", userId),
+      admin.from("we4all_partners").update({ approval_status: "approved", updated_at: now }).eq("owner_user_id", userId)
+    ]);
+    await admin.auth.admin.updateUserById(userId, {
+      ban_duration: "none",
+      app_metadata: {
+        ...(target.user.app_metadata || {}),
+        we4all_termination_grace: false,
+        we4all_account_removed: false,
+        we4all_restored_at: now,
+        we4all_restored_by: reviewerId
+      }
+    });
+    return json({ ok: true, restored: true });
+  }
+
+  if (body.action === "purge_user_permanently") {
+    if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required" }, 403);
+    const userId = String(body.user_id || "");
+    const reason = String(body.reason || "10-day termination grace period completed / permanent admin deletion").trim().slice(0, 300);
+    if (!/^[0-9a-f-]{36}$/i.test(userId) || userId === reviewerId) return json({ ok: false, error: "Choose a valid portal user" }, 400);
+    const { data: target } = await admin.auth.admin.getUserById(userId);
+    if (!target?.user) return json({ ok: false, error: "User not found" }, 404);
+    if (target.user.app_metadata?.we4all_role === "founder") return json({ ok: false, error: "Founder account cannot be deleted" }, 403);
+
+    const [{ data: prof }, { data: partners }, { data: roles }] = await Promise.all([
+      admin.from("we4all_profiles").select("*").eq("user_id", userId).maybeSingle(),
+      admin.from("we4all_partners").select("id, role, business_name").eq("owner_user_id", userId),
+      admin.from("we4all_user_roles").select("role, status").eq("user_id", userId)
+    ]);
+
+    const now = new Date().toISOString();
+    const logLines = [
+      "============================================================",
+      "WE4ALL PERMANENT ACCOUNT DELETION LOG (TEXT ARCHIVE ONLY)",
+      "============================================================",
+      "Deleted At (UTC) : " + now,
+      "Deleted By Admin : " + reviewerId,
+      "User ID          : " + userId,
+      "Full Name        : " + String(prof?.full_name || "N/A"),
+      "Business Name    : " + String(prof?.business_name || "N/A"),
+      "Email / Login    : " + String(target.user.email || "N/A"),
+      "Mobile / Phone   : " + String(target.user.phone || prof?.phone || "N/A"),
+      "Roles Held       : " + (roles || []).map((r) => r.role + "(" + r.status + ")").join(", "),
+      "Grace Started    : " + String(target.user.app_metadata?.we4all_termination_started_at || "Immediate"),
+      "Grace Expired    : " + String(target.user.app_metadata?.we4all_termination_expires_at || "Immediate"),
+      "Reason           : " + reason,
+      "DB Records Status: PERMANENTLY CLEARED (Mobile number freed for re-registration)",
+      "============================================================"
+    ].join("\n") + "\n";
+
+    // Hard-delete all associated records so ZERO record remains in DB and mobile number is 100% reusable
+    for (const p of partners || []) {
+      await admin.from("we4all_catalog_items").delete().eq("partner_id", p.id);
+    }
+    await Promise.all([
+      admin.from("we4all_partner_applications").delete().eq("owner_user_id", userId),
+      admin.from("we4all_partners").delete().eq("owner_user_id", userId),
+      admin.from("we4all_user_roles").delete().eq("user_id", userId),
+      admin.from("we4all_user_state").delete().eq("user_id", userId),
+      admin.from("we4all_profiles").delete().eq("user_id", userId)
+    ]);
+    const { error: delAuthErr } = await admin.auth.admin.deleteUser(userId);
+    if (delAuthErr) return json({ ok: false, error: delAuthErr.message || "DB cleared, but auth user delete failed" }, 500);
+
+    return json({
+      ok: true,
+      purged: true,
+      mobile_freed: true,
+      log_filename: "WE4ALL-Deleted-User-" + userId.slice(0, 8) + "-" + now.slice(0, 10) + ".txt",
+      log_text: logLines
+    });
+  }
+
   if (body.action === "account_remove") {
     if (adminRole !== "founder") return json({ ok: false, error: "Founder authorization is required to remove portal accounts" }, 403);
     const userId = String(body.user_id || "");
