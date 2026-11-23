@@ -3,8 +3,10 @@ import { supabase } from "../../supabaseClient";
 
 const CTRL_KEY = "we4all_geo_news_controls_v1";
 const CTRL_EVT = "we4all-news-controls-updated";
+const GEO_KEY = "we4all_geo_news_loc_v1";
 const RAM_CACHE = new Map();
 const TTL = 10 * 60 * 1000;
+
 const DEF_CTRL = { pauseLocal: false, pauseState: false, pauseIndia: false, pauseCustom: false, pauseAll: false, customRssUrl: "" };
 const LANG_OPTS = [
   { code: "en", label: "English" }, { code: "te", label: "తెలుగు" }, { code: "hi", label: "हिन्दी" },
@@ -19,26 +21,18 @@ export function saveNewsControls(next) {
   try { localStorage.setItem(CTRL_KEY, JSON.stringify(m)); window.dispatchEvent(new Event(CTRL_EVT)); } catch {}
   return m;
 }
+function readDetectedGeo() {
+  try { const raw = sessionStorage.getItem(GEO_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
 function edgeCfg() {
   const url = (import.meta?.env?.VITE_SUPABASE_URL) || supabase?.supabaseUrl || "https://bdmbziwazpuzbukazmug.supabase.co";
   const key = (import.meta?.env?.VITE_SUPABASE_ANON_KEY) || supabase?.supabaseKey || "";
   return { url: String(url).replace(/\/+$/, ""), key: String(key || "") };
 }
-function fallbackEpapers() {
-  const n = new Date();
-  const dt = `${String(n.getDate()).padStart(2, "0")}/${String(n.getMonth() + 1).padStart(2, "0")}/${n.getFullYear()}`;
-  return [
-    { name: "Eenadu E-Paper", region: "Telangana & AP", url: `https://epaper.eenadu.net/Home/Index?date=${dt}&eid=2` },
-    { name: "Sakshi E-Paper", region: "Telangana & AP", url: "https://epaper.sakshi.com/" },
-    { name: "Namasthe Telangana", region: "Telangana", url: "https://epaper.ntnews.com/" },
-    { name: "Andhra Jyothy", region: "Telangana & AP", url: "https://epaper.andhrajyothy.com/" },
-    { name: "The Hindu E-Paper", region: "India", url: "https://epaper.thehindu.com/" },
-    { name: "The Indian Express", region: "India", url: "https://epaper.indianexpress.com/" },
-  ];
-}
+
 async function fetchLiveNews({ city, state, lang, controls, force = false }) {
   const c = (city && city !== "All" ? city : "Adilabad").trim();
-  const s = (state || "Telangana").trim();
+  const s = (state || "auto").trim();
   const l = String(lang || "en").toLowerCase().slice(0, 2);
   const ctrl = controls || readNewsControls();
   const ck = JSON.stringify({ c, s, l, ctrl });
@@ -60,26 +54,61 @@ async function fetchLiveNews({ city, state, lang, controls, force = false }) {
   const j = await r.json();
   const data = {
     ok: Boolean(j?.ok),
+    city: j?.city || c,
+    state: j?.state || (s === "auto" ? "Telangana" : s),
     items: Array.isArray(j?.items) ? j.items : [],
-    epapers: Array.isArray(j?.epapers) && j.epapers.length ? j.epapers : fallbackEpapers(),
     fetchedAt: j?.fetchedAt || new Date().toISOString(),
   };
   RAM_CACHE.set(ck, { ts: Date.now(), data });
   return data;
 }
 
-const CSS = `@keyframes we4allMarq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}.we4all-marq{display:inline-flex;align-items:center;white-space:nowrap;will-change:transform;animation:we4allMarq 42s linear infinite}.we4all-marq:hover{animation-play-state:paused}`;
+const CSS = `@keyframes we4allMarq{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}.we4all-marq{display:inline-flex;align-items:center;white-space:nowrap;will-change:transform;animation-name:we4allMarq;animation-timing-function:linear;animation-iteration-count:infinite}.we4all-marq:hover,.we4all-marq:active{animation-play-state:paused}`;
 
-export function GeoNewsHeadlinesTicker({ city = "Adilabad", state = "Telangana", lang = "en", pinnedNotice = "" }) {
+export function GeoNewsHeadlinesTicker({ city = "Adilabad", state = "auto", lang = "en", pinnedNotice = "" }) {
   const [controls, setControls] = useState(readNewsControls);
+  const [geo, setGeo] = useState(() => readDetectedGeo() || { city: city && city !== "All" ? city : "Adilabad", state: state || "auto" });
   const [items, setItems] = useState([]);
-  const [epapers, setEpapers] = useState(fallbackEpapers);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
-  const [open, setOpen] = useState(false);
-  const [activeLang, setActiveLang] = useState(String(lang || "en").toLowerCase().slice(0, 2));
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [readerOpen, setReaderOpen] = useState(false);
 
-  useEffect(() => { const n = String(lang || "en").toLowerCase().slice(0, 2); if (n) setActiveLang(n); }, [lang]);
+  const activeLang = String(lang || "en").toLowerCase().slice(0, 2) || "en";
+
+  useEffect(() => {
+    if (city && city !== "All" && city !== geo.city) {
+      setGeo({ city, state: state && state !== "auto" ? state : "auto" });
+    }
+  }, [city, state]);
+
+  useEffect(() => {
+    if (readDetectedGeo()) return;
+    if (typeof navigator === "undefined" || !navigator.permissions || !navigator.geolocation) return;
+    navigator.permissions.query({ name: "geolocation" }).then((perm) => {
+      if (perm.state !== "granted") return;
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            const { latitude, longitude } = pos.coords;
+            const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=10`, { headers: { Accept: "application/json" } });
+            if (!r.ok) return;
+            const d = await r.json();
+            const a = d?.address || {};
+            const detCity = a.city || a.town || a.state_district || a.county || "";
+            const detState = a.state || "";
+            if (detCity || detState) {
+              const nextGeo = { city: detCity || "Adilabad", state: detState || "auto" };
+              try { sessionStorage.setItem(GEO_KEY, JSON.stringify(nextGeo)); } catch {}
+              setGeo(nextGeo);
+            }
+          } catch {}
+        },
+        () => {},
+        { maximumAge: 600000, timeout: 4000 }
+      );
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     const sync = () => setControls(readNewsControls());
     window.addEventListener("storage", sync);
@@ -88,94 +117,118 @@ export function GeoNewsHeadlinesTicker({ city = "Adilabad", state = "Telangana",
   }, []);
 
   const load = useCallback(async (force = false) => {
-    setLoading(true); setErr("");
+    setLoading(true);
     try {
-      const res = await fetchLiveNews({ city, state, lang: activeLang, controls, force });
+      const res = await fetchLiveNews({ city: geo.city, state: geo.state, lang: activeLang, controls, force });
       setItems(res.items || []);
-      if (res.epapers?.length) setEpapers(res.epapers);
-    } catch (e) { setErr(e instanceof Error ? e.message : "Unavailable"); }
-    finally { setLoading(false); }
-  }, [city, state, activeLang, controls]);
+      if (res.state && geo.state === "auto") {
+        setGeo((prev) => ({ ...prev, state: res.state }));
+      }
+    } catch {} finally { setLoading(false); }
+  }, [geo.city, geo.state, activeLang, controls]);
 
   useEffect(() => { load(false); }, [load]);
 
   const entries = useMemo(() => {
     const arr = [];
-    if (pinnedNotice && String(pinnedNotice).trim() && !/0% Platform Markup|1-Hr Verified Electricians/i.test(String(pinnedNotice))) arr.push({ title: String(pinnedNotice).trim(), source: "NOTICE", bucket: "pinned", link: "" });
+    if (pinnedNotice && String(pinnedNotice).trim() && !/0% Platform Markup|1-Hr Verified Electricians/i.test(String(pinnedNotice))) {
+      arr.push({ title: String(pinnedNotice).trim(), summary: String(pinnedNotice).trim(), source: "WE4ALL", bucket: "pinned", scopeLabel: "NOTICE", pubDate: "Live" });
+    }
     return arr.concat(items);
   }, [pinnedNotice, items]);
 
-  const showCity = city && city !== "All" ? city : "Adilabad";
+  // Comfortable TV news ticker reading speed (~6.5s per headline, min 95s)
+  const scrollDurationSec = Math.max(95, Math.round(entries.length * 6.5));
+
+  const openInAppReader = (entry) => {
+    setSelectedItem(entry || entries[0] || null);
+    setReaderOpen(true);
+  };
 
   return (
-    <div className="w-full" data-we4all-news-ticker="live">
+    <div className="w-full shrink-0" data-we4all-news-ticker="live">
       <style>{CSS}</style>
-      <div className="flex items-center gap-2 rounded-xl border border-indigo-200/80 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-2 py-1.5 text-white shadow-sm">
-        <button type="button" onClick={() => setOpen(true)} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-2 py-1 text-[11px] font-bold uppercase text-white hover:bg-rose-500">
-          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />LIVE
+      <div className="flex items-center gap-2 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-950 border-b border-indigo-900/70 px-2 py-1 text-white">
+        <button
+          type="button"
+          onClick={() => openInAppReader(entries[0])}
+          className="shrink-0 inline-flex items-center gap-1 rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+          LIVE
         </button>
+
         <div className="relative flex-1 overflow-hidden">
           {loading && !entries.length ? (
-            <div className="truncate text-xs text-indigo-200">Fetching live {showCity} &amp; {state} headlines…</div>
-          ) : err && !entries.length ? (
-            <button type="button" onClick={() => load(true)} className="truncate text-xs text-amber-300 underline">Live news retry ({err})</button>
+            <div className="truncate text-[11px] text-indigo-200">
+              Loading latest {geo.city} &amp; {geo.state !== "auto" ? geo.state : "India"} news…
+            </div>
           ) : !entries.length ? (
-            <button type="button" onClick={() => setOpen(true)} className="truncate text-xs text-indigo-200">📰 Today&apos;s {showCity} E-Newspapers ready — tap E-Papers</button>
+            <div className="truncate text-[11px] text-indigo-200">
+              Latest {geo.city} &amp; {geo.state !== "auto" ? geo.state : "India"} headlines updating…
+            </div>
           ) : (
-            <div className="we4all-marq">
+            <div className="we4all-marq" style={{ animationDuration: `${scrollDurationSec}s` }}>
               {[...entries, ...entries].map((e, i) => (
-                <button key={i} type="button" onClick={() => (e.link ? window.open(e.link, "_blank", "noopener,noreferrer") : setOpen(true))} className="mx-3 inline-flex items-center gap-1.5 text-xs font-medium text-slate-100 hover:text-amber-300">
-                  <span className={e.bucket === "pinned" ? "rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300" : "rounded bg-indigo-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-200"}>
-                    {e.bucket === "pinned" ? "📢 NOTICE" : e.source || "LIVE"}
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => openInAppReader(e)}
+                  className="mx-3 inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-100 hover:text-amber-300"
+                >
+                  <span className={e.bucket === "pinned" ? "rounded bg-amber-400/20 px-1 py-0.5 text-[9px] font-bold text-amber-300" : "rounded bg-indigo-500/30 px-1 py-0.5 text-[9px] font-semibold text-indigo-200"}>
+                    {e.scopeLabel || e.source || "TOP"}
                   </span>
-                  <span>{e.title}</span><span className="ml-2 text-indigo-400/60">•</span>
+                  <span>{e.title}</span>
+                  <span className="ml-2 text-indigo-400/60">•</span>
                 </button>
               ))}
             </div>
           )}
         </div>
-        <button type="button" onClick={() => setOpen(true)} className="shrink-0 rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/25">🗞️ E-Papers</button>
       </div>
 
-      {open && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm" onClick={() => setOpen(false)}>
-          <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 pb-3">
-              <div>
-                <h3 className="text-base font-bold">📰 {showCity} &amp; {state} Live Headlines &amp; E-Papers</h3>
-                <p className="text-xs text-slate-400">Zero-storage live feed · Tap any headline or E-Paper to read</p>
+      {readerOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-slate-950/80 p-2 sm:p-4 backdrop-blur-sm" onClick={() => setReaderOpen(false)}>
+          <div className="max-h-[82vh] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-4 text-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+              <div className="min-w-0">
+                <div className="text-xs font-extrabold uppercase tracking-wider text-rose-400">
+                  ● LIVE NEWS · {geo.city}{geo.state && geo.state !== "auto" ? `, ${geo.state}` : ""}
+                </div>
+                <div className="text-[11px] text-slate-400">District, State &amp; All-India Top Latest News</div>
               </div>
-              <div className="flex items-center gap-2">
-                <select value={activeLang} onChange={(e) => setActiveLang(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-white">
-                  {LANG_OPTS.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
-                </select>
-                <button type="button" onClick={() => load(true)} className="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold">🔄 Refresh</button>
-                <button type="button" onClick={() => setOpen(false)} className="rounded-lg bg-slate-700 px-2.5 py-1 text-xs font-semibold">✕ Close</button>
-              </div>
+              <button type="button" onClick={() => setReaderOpen(false)} className="shrink-0 rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-bold text-slate-200 hover:bg-slate-700">
+                ✕ Close
+              </button>
             </div>
+
+            {selectedItem && (
+              <div className="mt-3 rounded-xl border border-indigo-500/40 bg-indigo-950/50 p-3">
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-amber-300">
+                  <span className="rounded bg-indigo-600/40 px-1.5 py-0.5 text-indigo-200">{selectedItem.scopeLabel || "TOP"}</span>
+                  <span>{selectedItem.source || "LIVE"}</span>
+                </div>
+                <h4 className="mt-1.5 text-sm font-bold leading-snug text-white">{selectedItem.title}</h4>
+                {selectedItem.summary && <p className="mt-2 text-xs leading-relaxed text-slate-300">{selectedItem.summary}</p>}
+                {selectedItem.pubDate && <div className="mt-2 text-[10px] text-slate-400">{selectedItem.pubDate}</div>}
+              </div>
+            )}
+
             <div className="mt-3">
-              <div className="mb-2 text-xs font-bold uppercase text-amber-300">Today&apos;s Geo E-Newspapers</div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {epapers.map((p) => (
-                  <a key={p.name} href={p.url} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-slate-700 bg-slate-800 p-2.5 hover:border-indigo-400">
-                    <div className="text-xs font-bold text-white">{p.name}</div>
-                    <div className="text-[11px] text-slate-400">{p.region}</div>
-                  </a>
-                ))}
-              </div>
-            </div>
-            <div className="mt-4">
-              <div className="mb-2 text-xs font-bold uppercase text-indigo-300">Live Scrolling Main Headings ({entries.length})</div>
+              <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Latest Top Headlines ({entries.length})</div>
               <div className="space-y-1.5">
-                {entries.map((it, i) => (
-                  <div key={i} className="flex items-start justify-between gap-2 rounded-xl border border-slate-800 bg-slate-800/60 p-2.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-semibold text-slate-100">{it.title}</div>
-                      <div className="text-[11px] text-slate-400">{it.source || "LIVE"} {it.pubDate ? `· ${it.pubDate}` : ""}</div>
-                    </div>
-                    {it.link && <a href={it.link} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-lg bg-indigo-600 px-2 py-1 text-[11px] font-semibold">Read ↗</a>}
-                  </div>
-                ))}
+                {entries.map((it, idx) => {
+                  const isActive = selectedItem && selectedItem.title === it.title;
+                  return (
+                    <button key={idx} type="button" onClick={() => setSelectedItem(it)} className={"w-full text-left rounded-xl border p-2.5 transition " + (isActive ? "border-indigo-400 bg-indigo-950/70" : "border-slate-800 bg-slate-800/50 hover:border-slate-600")}>
+                      <div className="flex items-center gap-1.5 text-[10px] text-indigo-300 font-semibold">
+                        <span>{it.scopeLabel || "TOP"}</span><span className="text-slate-500">·</span><span className="text-slate-400">{it.source || "LIVE"}</span>
+                      </div>
+                      <div className="mt-0.5 text-xs font-semibold text-slate-100 leading-snug">{it.title}</div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -185,7 +238,7 @@ export function GeoNewsHeadlinesTicker({ city = "Adilabad", state = "Telangana",
   );
 }
 
-export function GeoLiveNewsHub({ mode = "admin", defaultCity = "Adilabad", defaultState = "Telangana", pinnedNotice = "", onClearPinned, onClose }) {
+export function GeoLiveNewsHub({ mode = "admin", defaultCity = "Adilabad", defaultState = "Telangana", pinnedNotice = "", onClearPinned }) {
   const [city, setCity] = useState(defaultCity);
   const [state, setState] = useState(defaultState);
   const [lang, setLang] = useState("en");
@@ -205,9 +258,9 @@ export function GeoLiveNewsHub({ mode = "admin", defaultCity = "Adilabad", defau
   if (mode === "customer") return <GeoNewsHeadlinesTicker city={city} state={state} lang={lang} pinnedNotice={pinnedNotice} />;
 
   const rows = [
-    { key: "pauseLocal", label: `Local City (${city})` },
-    { key: "pauseState", label: `State (${state})` },
-    { key: "pauseIndia", label: "India Top News" },
+    { key: "pauseLocal", label: `District / City (${city})` },
+    { key: "pauseState", label: `State News (${state})` },
+    { key: "pauseIndia", label: "All-India Top Latest" },
     { key: "pauseCustom", label: "Custom RSS Feed" },
   ];
 
@@ -215,8 +268,8 @@ export function GeoLiveNewsHub({ mode = "admin", defaultCity = "Adilabad", defau
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-bold text-slate-900">📺 Live News Scrolling Monitor &amp; Source Controls</h3>
-          <p className="text-xs text-slate-500">Zero-storage fetch-and-display · Streams straight into Users Module scrolling bar</p>
+          <h3 className="text-base font-bold text-slate-900">📺 Live News Monitor &amp; Source Controls</h3>
+          <p className="text-xs text-slate-500">All-India geo news · 100% in-app reading (no external browser popups) · Zero storage</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className={st.error ? "rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700" : "rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700"}>
@@ -231,8 +284,8 @@ export function GeoLiveNewsHub({ mode = "admin", defaultCity = "Adilabad", defau
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-bold uppercase text-indigo-900">Live Preview — Running in Users App</span>
           <div className="flex items-center gap-2">
-            <input value={city} onChange={(e) => setCity(e.target.value)} className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs" />
-            <input value={state} onChange={(e) => setState(e.target.value)} className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs" />
+            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="District/City" className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs" />
+            <input value={state} onChange={(e) => setState(e.target.value)} placeholder="State" className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs" />
             <select value={lang} onChange={(e) => setLang(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs">
               {LANG_OPTS.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
             </select>

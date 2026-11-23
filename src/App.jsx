@@ -202,7 +202,7 @@ function MobilePhoneShell({
         </div>
       </div>
       <div className="bg-slate-950/90 text-[9px] font-bold tracking-wider text-slate-400 px-3 py-0.5 flex items-center justify-between border-b border-slate-800/80 shrink-0"><span>INSTALLED APP v{APP_VERSION} · BUILD {APP_BUILD_NUMBER}</span><span className="text-emerald-400">OTA BUNDLE v{appUpdateInfo?.currentVersion || APP_VERSION}</span></div>
-      <GeoNewsHeadlinesTicker city={typeof selectedZoneFilter === "string" ? selectedZoneFilter : "Adilabad"} state="Telangana" lang={typeof lang === "string" ? lang : "en"} pinnedNotice={typeof liveNewsTicker === "string" ? liveNewsTicker : ""} />
+      <GeoNewsHeadlinesTicker city={typeof selectedZoneFilter === "string" ? selectedZoneFilter : "Adilabad"} state="auto" lang={typeof lang === "string" ? lang : "en"} pinnedNotice={typeof liveNewsTicker === "string" ? liveNewsTicker : ""} />
 
       {personalShoppingFromPartner && (
         <div className="bg-indigo-600 text-white px-3 py-1.5 flex justify-between items-center text-[10px] font-black shrink-0">
