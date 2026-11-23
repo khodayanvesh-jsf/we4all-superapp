@@ -42,3 +42,7 @@ keystore.properties
 apk-releases/*.apk
 apk-releases/*.aab
 ota-bundles/*.zip
+
+desktop-app/node_modules/
+desktop-app/dist/
+*.exe

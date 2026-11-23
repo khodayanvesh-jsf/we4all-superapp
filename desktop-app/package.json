@@ -1,0 +1,32 @@
+{
+    "name":  "we4all-desktop-console",
+    "version":  "3.3.47",
+    "description":  "WE4ALL Partner \u0026 Admin Desktop Console for Windows",
+    "main":  "main.js",
+    "scripts":  {
+                    "start":  "electron .",
+                    "build:win":  "electron-builder --win portable --x64"
+                },
+    "build":  {
+                  "appId":  "com.we4all.desktop.console",
+                  "productName":  "WE4ALL Console",
+                  "win":  {
+                              "target":  [
+                                             {
+                                                 "target":  "portable",
+                                                 "arch":  [
+                                                              "x64"
+                                                          ]
+                                             }
+                                         ],
+                              "signAndEditExecutable":  false
+                          },
+                  "portable":  {
+                                   "artifactName":  "WE4ALL-Console-Windows.exe"
+                               }
+              },
+    "devDependencies":  {
+                            "electron":  "^33.2.0",
+                            "electron-builder":  "^25.1.8"
+                        }
+}
