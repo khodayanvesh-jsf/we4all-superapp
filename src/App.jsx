@@ -1442,7 +1442,7 @@ function AppContent() {
           </div>
 
           {footerTab === "home" && customerHomeSubTab === "stores" && (<>
-            <GeoNewsHeadlinesTicker city={selectedZoneFilter || "Adilabad"} stateName="Telangana" accountLang={lang} />
+            <GeoNewsHeadlinesTicker city={typeof selectedZoneFilter === "string" ? selectedZoneFilter : "Adilabad"} state="Telangana" lang={typeof lang === "string" ? lang : "en"} pinnedNotice={typeof liveNewsTicker === "string" ? liveNewsTicker : ""} />
             
             <GeoTargetedAdBanner
               ads={geoAds}

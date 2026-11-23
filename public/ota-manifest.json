@@ -1,13 +1,12 @@
 {
-    "buildNumber":  400,
-    "url":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.70.zip",
-    "build":  400,
-    "zipUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.70.zip",
-    "version":  "3.3.70",
-    "downloadUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.70.zip",
-    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.70.zip",
-    "apkUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk?v=3.3.70",
+    "buildNumber":  401,
+    "url":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.71.zip",
+    "build":  401,
+    "zipUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.71.zip",
+    "version":  "3.3.71",
+    "downloadUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.71.zip",
+    "bundleUrl":  "https://we-4-all-super-app.vercel.app/ota/we4all-ota-v3.3.71.zip",
+    "apkUrl":  "https://we-4-all-super-app.vercel.app/WE4ALL.apk",
     "mandatory":  true,
-    "updatedAt":  "2026-11-23T11:37:03Z",
     "downloadPageUrl":  "https://we-4-all-super-app.vercel.app/download"
 }
