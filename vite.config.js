@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   build: {
+    target: "es2020",
+    minify: "esbuild",
+    reportCompressedSize: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -22,11 +25,7 @@ export default defineConfig({
     port: 3000,
     host: true
   },
-  esbuild: {
-    loader: 'jsx',
-    include: /src\/.*\.jsx?$/,
-    exclude: []
-  },
+  esbuild: { drop: ["console", "debugger"], legalComments: "none" },
   optimizeDeps: {
     esbuildOptions: {
       loader: {
