@@ -24,12 +24,11 @@ const HERO_SECTORS = [
 ];
 
 const COMPACT_SECTORS = [
-  { id: 'rides', icon: '🛵', title: 'Bike & Auto', subtitle: 'Fast town drops', tint: 'from-amber-50 to-orange-50 border-amber-200/80 text-amber-950', iconBg: 'bg-amber-500/15' },
+  { id: 'rides', icon: "🛵📦", title: 'Rides & Parcel', subtitle: 'Bike, Auto & 2W/3W parcel', tint: 'from-amber-50 to-orange-50 border-amber-200/80 text-amber-950', iconBg: 'bg-amber-500/15' },
   { id: 'decorators', icon: '🎉', title: 'Halls & Decor', subtitle: 'Events & quotes', tint: 'from-rose-50 to-pink-50 border-rose-200/80 text-rose-950', iconBg: 'bg-rose-500/15' },
   { id: 'labour', icon: '🧱', title: 'Labour Adda', subtitle: 'Mason & Mistri', tint: 'from-sky-50 to-cyan-50 border-sky-200/80 text-sky-950', iconBg: 'bg-sky-500/15' },
   { id: 'medicines', icon: '💊', title: 'Pharmacy', subtitle: 'Trusted medicals', tint: 'from-teal-50 to-cyan-50 border-teal-200/80 text-teal-950', iconBg: 'bg-teal-500/15' },
   { id: 'bakery', icon: '🥐', title: 'Bakery & Food', subtitle: 'Fresh daily picks', tint: 'from-orange-50 to-amber-50 border-orange-200/80 text-orange-950', iconBg: 'bg-orange-500/15' },
-  { id: 'parcels', icon: '📦', title: 'Send Parcel', subtitle: '2W / 3W courier', tint: 'from-violet-50 to-indigo-50 border-violet-200/80 text-violet-950', iconBg: 'bg-violet-500/15' },
 ];
 
 export function BentoHomeGrid({

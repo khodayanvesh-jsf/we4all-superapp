@@ -26,7 +26,7 @@ import {
 } from "./modules/i18n/indianLanguages";
 import GeoTargetedAdBanner from "./modules/ads/GeoTargetedAdBanner";
 import { GeoLiveNewsHub, GeoNewsHeadlinesTicker } from "./components/shared/GeoLiveNewsHub";
-import { HeaderGeoBadge, AccountLanguageCard, FirstLaunchLanguageModal } from "./components/shared/GeoLanguageOnboarding";
+import { HeaderGeoBadge, AccountLanguageCard, AccountThemeCard, FirstLaunchLanguageModal, readThemeMode, resolveBrightTheme } from "./components/shared/GeoLanguageOnboarding";
 import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
 import OrdersHistoryAndInvoice from "./modules/OrdersHistoryAndInvoice";
@@ -187,6 +187,7 @@ function MobilePhoneShell({
       {footerTab === "account" && (
         <>
           <AccountLanguageCard lang={lang} setLang={setLang} />
+          <AccountThemeCard />
           {onOpenAdminConsole && (
             <div className="bg-slate-900 px-3 py-1.5 flex items-center justify-between border-b border-slate-800 shrink-0">
               <span className="text-[11px] font-bold text-slate-300">Founder / Admin Access</span>
@@ -290,6 +291,19 @@ function AppContent() {
   const [lang, setLang] = useState(savedCloud?.lang || "EN");
   const t = getLangText(lang);
   const [brightTheme, setBrightTheme] = useState(true);
+  useEffect(() => {
+    const apply = (m) => setBrightTheme(resolveBrightTheme(m || readThemeMode()));
+    apply();
+    const onEvt = (e) => apply(e?.detail);
+    window.addEventListener("we4all-theme-mode-changed", onEvt);
+    const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const onSys = () => { if (readThemeMode() === "system") apply("system"); };
+    if (mq && mq.addEventListener) mq.addEventListener("change", onSys);
+    return () => {
+      window.removeEventListener("we4all-theme-mode-changed", onEvt);
+      if (mq && mq.removeEventListener) mq.removeEventListener("change", onSys);
+    };
+  }, []);
 
   useEffect(() => {
     if (!supabase) return undefined;
@@ -1372,7 +1386,8 @@ function AppContent() {
 
       return (
         <div className="space-y-3 text-xs">
-          <div className="bg-gradient-to-br from-indigo-700 via-violet-700 to-fuchsia-700 text-white p-3.5 rounded-3xl border border-white/15 space-y-2.5 shadow-lg">
+          {false && (
+<div className="bg-gradient-to-br from-indigo-700 via-violet-700 to-fuchsia-700 text-white p-3.5 rounded-3xl border border-white/15 space-y-2.5 shadow-lg">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="text-sm">📍</span>
@@ -1421,6 +1436,7 @@ function AppContent() {
               {geoLocationMessage && <p role="status" className="w-full text-[9px] text-amber-200">{geoLocationMessage}</p>}
             </div>
           </div>
+)}
 
           {footerTab === "home" && customerHomeSubTab === "stores" && (<>
             

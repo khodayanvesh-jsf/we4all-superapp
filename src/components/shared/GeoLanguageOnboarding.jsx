@@ -207,3 +207,64 @@ export function FirstLaunchLanguageModal({ lang, setLang }) {
     </div>
   );
 }
+
+const THEME_KEY = "we4all_theme_mode_v1";
+const THEME_EVT = "we4all-theme-mode-changed";
+
+export function readThemeMode() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    if (v === "day" || v === "night" || v === "system") return v;
+  } catch {}
+  return "system";
+}
+
+export function resolveBrightTheme(mode) {
+  if (mode === "day") return true;
+  if (mode === "night") return false;
+  if (typeof window !== "undefined" && window.matchMedia) {
+    return !window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  return true;
+}
+
+export function AccountThemeCard() {
+  const [mode, setMode] = useState(readThemeMode);
+
+  const selectMode = (next) => {
+    setMode(next);
+    try { localStorage.setItem(THEME_KEY, next); } catch {}
+    window.dispatchEvent(new CustomEvent(THEME_EVT, { detail: next }));
+  };
+
+  const opts = [
+    { id: "day", label: "☀️ Day" },
+    { id: "night", label: "🌙 Night" },
+    { id: "system", label: "📱 Mobile Sync" },
+  ];
+
+  return (
+    <div className="bg-slate-900/95 text-white px-3 py-2 border-b border-slate-800 shrink-0">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-bold text-slate-200">🎨 Display Theme</span>
+        <div className="inline-flex rounded-lg bg-slate-800 p-0.5 border border-slate-700">
+          {opts.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => selectMode(o.id)}
+              className={
+                "px-2 py-1 rounded-md text-[10px] font-bold transition cursor-pointer " +
+                (mode === o.id
+                  ? "bg-indigo-600 text-white shadow"
+                  : "text-slate-300 hover:text-white")
+              }
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
