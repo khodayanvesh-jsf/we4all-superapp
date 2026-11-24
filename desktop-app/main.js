@@ -12,7 +12,7 @@ function createWindow() {
     height: 860,
     minWidth: 1024,
     minHeight: 680,
-    title: "WE4ALL Partner & Admin Console",
+    title: "WE4ALL Super-App (All Users · Partners · Admin)",
     backgroundColor: "#020617",
     autoHideMenuBar: false,
     webPreferences: {
@@ -71,7 +71,7 @@ function createWindow() {
   ]);
   Menu.setApplicationMenu(menu);
 
-  mainWindow.loadURL(PARTNER_URL);
+  mainWindow.loadURL(BASE_URL);
 }
 
 app.whenReady().then(createWindow);

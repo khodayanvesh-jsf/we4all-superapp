@@ -22,6 +22,25 @@ function NativeBundleReady() {
   return null;
 }
 
+
+function AllUsersWindowsShell() {
+  const [view, setView] = React.useState("all_users");
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#0b1120" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px", background: "linear-gradient(90deg,#1e1b4b,#4c1d95,#be123c)", color: "#fff", fontFamily: "Segoe UI, sans-serif", fontSize: "12px", fontWeight: 700, gap: "10px", flexWrap: "wrap" }}>
+        <span>WE4ALL Windows Super-App · All Portals (Consumer · Merchant · Service · Decorator · Rider · Labour · Admin)</span>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button type="button" onClick={() => setView("all_users")} style={{ padding: "5px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 800, background: view === "all_users" ? "#fbbf24" : "rgba(255,255,255,0.18)", color: view === "all_users" ? "#0f172a" : "#fff" }}>🛍️ All-Users App (Consumer + Partners + Admin)</button>
+          <button type="button" onClick={() => setView("console")} style={{ padding: "5px 12px", borderRadius: "8px", border: "none", cursor: "pointer", fontWeight: 800, background: view === "console" ? "#fbbf24" : "rgba(255,255,255,0.18)", color: view === "console" ? "#0f172a" : "#fff" }}>🖥️ Partner & Admin Desk</button>
+        </div>
+      </div>
+      <div style={{ flex: 1 }}>
+        {view === "all_users" ? (<><App /><NativeBundleReady /></>) : (<AllUsersWindowsShell />)}
+      </div>
+    </div>
+  );
+}
+
 class RootErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
