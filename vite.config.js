@@ -9,6 +9,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes("FounderAdminSuite") || id.includes("AdminKyc")) return "chunk-admin";
+          if (id.includes("MerchantPortal") || id.includes("DecoratorPortal") || id.includes("ServiceProviderPortal") || id.includes("LabourWorksitePortal") || id.includes("RiderCaptainPortal")) return "chunk-portals";
+          if (id.includes("StandaloneWindowsApp")) return "chunk-desktop";
           if (id.includes('node_modules')) {
             if (id.includes('react') || id.includes('react-dom')) return 'vendor-react';
             if (id.includes('@supabase')) return 'vendor-supabase';
