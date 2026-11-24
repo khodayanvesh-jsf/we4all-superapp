@@ -1581,7 +1581,7 @@ function AppContent() {
                 </section>
               )}
               <div id="we4all-active-tab-content" />
-              {customerHomeSubTab === "stores" && (<><CustomerFlashDealsStrip onGrabDeal={(d) => setSearchQuery(d.title)} /><VoiceBasketBuilder products={visibleProducts || products || []} onAddToCart={typeof addToCart === "function" ? addToCart : undefined} lang={lang} /></>)}
+              {customerHomeSubTab === "stores" && (<><CustomerFlashDealsStrip onGrabDeal={(d) => setSearchQuery(d.title)} /><VoiceBasketBuilder products={typeof filteredProducts !== "undefined" ? filteredProducts : (typeof products !== "undefined" ? products : [])} onAddToCart={typeof addToCart === "function" ? addToCart : undefined} lang={lang} /></>)}
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
                   <section className="w4-shop-hero" aria-label="Your local market">
