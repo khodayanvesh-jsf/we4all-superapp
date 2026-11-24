@@ -1463,10 +1463,35 @@ function AppContent() {
               <Customer2026Experience
                 townName={geoMarkets.find((m) => m.id === selectedZoneFilter)?.display_name || "Adilabad Town"}
                 onSelectSector={(sectorId) => {
-                  const map = { daily_needs: "stores", home_services: "services", rides: "taxi", decorators: "events", labour: "labour", parcels: "parcel", medicines: "stores", bakery: "stores" };
-                  setCustomerHomeSubTab(map[sectorId] || "stores");
-                  if (sectorId === "medicines") setSearchQuery("medicine");
-                  if (sectorId === "bakery") setSearchQuery("bakery");
+                  const id = String(sectorId || "").toLowerCase();
+                  const cats = Array.isArray(visibleCategories) ? visibleCategories : [];
+                  const pickCat = (re) => {
+                    const hit = cats.find((c) => re.test(String(c?.id || "") + " " + String(c?.name || "") + " " + String(c?.label || "")));
+                    return hit ? hit.id : "All";
+                  };
+                  setSearchQuery("");
+                  if (/ride|taxi|bike|auto|parcel|courier|p2p/.test(id)) {
+                    setCustomerHomeSubTab("taxi");
+                  } else if (/decor|hall|event/.test(id)) {
+                    setCustomerHomeSubTab("events");
+                  } else if (/labour|labor|mistri|mason/.test(id)) {
+                    setCustomerHomeSubTab("labour");
+                  } else if (/service|home_srv|1-hr/.test(id)) {
+                    setCustomerHomeSubTab("services");
+                  } else if (/med|pharm|health/.test(id)) {
+                    setCustomerHomeSubTab("stores");
+                    setSelectedCategory(pickCat(/pharm|med|health/i));
+                  } else if (/bakery|food|meat|fish|nonveg|veg_non/.test(id)) {
+                    setCustomerHomeSubTab("stores");
+                    setSelectedCategory(pickCat(/meat|fish|non-?veg|food|bakery/i));
+                  } else {
+                    setCustomerHomeSubTab("stores");
+                    setSelectedCategory(pickCat(/grocer|kirana|daily/i));
+                  }
+                  setTimeout(() => {
+                    const el = document.getElementById("we4all-active-tab-content");
+                    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }, 60);
                 }}
                 onSearch={(q) => setSearchQuery(q)}
                 onQuickAdd={(item) => {
@@ -1554,6 +1579,7 @@ function AppContent() {
                   )}
                 </section>
               )}
+              <div id="we4all-active-tab-content" />
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
                   <section className="w4-shop-hero" aria-label="Your local market">

@@ -1,6 +1,6 @@
 {
     "name":  "we4all-desktop-console",
-    "version": "3.3.84",
+    "version": "3.3.85",
     "description":  "WE4ALL Partner \u0026 Admin Desktop Console for Windows",
     "main":  "main.js",
     "scripts":  {
