@@ -1,3 +1,4 @@
+import { MerchantFlashDealCreator } from "../components/shared/FlashDealsHub";
 import React, { useEffect, useRef, useState } from "react";
 import { isMerchantOrderOwned, canMarkOrderPacked } from "./workflows/portalRules";
 import { cancelMarketplaceOrder, confirmCodOrderCollection, confirmMarketplaceOrder, listMarketplaceOrders, supabase } from "../supabaseClient";
@@ -737,6 +738,8 @@ export default function MerchantPortal({
           )}
         </div>
       )}
+    
+      <MerchantFlashDealCreator />
     </div>
   );
 }

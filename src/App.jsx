@@ -26,6 +26,8 @@ import {
 } from "./modules/i18n/indianLanguages";
 import GeoTargetedAdBanner from "./modules/ads/GeoTargetedAdBanner";
 import { GeoLiveNewsHub, GeoNewsHeadlinesTicker } from "./components/shared/GeoLiveNewsHub";
+import { VoiceBasketBuilder } from "./components/customer/VoiceBasketBuilder";
+import { CustomerFlashDealsStrip } from "./components/shared/FlashDealsHub";
 import { HeaderGeoBadge, AccountLanguageCard, AccountThemeCard, FirstLaunchLanguageModal, readThemeMode, resolveBrightTheme } from "./components/shared/GeoLanguageOnboarding";
 import RoleFooterNav from "./modules/RoleFooterNav";
 import UpiPaymentModal from "./modules/UpiPaymentModal";
@@ -1579,6 +1581,7 @@ function AppContent() {
                 </section>
               )}
               <div id="we4all-active-tab-content" />
+              {customerHomeSubTab === "stores" && (<><CustomerFlashDealsStrip onGrabDeal={(d) => setSearchQuery(d.title)} /><VoiceBasketBuilder products={visibleProducts || products || []} onAddToCart={typeof addToCart === "function" ? addToCart : undefined} lang={lang} /></>)}
               {customerHomeSubTab === "stores" && (
                 <div className="space-y-2.5">
                   <section className="w4-shop-hero" aria-label="Your local market">
