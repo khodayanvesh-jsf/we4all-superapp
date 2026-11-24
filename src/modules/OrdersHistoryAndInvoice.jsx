@@ -1,3 +1,4 @@
+import { OrderTimelineAndRating } from "../components/shared/OrderTimelineAndRating";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelMarketplaceOrder,
@@ -488,6 +489,8 @@ export default function OrdersHistoryAndInvoice({
           </div>
         );
       })}
+    
+      <OrderTimelineAndRating orders={typeof orders !== "undefined" ? orders : []} />
     </div>
   );
 }
