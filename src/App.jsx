@@ -1463,30 +1463,29 @@ function AppContent() {
               <Customer2026Experience
                 townName={geoMarkets.find((m) => m.id === selectedZoneFilter)?.display_name || "Adilabad Town"}
                 onSelectSector={(sectorId) => {
-                  const id = String(sectorId || "").toLowerCase();
-                  const cats = Array.isArray(visibleCategories) ? visibleCategories : [];
-                  const pickCat = (re) => {
-                    const hit = cats.find((c) => re.test(String(c?.id || "") + " " + String(c?.name || "") + " " + String(c?.label || "")));
-                    return hit ? hit.id : "All";
-                  };
+                  const id = String(sectorId || "");
                   setSearchQuery("");
-                  if (/ride|taxi|bike|auto|parcel|courier|p2p/.test(id)) {
-                    setCustomerHomeSubTab("taxi");
-                  } else if (/decor|hall|event/.test(id)) {
-                    setCustomerHomeSubTab("events");
-                  } else if (/labour|labor|mistri|mason/.test(id)) {
-                    setCustomerHomeSubTab("labour");
-                  } else if (/service|home_srv|1-hr/.test(id)) {
+                  setFooterTab("home");
+                  if (id === "home_services") {
                     setCustomerHomeSubTab("services");
-                  } else if (/med|pharm|health/.test(id)) {
+                  } else if (id === "rides" || id === "parcels") {
+                    setCustomerHomeSubTab("taxi");
+                  } else if (id === "decorators") {
+                    setCustomerHomeSubTab("events");
+                  } else if (id === "labour") {
+                    setCustomerHomeSubTab("labour");
+                  } else if (id === "medicines") {
                     setCustomerHomeSubTab("stores");
-                    setSelectedCategory(pickCat(/pharm|med|health/i));
-                  } else if (/bakery|food|meat|fish|nonveg|veg_non/.test(id)) {
+                    setSelectedCategory("medicines");
+                  } else if (id === "non_veg" || id === "bakery") {
                     setCustomerHomeSubTab("stores");
-                    setSelectedCategory(pickCat(/meat|fish|non-?veg|food|bakery/i));
+                    setSelectedCategory("non_veg");
+                  } else if (id === "veg_fruits") {
+                    setCustomerHomeSubTab("stores");
+                    setSelectedCategory("veg_fruits");
                   } else {
                     setCustomerHomeSubTab("stores");
-                    setSelectedCategory(pickCat(/grocer|kirana|daily/i));
+                    setSelectedCategory("daily_needs");
                   }
                   setTimeout(() => {
                     const el = document.getElementById("we4all-active-tab-content");

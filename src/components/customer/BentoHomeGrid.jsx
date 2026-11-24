@@ -28,8 +28,8 @@ const COMPACT_SECTORS = [
   { id: 'decorators', icon: '🎉', title: 'Halls & Decor', subtitle: 'Events & quotes', tint: 'from-rose-50 to-pink-50 border-rose-200/80 text-rose-950', iconBg: 'bg-rose-500/15' },
   { id: 'labour', icon: '🧱', title: 'Labour Adda', subtitle: 'Mason & Mistri', tint: 'from-sky-50 to-cyan-50 border-sky-200/80 text-sky-950', iconBg: 'bg-sky-500/15' },
   { id: 'medicines', icon: '💊', title: 'Pharmacy', subtitle: 'Trusted medicals', tint: 'from-teal-50 to-cyan-50 border-teal-200/80 text-teal-950', iconBg: 'bg-teal-500/15' },
-  { id: "Fresh Meat & Fish", icon: '🍛🍗', title: 'Foods Veg & Non-Veg', subtitle: 'Veg, non-veg & bakery', tint: 'from-orange-50 to-amber-50 border-orange-200/80 text-orange-950', iconBg: 'bg-orange-500/15' },
-    { id: "groceries-main", icon: '🛒🥬', title: 'Groceries', subtitle: 'Kirana, veg & fruits', tint: 'from-orange-50 to-amber-50 border-orange-200/80 text-orange-950', iconBg: 'bg-emerald-500/15' },
+  { id: 'non_veg', icon: '🍛🍗', title: 'Foods Veg & Non-Veg', subtitle: 'Veg & non-veg food', tint: 'from-orange-50 to-amber-50 border-orange-200/80 text-orange-950', iconBg: 'bg-orange-500/15' },
+    { id: 'daily_needs', icon: '🛒🥬', title: 'Groceries', subtitle: 'Kirana & fresh veg', tint: 'from-emerald-50 to-teal-50 border-emerald-200/80 text-emerald-950', iconBg: 'bg-emerald-500/15' },
 ];
 
 export function BentoHomeGrid({
